@@ -12,7 +12,7 @@ enum AxolotyCommandInvocation: Equatable, Sendable {
     case serve(arguments: [String])
     case timing(arguments: [String])
     case repositoryValidation(arguments: [String])
-    case testOne(filter: String)
+    case testOne(filter: String, repetition: AxolotyTestRepetition?)
     case testTier(name: String, ci: Bool)
     case explain(tier: String, ci: Bool)
     case checkPlan
@@ -42,8 +42,8 @@ struct AxolotyCommandParser: Sendable {
         if arguments.first == "repository", arguments.dropFirst().first == "validate" {
             return .repositoryValidation(arguments: Array(arguments.dropFirst(2)))
         }
-        if arguments.count == 3, arguments[0] == "test-one", arguments[1] == "--filter" {
-            return .testOne(filter: arguments[2])
+        if arguments.first == "test-one" {
+            return testOneInvocation(arguments)
         }
         if arguments.count == 2, arguments[0] == "test-tier" {
             return .testTier(name: arguments[1], ci: false)
@@ -77,8 +77,6 @@ struct AxolotyCommandParser: Sendable {
             return .verify(ci: false)
         case ["verify", "--ci"]:
             return .verify(ci: true)
-        case ["test-one"]:
-            return .testOne(filter: environment["FILTER"] ?? "")
         case ["test-tier"]:
             return .testTier(name: environment["TIER"] ?? "", ci: false)
         case ["explain"]:
@@ -100,6 +98,40 @@ struct AxolotyCommandParser: Sendable {
         default:
             return .unsupported
         }
+    }
+
+    private func testOneInvocation(_ arguments: [String]) -> AxolotyCommandInvocation {
+        var filter = environment["FILTER"] ?? ""
+        var sawFilter = false
+        var maximumRepetitions: Int?
+        var repeatUntil: AxolotyTestRepeatCondition?
+        var index = 1
+        while index < arguments.count {
+            guard index + 1 < arguments.count else { return .unsupported }
+            let value = arguments[index + 1]
+            switch arguments[index] {
+            case "--filter":
+                guard !sawFilter else { return .unsupported }
+                filter = value
+                sawFilter = true
+            case "--maximum-repetitions":
+                guard maximumRepetitions == nil,
+                      let parsed = Int(value), parsed > 0 else { return .unsupported }
+                maximumRepetitions = parsed
+            case "--repeat-until":
+                guard repeatUntil == nil,
+                      let parsed = AxolotyTestRepeatCondition(rawValue: value) else { return .unsupported }
+                repeatUntil = parsed
+            default:
+                return .unsupported
+            }
+            index += 2
+        }
+        guard repeatUntil == nil || maximumRepetitions != nil else { return .unsupported }
+        let repetition = maximumRepetitions.map { maximum in
+            AxolotyTestRepetition(maximumRepetitions: maximum, repeatUntil: repeatUntil)
+        }
+        return .testOne(filter: filter, repetition: repetition)
     }
 }
 

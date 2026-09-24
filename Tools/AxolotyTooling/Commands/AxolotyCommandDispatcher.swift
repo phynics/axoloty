@@ -203,8 +203,8 @@ public struct AxolotyCommandDispatcher: Sendable {
             return timingCommands.run(arguments: arguments)
         case .repositoryValidation(let arguments):
             return repositoryValidationCommands.run(arguments: arguments)
-        case .testOne(let filter):
-            return checkCommands.run(.testOne(filter: filter))
+        case .testOne(let filter, let repetition):
+            return checkCommands.run(.testOne(filter: filter, repetition: repetition))
         case .testTier(let name, let ci):
             return checkCommands.run(.testTier(name: name, ci: ci))
         case .explain(let name, let ci):

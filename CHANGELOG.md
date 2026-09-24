@@ -11,6 +11,9 @@ fork, through CoatySwift 2.4.0, remain documented in the
 
 ### Added
 
+- Test failures show bounded hex/text mirrors for `ByteSlice` and `TopicView`.
+  `make test-one` accepts `REPEAT` and `REPEAT_UNTIL` to reproduce intermittent
+  failures with Swift Testing 6.4.
 - The development and CI toolchain now uses Swift 6.4. All current package
   manifests require Swift tools version 6.4, and canonical Linux builds use the
   Swift Build default. CI caches Swift Build intermediates without final
@@ -32,13 +35,14 @@ fork, through CoatySwift 2.4.0, remain documented in the
 - The lifecycle matrix's monotonic millisecond clock no longer clamps
   after 24 days of host uptime. The old `awk` format stopped deadlines from
   advancing on long-running hosts.
-
-### Fixed
-
 - `AxolotyInspectorSession` no longer traps on the first Advertise,
   Deadvertise, or Resolve it receives. Its private source-ID formatter indexed
   past the end of its hex array; the session now uses
   `CoatyRoute.uuidString`, the same formatter as the runtime.
+- SensorThings saturation tests assert the bounded-capacity diagnostic without
+  requiring an unrelated runtime lifecycle transition.
+- The tooling signal-multiplexer test suite runs serially because the test
+  changes process-wide `SIGINT` and `SIGTERM` dispositions.
 
 ## [0.8.2] - 2026-09-18
 

@@ -4,7 +4,7 @@
 import Foundation
 import Testing
 
-@Suite("AxolotyCheckTests")
+@Suite("AxolotyCheckTests", .serialized)
 struct AxolotyCheckTests {}
 
 #if canImport(Glibc)

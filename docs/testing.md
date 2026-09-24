@@ -306,6 +306,30 @@ not final products. Tooling must ask `swift build --show-bin-path` for product
 locations instead of constructing a path from the scratch directory. The
 `--build-system native` fallback is not enabled.
 
+## Swift Testing 6.4
+
+`ByteSlice` and `TopicView` provide `CustomTestReflectable` mirrors in test
+targets. A failed expectation shows the byte-slice length, up to 64 bytes of
+hex, and up to 96 bytes of decoded text. A topic mirror shows its level count,
+full text, namespace, and source ID. Truncated fields include an ellipsis.
+
+Use `make test-one` to repeat one test through the canonical tooling path:
+
+```sh
+make test-one FILTER='flakyTest' REPEAT=20 REPEAT_UNTIL=fail
+```
+
+`REPEAT` must be a positive integer. `REPEAT_UNTIL` accepts `pass` or `fail`
+and requires `REPEAT`. Omit it to repeat the selected test unconditionally up
+to the maximum. The `test-one` command maps these options to SwiftPM's
+`--maximum-repetitions` and `--repeat-until` flags. Use `REPEAT_UNTIL=fail` to
+reproduce intermittent failures such as #827.
+
+Wire-compatibility tests do not attach captured frames to individual Swift
+Testing issues. The wire gate already preserves `capture.jsonl`, verifier logs,
+and replay commands in its failure artifact bundle. Attaching the same frames
+would duplicate that data.
+
 ## Timeouts
 
 The tier timeout is a hard upper bound for the complete tier. Individual

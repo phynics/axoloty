@@ -523,6 +523,35 @@ struct WireCodecTests {
     }
 
     @Test
+    func byteSliceTestReflectionShowsHexAndText() {
+        Array("ADV".utf8).withUnsafeBufferPointer { buffer in
+            let slice = ByteSlice(bytes: buffer.baseAddress!, length: buffer.count)
+            let fields = wireTestMirrorFields(slice)
+            #expect(fields["length"] as? Int == 3)
+            #expect(fields["hex"] as? String == "41 44 56")
+            #expect(fields["text"] as? String == "ADV")
+        }
+    }
+
+    @Test
+    func byteSliceTestReflectionTruncatesHex() {
+        let bytes = [UInt8](repeating: 0xAB, count: 100)
+        #expect(WireTestReflection.hex(bytes, limit: 4) == "ab ab ab ab ...")
+    }
+
+    @Test
+    func topicViewTestReflectionShowsLevelsAndText() {
+        Array("coaty/3/ns/ADV/33333333-3333-4333-8333-333333333333".utf8).withUnsafeBufferPointer { buffer in
+            let view = TopicView(topicBytes: buffer.baseAddress!, length: buffer.count)
+            let fields = wireTestMirrorFields(view)
+            #expect(fields["levelCount"] as? Int == 5)
+            #expect(fields["namespace"] as? String == "ns")
+            #expect(fields["sourceId"] as? String == "33333333-3333-4333-8333-333333333333")
+            #expect((fields["text"] as? String)?.hasPrefix("coaty/3/ns/ADV/") == true)
+        }
+    }
+
+    @Test
     func negativeLengthsAreClampedToZeroWithoutTrapping() throws {
         var dummy: UInt8 = 0
         withUnsafePointer(to: &dummy) { pointer in
