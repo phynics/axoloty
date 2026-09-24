@@ -13,7 +13,7 @@ public enum ProtocolProcessOutcome: Sendable, Equatable {
 }
 
 /// A closed borrowed input accepted by the protocol processor.
-public enum BorrowedProtocolInput {
+public enum BorrowedProtocolInput: ~Sendable {
     /// A Coaty profile frame with a parsed routing key and borrowed payload.
     case profile(BorrowedProtocolFrame)
     /// An exact external IO route and its borrowed payload.

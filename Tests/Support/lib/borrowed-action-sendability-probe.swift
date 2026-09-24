@@ -43,3 +43,31 @@ func borrowedJSONReaderCannotCrossIsolation(_ value: borrowing WireValueReader) 
 func borrowedFrameCannotCrossIsolation(_ value: borrowing BorrowedProtocolFrame) {
     requiresSendable(value)
 }
+
+func borrowedInputCannotCrossIsolation(_ value: borrowing BorrowedProtocolInput) {
+    requiresSendable(value)
+}
+
+func borrowedDeliveryKeyCannotCrossIsolation(_ value: borrowing BorrowedProtocolDeliveryKey) {
+    requiresSendable(value)
+}
+
+func borrowedPublishTargetCannotCrossIsolation(_ value: borrowing BorrowedProtocolPublishTarget) {
+    requiresSendable(value)
+}
+
+func borrowedDeliveryCannotCrossIsolation(_ value: borrowing BorrowedProtocolDelivery) {
+    requiresSendable(value)
+}
+
+func borrowedPublicationCannotCrossIsolation(_ value: borrowing BorrowedProtocolPublication) {
+    requiresSendable(value)
+}
+
+func borrowedAssociationCannotCrossIsolation(_ value: borrowing BorrowedIoAssociationTransition) {
+    requiresSendable(value)
+}
+
+func borrowedActionCannotCrossIsolation(_ value: borrowing BorrowedProtocolAction) {
+    requiresSendable(value)
+}

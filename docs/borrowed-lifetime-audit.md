@@ -281,6 +281,7 @@ derives a borrowed pointer:
 | `WireValueView` | JSON value pointer and length | Nested values are passed only to synchronous borrowing visitors. |
 | `WireValueReader` | JSON value pointer and length | Its child ranges and borrowed views derive from the caller's JSON bytes. |
 | `BorrowedProtocolFrame` | Topic and payload `ByteSlice` values | Call `owned()` to copy the payload into a `ProtocolFrame` before an isolation hop. |
+| `BorrowedProtocolInput`, `BorrowedProtocolDeliveryKey`, `BorrowedProtocolPublishTarget`, `BorrowedProtocolDelivery`, `BorrowedProtocolPublication`, `BorrowedIoAssociationTransition`, and `BorrowedProtocolAction` | Nested borrowed frames, selectors, payloads, and topic slices | These protocol-level wrappers carry wire borrows across the processor API; their `owned()` projections are the sendable boundary. |
 
 These declarations compile in the pinned Swift 6.4 host build and the
 RISC-V Embedded Swift Core gate. The compile-fail fixture
