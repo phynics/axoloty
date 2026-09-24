@@ -16,6 +16,13 @@ fork, through CoatySwift 2.4.0, remain documented in the
   point. It replaces four private copies across `AxolotyWire`,
   `AxolotyProtocol`, and `AxolotySensorThings`.
 
+### Fixed
+
+- `AxolotyInspectorSession` no longer traps on the first Advertise,
+  Deadvertise, or Resolve it receives. Its private source-ID formatter indexed
+  past the end of its hex array; the session now uses
+  `CoatyRoute.uuidString`, the same formatter as the runtime.
+
 ## [0.8.2] - 2026-09-18
 
 Axoloty 0.8.2 fixes embedded consumer preparation from a working directory

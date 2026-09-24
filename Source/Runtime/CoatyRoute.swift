@@ -6,13 +6,12 @@ import AxolotyWire
 /// Builds the Coaty Core Profile 3 routes the runtime publishes on.
 ///
 /// Route synthesis is profile logic, not transport logic: the layout is
-/// defined by `coaty/3`, not by any carrier. It lived in the MQTT binding by
-/// accident of history, which meant a second transport would have had to
-/// reimplement it. The runtime now hands adapters a finished route, and an
-/// adapter decides only how to put bytes on a wire.
+/// defined by `coaty/3`, not by any carrier. The runtime hands adapters a
+/// finished route, and an adapter decides only how to put bytes on a wire.
 ///
-/// The static profile still synthesizes its own routes; unifying the two is
-/// tracked separately, because that code is compiled for Embedded Swift.
+/// This is a host convenience over `TopicBuilder`, the one portable
+/// `coaty/3` topic encoder. Embedded firmware writes routes with
+/// `TopicBuilder` directly into caller-owned storage.
 public enum CoatyRoute {
     /// Builds the exact Coaty route for a publication routing key.
     ///
@@ -78,6 +77,11 @@ public enum CoatyRoute {
         return String(decoding: bytes[0..<writtenLength], as: UTF8.self)
     }
 
+    /// Formats a UUID the way `coaty/3` routes and payloads spell it.
+    ///
+    /// - Parameter value: The UUID to format.
+    /// - Returns: The 36-character lowercase hyphenated form, for example
+    ///   `0a1b2c3d-4e5f-4061-8293-a4b5c6d7e8f9`.
     public static func uuidString(_ value: UUID16) -> String {
         var bytes = [UInt8](repeating: 0, count: 36)
         bytes.withUnsafeMutableBufferPointer { output in
