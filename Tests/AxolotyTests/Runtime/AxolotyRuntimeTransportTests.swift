@@ -17,10 +17,16 @@ extension AxolotyRuntimeTests {
 
     @Test("external routes accept characters restricted by the MQTT adapter")
     func externalRouteValidationAcceptsCarrierSpecificCharacters() throws {
-        _ = try ExternalIoRoute("wild/+")
-        _ = try ExternalIoRoute("wild/#")
-        _ = try ExternalIoRoute("quoted/\"topic")
-        _ = try ExternalIoRoute(#"backslash/\topic"#)
+        for key in ["wild/+", "wild/#", "quoted/\"topic", #"backslash/\topic"#] {
+            let route = try ExternalIoRoute(key)
+            route.routeBytes.withBytes { bytes in
+                let expected = Array(key.utf8)
+                #expect(bytes.length == expected.count)
+                for index in expected.indices {
+                    #expect(bytes.byte(at: index) == expected[index])
+                }
+            }
+        }
     }
 
     @Test("external routes fit three UUIDs plus application routing")

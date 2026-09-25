@@ -85,11 +85,16 @@ Axoloty accepts topics of at most 256 bytes and rejects longer inbound topics
 before protocol-state mutation. Axoloty does not emit longer topics. A peer
 that requires a topic above 256 bytes is not wire-compatible with Axoloty for
 that route. Coaty Core 3 retains its sealed topic grammar. Application routes
-that carry three UUIDs remain external MQTT routes, not Coaty Core 3 topics.
-Advertised external IO routes must also be directly representable as bounded
-JSON string content: control characters, quotation marks, and backslashes are
-rejected instead of consuming a larger escaped metadata buffer. This is a
-narrower contract than MQTT's complete topic character set.
+that carry three UUIDs remain external IO routes, not Coaty Core 3 topics.
+
+`ExternalIoRoute` is carrier-neutral: it accepts bounded UTF-8 routes with no
+control scalars or empty slash-separated segments. Carrier-specific rules
+apply when an adapter uses the route. `MQTTBinding` preserves Axoloty's prior
+MQTT-route exclusions (`+`, `#`, quotation marks, and backslashes), while a
+different carrier may admit characters its key syntax allows. These
+restrictions do not change Coaty's sealed topic grammar or the wire shape of
+protocol messages; they determine which external routes a carrier can use.
+This boundary was established for Zenoh in [#799](https://github.com/phynics/axoloty/issues/799).
 
 The exact-limit and one-over-limit tests cover 256-byte acceptance and
 257-byte rejection on the host and physical ESP32 path. Static action batches
