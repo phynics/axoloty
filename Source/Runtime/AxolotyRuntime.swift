@@ -145,10 +145,10 @@ actor ProtocolExecutor {
                 await transport.stop()
                 return (.notStarted, "runtime start was superseded by another lifecycle transition")
             }
-            try await transport.installSubscriptions(namespace: definition.namespace)
+            try await transport.activateProfileInterest(namespace: definition.namespace)
             guard state == .starting, transportEpoch == epoch else {
                 await transport.stop()
-                return (.notStarted, "runtime start was superseded while installing subscriptions")
+                return (.notStarted, "runtime start was superseded while activating profile interest")
             }
             try await publishLifecycleAdvertisement(nowMS: monotonicNowMS())
             try await publishIoAdvertisements(nowMS: monotonicNowMS())
@@ -200,7 +200,7 @@ actor ProtocolExecutor {
                 await drainOutboundPump()
             }
             do {
-                try await transport.removeSubscriptions(namespace: definition.namespace)
+                try await transport.deactivateProfileInterest(namespace: definition.namespace)
             } catch {
                 emit(.init(kind: .transportFailed, detail: runtimeErrorDetail(error)))
             }
@@ -255,9 +255,9 @@ actor ProtocolExecutor {
             await stopOutboundPump()
             // A broker-side close can race this explicit reconnect.  The
             // binding may therefore already have lost its subscription
-            // session; removal is best-effort in that path and a fresh
-            // subscription installation below is authoritative.
-            try? await transport.removeSubscriptions(namespace: definition.namespace)
+            // session; deactivation is best-effort in that path and fresh
+            // profile-interest activation below is authoritative.
+            try? await transport.deactivateProfileInterest(namespace: definition.namespace)
             await transport.stop()
             installOutboundPump()
             await transport.setFailureHandler { [weak self] failure in
@@ -273,7 +273,7 @@ actor ProtocolExecutor {
                 lastWill: lastWill
             )
             guard state == .reconnecting, transportEpoch == epoch else { return }
-            try await transport.installSubscriptions(namespace: definition.namespace)
+            try await transport.activateProfileInterest(namespace: definition.namespace)
             guard state == .reconnecting, transportEpoch == epoch else { return }
             try await publishLifecycleAdvertisement(nowMS: monotonicNowMS())
             try await publishIoAdvertisements(nowMS: monotonicNowMS())

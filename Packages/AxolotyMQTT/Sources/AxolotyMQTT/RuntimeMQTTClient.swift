@@ -64,7 +64,7 @@ final class RuntimeMQTTClient: RuntimeMQTTClientAdapter, @unchecked Sendable {
         // a SUBACK or UNSUBACK that never arrives suspends the caller forever.
         // A broker that vanishes without resetting the connection leaves that
         // wait unbounded, which wedges `reconnect()` at the
-        // `removeSubscriptions(namespace:)` it starts with.
+        // `deactivateProfileInterest(namespace:)` it starts with.
         let mqttConfiguration = MQTTClient.Configuration(
             keepAliveInterval: .seconds(30),
             timeout: .milliseconds(Int64(configuration.operationTimeoutMS)),

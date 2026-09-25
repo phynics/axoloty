@@ -77,17 +77,10 @@ public protocol AxolotyRuntimeTransport: AnyObject, Sendable {
     /// Stops the transport and releases its callbacks.
     func stop() async
 
-    /// Installs binding subscriptions before identity is advertised.
-    ///
-    /// Deliberately not generalized. MQTT implements this as a server-side
-    /// wildcard subscription, which is a broker capability rather than a
-    /// concept every carrier shares; renaming it into transport-neutral
-    /// vocabulary would assert a commonality no second transport has yet
-    /// demonstrated. Both methods default to no-ops, so an adapter without
-    /// the concept simply does not implement them.
-    func installSubscriptions(namespace: String) async throws
-    /// Removes binding subscriptions during graceful shutdown.
-    func removeSubscriptions(namespace: String) async throws
+    /// Activates interest in the profile namespace before identity is advertised.
+    func activateProfileInterest(namespace: String) async throws
+    /// Deactivates interest in the profile namespace during graceful shutdown.
+    func deactivateProfileInterest(namespace: String) async throws
     /// Classifies an association route using binding-owned knowledge.
     ///
     /// The borrowed route is valid only for this synchronous call. The
@@ -114,8 +107,8 @@ public extension AxolotyRuntimeTransport {
     }
 
     func setFailureHandler(_ handler: @escaping @Sendable (RuntimeTransportFailure) -> Void) async { _ = handler }
-    func installSubscriptions(namespace: String) async throws {}
-    func removeSubscriptions(namespace: String) async throws {}
+    func activateProfileInterest(namespace: String) async throws {}
+    func deactivateProfileInterest(namespace: String) async throws {}
     func classifyRoute(_ route: ByteSlice) -> ProtocolRouteClassification {
         route.length == 0 ? .unrelated : .coaty
     }

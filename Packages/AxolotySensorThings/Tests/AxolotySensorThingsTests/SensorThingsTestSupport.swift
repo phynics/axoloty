@@ -27,12 +27,12 @@ actor SensorThingsRecordingTransport: AxolotyRuntimeTransport {
         lifecycle.append("stop")
     }
 
-    func installSubscriptions(namespace: String) async throws {
-        lifecycle.append("install")
+    func activateProfileInterest(namespace: String) async throws {
+        lifecycle.append("activate")
     }
 
-    func removeSubscriptions(namespace: String) async throws {
-        lifecycle.append("remove")
+    func deactivateProfileInterest(namespace: String) async throws {
+        lifecycle.append("deactivate")
     }
 
     func allPublications() -> [RuntimeOutboundMessage] {

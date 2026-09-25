@@ -27,7 +27,7 @@ public struct MQTTBindingConfiguration: Sendable, Equatable {
     /// forever. A broker that disappears without resetting the connection --
     /// a restarted broker whose socket is left half-open -- then wedges any
     /// operation awaiting an acknowledgement, including the
-    /// `removeSubscriptions(namespace:)` that opens a reconnect. That hang is
+    /// `deactivateProfileInterest(namespace:)` that opens a reconnect. That hang is
     /// unrecoverable: no reconnect can run while it is pending.
     ///
     /// - Note: MQTTNIO applies one timeout to every acknowledged exchange, so
@@ -247,8 +247,8 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
         delegate.clearReceive()
     }
 
-    /// Installs bounded wildcard subscriptions for the closed profile.
-    public func installSubscriptions(namespace: String) async throws {
+    /// Activates the closed profile's bounded MQTT wildcard subscriptions.
+    public func activateProfileInterest(namespace: String) async throws {
         lock.withLock { activeNamespace = namespace }
         do {
             try await client.subscribe(RuntimeTopicBuilder.subscribeAllOneWayTopics(namespace: namespace))
@@ -268,8 +268,8 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
         }
     }
 
-    /// Removes the same profile subscriptions during shutdown/reconnect.
-    public func removeSubscriptions(namespace: String) async throws {
+    /// Deactivates the profile's MQTT subscriptions during shutdown/reconnect.
+    public func deactivateProfileInterest(namespace: String) async throws {
         let routes = lock.withLock { () -> [String] in
             transportEpoch &+= 1
             activeNamespace = nil
