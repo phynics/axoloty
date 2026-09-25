@@ -252,7 +252,7 @@ public final class AxolotyMCPServer {
         catalogueStartTask = nil
         await httpServer?.stop()
         await server.stop()
-        catalogueService.stop()
+        await catalogueService.stop()
     }
 
     // MARK: - Handler registration

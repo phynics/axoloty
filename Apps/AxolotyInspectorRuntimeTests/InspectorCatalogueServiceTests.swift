@@ -233,7 +233,7 @@ func catalogueServiceCanRetryAfterFailedConnection() async {
     let session = RetryInspectorSession()
     let service = InspectorCatalogueService(session: session, namespace: "test")
     defer {
-        service.stop()
+        await service.stop()
         session.finishPhases()
     }
 
@@ -304,7 +304,7 @@ func concurrentCatalogueServiceStartsShareOneConnection() async {
     defer {
         firstStart.cancel()
         secondStart.cancel()
-        service.stop()
+        await service.stop()
         session.finishPhases()
     }
 
@@ -335,7 +335,7 @@ func stoppingDuringCatalogueServiceStartPreventsLateConsumer() async {
         inFlightStart.cancel()
         retryStart?.cancel()
         session.releaseConnect()
-        service.stop()
+        await service.stop()
         session.finishPhases()
     }
     #expect(await waitForPhase(
@@ -343,7 +343,7 @@ func stoppingDuringCatalogueServiceStartPreventsLateConsumer() async {
         description: "blocked connection start"
     ))
 
-    service.stop()
+    await service.stop()
     session.releaseConnect()
     session.blockConnect = false
     retryStart = Task { @MainActor in

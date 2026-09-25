@@ -110,6 +110,22 @@ func httpTransportReportsEncodingFailure() async throws {
     )
 }
 
+@Test("HTTP server shutdown completes when its caller is canceled")
+func httpShutdownCompletesAfterCallerCancellation() async throws {
+    let server = makeHTTPServer(port: 0)
+    let startTask = try await startHTTPServer(server, phase: "cancellation-shield HTTP start")
+    let response = await server.handleHTTPRequest(try makeInitializeRequest())
+    #expect(response.statusCode == 200)
+
+    let stopping = Task { await server.stop() }
+    stopping.cancel()
+    await stopping.value
+    try await startTask.value
+
+    #expect(await server.listeningPort() == nil)
+    #expect(await server.activeSessionCount() == 0)
+}
+
 @Test("HTTP server releases its port for immediate rebinding")
 func httpServerReleasesPortForRebinding() async throws {
     let firstServer = makeHTTPServer(port: 0)

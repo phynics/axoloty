@@ -90,7 +90,7 @@ public final class InspectorDiscoverApplication {
             discoverEvent = try discoveryRequest.makeInspectorDiscoverRequest(timeout: cmd.timeout)
         } catch {
             writeDiagnostic("error: \(error.userFriendlyMessage)")
-            session.stop()
+            await session.stop()
             return error
         }
 
@@ -98,12 +98,12 @@ public final class InspectorDiscoverApplication {
             try await session.connect()
         } catch let error as InspectorError {
             writeDiagnostic("error: \(error.userFriendlyMessage)")
-            session.stop()
+            await session.stop()
             return error
         } catch {
             let msg = String(describing: error)
             writeDiagnostic("error: \(msg)")
-            session.stop()
+            await session.stop()
             return .connectionUnavailable(reason: msg)
         }
 
@@ -199,7 +199,7 @@ public final class InspectorDiscoverApplication {
             writeOutput(output)
         }
 
-        session.stop()
+        await session.stop()
 
         if interrupted {
             return .interrupted
