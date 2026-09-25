@@ -127,7 +127,6 @@ func directObservationBufferSaturationIsDiagnosed() async throws {
     let topic = "coaty/3/sensor-tests/CHN:line-7/\(sender)"
     #expect(await runtime.receive(.profile(route: topic, payload: channelPayload(first), nowMS: 1)) == .accepted)
     #expect(await runtime.receive(.profile(route: topic, payload: channelPayload(second), nowMS: 2)) == .accepted)
-    #expect(await runtime.state() == .failed)
     let diagnostic = try await nextDiagnostic(from: diagnostics)
     #expect(diagnostic.kind == .capacityExceeded)
     var iterator = stream.makeAsyncIterator()

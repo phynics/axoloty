@@ -92,7 +92,7 @@ public struct SensorThingsObjectSnapshot<Schema: SensorThingsTopLevelSchema>: Se
         var envelope: ObjectEnvelope<128, 128>?
         try object.withEnvelope { (value: ObjectEnvelope<128, 128>) in envelope = value }
         let value = object.value
-        let bytes = object.withEncodedBytes(copyBytes)
+        let bytes = object.withEncodedBytes { $0.ownedBytes() }
         guard let envelope else { throw ObjectError(.invalidEnvelope) }
         self.envelope = envelope
         self.value = value
@@ -146,7 +146,7 @@ public struct SensorThingsPublisher: Sendable {
     public func advertise<Schema: SensorThingsTopLevelSchema>(
         _ object: consuming Object<Schema>
     ) async throws {
-        let bytes = object.withEncodedBytes(copyBytes)
+        let bytes = object.withEncodedBytes { $0.ownedBytes() }
         try await checked(.advertise(try encodeAdvertise(object: bytes)))
     }
 
@@ -155,7 +155,7 @@ public struct SensorThingsPublisher: Sendable {
         _ object: consuming Object<Schema>,
         on channel: SensorThingsChannel<Schema>
     ) async throws {
-        let bytes = object.withEncodedBytes(copyBytes)
+        let bytes = object.withEncodedBytes { $0.ownedBytes() }
         try await checked(.channel(
             identifier: channel.identifier,
             payload: try encodeChannel(object: bytes)
@@ -489,7 +489,7 @@ public extension RuntimeBuilder {
             let orderedThings = thingsByID.sorted {
                 $0.key.uuid.isLexicographicallyBefore($1.key.uuid)
             }
-            let sourceBytes = orderedSources.map { $0.sensor.withEncodedBytes(copyBytes) }
+            let sourceBytes = orderedSources.map { $0.sensor.withEncodedBytes { $0.ownedBytes() } }
             let sourceAdvertise = try sourceBytes.map { try encodeAdvertise(object: $0) }
             let thingAdvertise = try orderedThings.map { try encodeAdvertise(object: $0.value) }
             let sourceDeadvertise = try orderedSources.map { try encodeDeadvertise(objectID: $0.sensor.envelope.objectID) }
@@ -702,13 +702,6 @@ private func invocationPayload(_ invocation: RuntimeInvocation) -> [UInt8] {
     }
 }
 
-private func copyBytes(_ bytes: borrowing ByteSlice) -> [UInt8] {
-    var result: [UInt8] = []
-    result.reserveCapacity(bytes.length)
-    for index in 0..<bytes.length { result.append(bytes.byte(at: index) ?? 0) }
-    return result
-}
-
 private func decodeSnapshot<Schema: SensorThingsTopLevelSchema>(
     _ type: Schema.Type,
     from payload: [UInt8]
@@ -742,22 +735,22 @@ private func decodeSnapshot<Schema: SensorThingsTopLevelSchema>(
 
 
 private func encodeDiscover(objectID: ObjectID, objectType: StaticString) throws -> [UInt8] {
-    let objectId = uuidBytes(objectID.uuid)
+    let objectId = Array(CoatyRoute.uuidString(objectID.uuid).utf8)
     let objectTypes = Array("[\"\(String(decoding: UnsafeBufferPointer(start: objectType.utf8Start, count: objectType.utf8CodeUnitCount), as: UTF8.self))\"]".utf8)
-    return try encodeWireEvent(.discover(OwnedDiscoverWireData(
+    return try OwnedWireEvent.discover(OwnedDiscoverWireData(
         externalId: nil, objectId: objectId, objectTypes: objectTypes, coreTypes: nil
-    )))
+    )).encodedBytes()
 }
 
 private func encodeQuery(objectType: StaticString) throws -> [UInt8] {
     let objectTypes = Array("[\"\(String(decoding: UnsafeBufferPointer(start: objectType.utf8Start, count: objectType.utf8CodeUnitCount), as: UTF8.self))\"]".utf8)
-    return try encodeWireEvent(.query(OwnedQueryWireData(
+    return try OwnedWireEvent.query(OwnedQueryWireData(
         objectTypes: objectTypes, coreTypes: nil, objectFilter: nil, objectJoinConditions: nil
-    )))
+    )).encodedBytes()
 }
 
 private func encodeResolve(object: [UInt8]) throws -> [UInt8] {
-    try encodeWireEvent(.resolve(try OwnedResolveWireData(object: object, relatedObjects: nil, privateData: nil)))
+    try OwnedWireEvent.resolve(OwnedResolveWireData(object: object, relatedObjects: nil, privateData: nil)).encodedBytes()
 }
 
 private func encodeRetrieve(objects: [[UInt8]]) throws -> [UInt8] {
@@ -767,48 +760,21 @@ private func encodeRetrieve(objects: [[UInt8]]) throws -> [UInt8] {
         array.append(contentsOf: object)
     }
     array.append(93)
-    return try encodeWireEvent(.retrieve(try OwnedRetrieveWireData(objects: array, privateData: nil)))
+    return try OwnedWireEvent.retrieve(OwnedRetrieveWireData(objects: array, privateData: nil)).encodedBytes()
 }
 
 private func encodeAdvertise(object: [UInt8]) throws -> [UInt8] {
     let fields = try OwnedAdvertiseWireData(object: object, privateData: nil)
-    return try encodeWireEvent(.advertise(fields))
+    return try OwnedWireEvent.advertise(fields).encodedBytes()
 }
 
 private func encodeChannel(object: [UInt8]) throws -> [UInt8] {
     let fields = try OwnedChannelWireData(object: object, objects: nil, privateData: nil)
-    return try encodeWireEvent(.channel(fields))
+    return try OwnedWireEvent.channel(fields).encodedBytes()
 }
 
 private func encodeDeadvertise(objectID: ObjectID) throws -> [UInt8] {
-    let id = uuidBytes(objectID.uuid)
-    let ids = Array("[\"\(String(decoding: id, as: UTF8.self))\"]".utf8)
+    let ids = Array("[\"\(CoatyRoute.uuidString(objectID.uuid))\"]".utf8)
     let fields = try OwnedDeadvertiseWireData(objectIds: ids)
-    return try encodeWireEvent(.deadvertise(fields))
-}
-
-private func encodeWireEvent(_ event: OwnedWireEvent) throws -> [UInt8] {
-    var output = [UInt8](repeating: 0, count: WireBufferConfig.maxPayloadSize)
-    var length = 0
-    try output.withUnsafeMutableBufferPointer { buffer in
-        guard let baseAddress = buffer.baseAddress else { throw AxolotyError.runtime(code: .capacityExceeded, reason: "empty SensorThings payload buffer") }
-        var writer = WireWriter(buffer: baseAddress, capacity: buffer.count)
-        try event.encode(to: &writer)
-        length = writer.position
-    }
-    output.removeSubrange(length..<output.count)
-    return output
-}
-
-private func uuidBytes(_ uuid: UUID16) -> [UInt8] {
-    let raw = withUnsafeBytes(of: uuid.bytes) { Array($0) }
-    let hex = Array("0123456789abcdef".utf8)
-    var result: [UInt8] = []
-    result.reserveCapacity(36)
-    for index in 0..<16 {
-        if index == 4 || index == 6 || index == 8 || index == 10 { result.append(45) }
-        result.append(hex[Int(raw[index] >> 4)])
-        result.append(hex[Int(raw[index] & 15)])
-    }
-    return result
+    return try OwnedWireEvent.deadvertise(fields).encodedBytes()
 }

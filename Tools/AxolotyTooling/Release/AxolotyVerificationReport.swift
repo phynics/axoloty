@@ -167,7 +167,9 @@ struct AxolotyVerificationReportWriter {
             let lastTest = command?.observation?.lastTest ?? command?.lifecycle?.lastTest
             let artifact = command?.observation?.artifactPath ?? command?.lifecycle?.artifactPath
             let expected = timing.expectedDurationSeconds.map(seconds) ?? "—"
-            let outputBytes = command?.observation.map { String($0.outputBytes) } ?? "—"
+            let outputBytes = command?.observation.map { String($0.outputBytes) }
+                ?? command?.lifecycle?.outputBytes.map(String.init)
+                ?? "—"
             return "| \(cell(result.name)) | \(result.status.rawValue) | \(seconds(timing.elapsedSeconds)) | \(expected) | \(seconds(timing.resourceLeaseWaitSeconds)) | \(cell(lastTest ?? "—")) | \(outputBytes) | \(cell(artifact ?? "—")) |"
         }
         lines += section("Overruns", rows: overruns.map { result in

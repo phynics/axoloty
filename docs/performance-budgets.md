@@ -1,8 +1,7 @@
 # Performance and Resource Budgets
 
-Status: implements issue #303. Converts measured host/device evidence
-from #299–#302 into versioned budgets, defines regression policy, and
-splits the Phase 4 kill gates into entry-evidence gates (prerequisites
+Status: defines the versioned host/device budgets and regression policy. The
+Phase 4 gate split uses entry-evidence gates (prerequisites
 for reclosing Phase 3 / beginning Phase 4) and completion gates (Phase 4
 scope, issue #277).
 
@@ -114,8 +113,9 @@ running `make benchmark-wire` on the NixOS host.
 
 ## ESP32-C6 device budgets
 
-Measured on the physical ESP32-C6 (QFN40, rev v0.0, 160MHz, 4MB flash)
-via `make benchmark-wire-device`. The `esp32c6` environment declares
+Measured on the physical ESP32-C6 (QFN40, rev v0.0, 160MHz, 4MB flash) by the
+device benchmark now owned by `phynics/axoloty-embedded`. The `esp32c6`
+environment declares
 `implementation: "embedded-swift"`; an approved manifest must identify
 this implementation (the C surrogate is never approval-eligible). The
 provisional values below originate from the C surrogate (#302) and are
@@ -165,9 +165,11 @@ also equal `0`.
 |-------|-------|----------|
 | Payload | Axoloty limit: 2,048 bytes (static runtimes may select a smaller capacity) | Accepted at the selected limit, rejected above it; values above 2,048 are never accepted. Coaty does not impose this ceiling, so this is an intentional divergence. |
 | Topic | Axoloty limit: 256 bytes | Accepted at 256 bytes and rejected at 257 bytes. MQTT and Coaty do not impose this ceiling, so this is an intentional compatibility divergence. |
-| maxSubscribers | 8 | 9th rejected |
-| maxFamilyEntries | 16 | 17th rejected |
-| maxFamilySubscribers | 4 | 5th rejected |
+
+The subscriber and family-capacity rows were removed in 0.8.0 together with
+the `WireBufferConfig` constants that named them; nothing enforced those
+values. Protocol state capacity is a `ProtocolBufferConfig` preset chosen per
+runtime.
 
 Each size limit must declare `overLimitRejected: true`; a hard-coded
 over-limit "success" record is a validator failure.
@@ -193,7 +195,7 @@ prerequisites for beginning Phase 4.
 At least 5 gates, each with `id`, `description`, `threshold`, and
 `thresholdType`:
 
-1. **`clean-cross-build-flash`** — `make embedded-image` + `make
+1. **`clean-cross-build-flash`** — `make embedded-swift-flash` and `make
    embedded-device-smoke` succeed from a clean checkout (pass-fail).
 2. **`max-size-wire-pass`** — `make benchmark-wire-bounds` passes with
    all 36 bounds tests green (numeric).
@@ -227,7 +229,7 @@ Phase 4 progress until the regression is resolved.
 ## Validation commands
 
 ```text
-make test-one FILTER=smoke
+make test-one FILTER='AxolotyCheckTests'
 make verify
 make benchmark-wire
 make benchmark-wire-allocation

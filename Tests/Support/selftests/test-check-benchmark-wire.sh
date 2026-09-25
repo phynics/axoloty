@@ -24,13 +24,19 @@ BUILD_DIR="$build_dir" \
         --cache-path /workspace/.swiftpm-cache \
         --disable-automatic-resolution \
         --product WireBenchmark
+wire_bin_dir=$(CONTAINER_RUNTIME="$container_runtime" \
+    IMAGE="${IMAGE:-axoloty-dev}" BUILD_DIR="$build_dir" \
+    "$root/.devcontainer/run.sh" swift build -c release --product WireBenchmark \
+        --cache-path /workspace/.swiftpm-cache \
+        --disable-automatic-resolution --show-bin-path)
+wire_binary="$wire_bin_dir/WireBenchmark"
 
 swift_fingerprint_one=$(CONTAINER_RUNTIME="$container_runtime" \
     IMAGE="${IMAGE:-axoloty-dev}" BUILD_DIR="$build_dir" \
-    "$root/.devcontainer/run.sh" /workspace/.build/release/WireBenchmark --corpus-fingerprint)
+    "$root/.devcontainer/run.sh" "$wire_binary" --corpus-fingerprint)
 swift_fingerprint_two=$(CONTAINER_RUNTIME="$container_runtime" \
     IMAGE="${IMAGE:-axoloty-dev}" BUILD_DIR="$build_dir" \
-    "$root/.devcontainer/run.sh" /workspace/.build/release/WireBenchmark --corpus-fingerprint)
+    "$root/.devcontainer/run.sh" "$wire_binary" --corpus-fingerprint)
 [ "$swift_fingerprint_one" = "$oracle_fingerprint" ] || {
     echo "WireBenchmark fingerprint does not match independent Node oracle" >&2
     exit 1
@@ -54,7 +60,7 @@ mutated_swift=$(CONTAINER_RUNTIME="$container_runtime" \
     IMAGE="${IMAGE:-axoloty-dev}" BUILD_DIR="$build_dir" \
     CONTAINER_ENV_VARS=WIRE_BENCHMARK_CORPUS_DIR \
     WIRE_BENCHMARK_CORPUS_DIR="$mutated_container_corpus" \
-    "$root/.devcontainer/run.sh" /workspace/.build/release/WireBenchmark --corpus-fingerprint)
+    "$root/.devcontainer/run.sh" "$wire_binary" --corpus-fingerprint)
 [ "$mutated_swift" = "$mutated_oracle" ] || {
     echo "mutated WireBenchmark fingerprint does not match independent Node oracle" >&2
     exit 1
@@ -82,7 +88,7 @@ if failure_output=$(CONTAINER_RUNTIME="$container_runtime" \
     IMAGE="${IMAGE:-axoloty-dev}" BUILD_DIR="$build_dir" \
     CONTAINER_ENV_VARS=WIRE_BENCHMARK_CORPUS_DIR \
     WIRE_BENCHMARK_CORPUS_DIR="$failed_container_corpus" \
-    "$root/.devcontainer/run.sh" /workspace/.build/release/WireBenchmark 2>&1); then
+    "$root/.devcontainer/run.sh" "$wire_binary" 2>&1); then
     echo "expected WireBenchmark to fail when dtoDecode rejects a corpus case" >&2
     exit 1
 fi

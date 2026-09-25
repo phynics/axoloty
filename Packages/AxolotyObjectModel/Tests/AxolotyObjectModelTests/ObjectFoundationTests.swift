@@ -85,7 +85,7 @@ private struct TypedValueSchema: ObjectSchema {
     init(value: Int) { self.value = value }
 
     borrowing func encodeFields<let editorCapacity: Int>(to encoder: inout ObjectFieldEncoder<editorCapacity>) throws(ObjectEncodingError) {
-        try encoder.encode(value, forKey: "value")
+        try value.encode(to: &encoder, forKey: "value")
     }
 }
 
@@ -213,6 +213,12 @@ private struct TrailingManualSchema: ObjectSchema {
     #expect(throws: ObjectError.self) {
         _ = try BoundedObject<ValidManualSchema, 64, 24>(envelope: oversized, fields: ValidManualSchema())
     }
+}
+
+@Test func envelopeDecodesEscapedCoreTypeIdentity() throws {
+    let bytes = slice("{\"objectId\":\"33333333-3333-4333-8333-333333333333\",\"objectType\":\"com.example.Typed\",\"name\":\"Typed\",\"coreType\":\"Io\\u0053ource\"}")
+    let envelope = try ObjectEnvelope<64, 64>(decoding: bytes)
+    #expect(envelope.coreType == .ioSource)
 }
 
 @Test func typedObjectEditPreservesUnknownFields() throws {

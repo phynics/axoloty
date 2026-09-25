@@ -45,7 +45,6 @@ private func certificationManifest(
         // releaseGates is derived from the declared categories, so a fixture
         // names its gate by declaring a category with that id.
         tiers: gate == nil ? [] : [tier],
-        requiredGates: [],
         testOne: AxolotyCanonicalTestInterface(
             command: AxolotyCanonicalTestCommand(executable: "true"),
             timeoutSeconds: 1,
@@ -65,7 +64,8 @@ private func certificationManifest(
             automaticRetries: 0,
             diagnosticReruns: 0,
             quarantineRequires: []
-        )
+        ),
+        quarantine: []
     )
 }
 
@@ -162,6 +162,34 @@ func evidenceLoaderValidatesExactSubjectAndArtifactDigest() throws {
     #expect(result.gate == "wire-live")
     #expect(result.subject == subject)
     #expect(result.bundleDigest.count == 64)
+}
+
+@Test
+func evidenceLoaderAcceptsUppercaseArtifactDigest() throws {
+    let bundle = try makeEvidenceBundle()
+    defer { try? FileManager.default.removeItem(at: bundle) }
+    let evidenceURL = bundle.appendingPathComponent("evidence.json")
+    var document = try #require(
+        JSONSerialization.jsonObject(with: Data(contentsOf: evidenceURL)) as? [String: Any]
+    )
+    var artifacts = try #require(document["artifacts"] as? [[String: Any]])
+    artifacts[0]["sha256"] = try #require(artifacts[0]["sha256"] as? String).uppercased()
+    document["artifacts"] = artifacts
+    try JSONSerialization.data(withJSONObject: document).write(to: evidenceURL)
+
+    let subject = AxolotyReleaseSubject(
+        repository: evidenceRepository,
+        commit: evidenceCommit,
+        tree: evidenceTree,
+        version: evidenceVersion,
+        clean: true
+    )
+    let result = try AxolotyEvidenceBundleLoader().validate(
+        bundle: bundle,
+        expectedGate: "wire-live",
+        context: AxolotyEvidenceValidationContext(expectedSubject: subject, bundleRoot: bundle)
+    )
+    #expect(result.gate == "wire-live")
 }
 
 @Test
@@ -465,6 +493,40 @@ func checkpointCertificationHardwareInclusionComesFromExecutedResults() {
 }
 
 @Test
+func checkpointCertificationRecordsValidatedSwiftPMSBOMArtifact() {
+    let sbom = SwiftPMSBOMEvidence(
+        artifactPath: ".testing/release-evidence/swiftpm-sbom/cyclonedx.json",
+        digest: String(repeating: "a", count: 64),
+        failure: nil
+    )
+    let passed = AxolotyCheckpointCertification().certify(
+        manifest: certificationManifest(),
+        results: [AxolotyCheckResult(name: "checkpoint-node", status: .passed)],
+        metadata: certificationMetadata(),
+        evidence: ReleaseEvidenceInput(swiftPMSBOM: sbom)
+    )
+    let gate = passed.manifest.releaseGates.first { $0.id == "swiftpm-sbom" }
+
+    #expect(gate?.result == .executed)
+    #expect(gate?.evidence == sbom.artifactPath)
+    #expect(gate?.evidenceDigest == sbom.digest)
+    #expect(passed.exitCode == 0)
+
+    let failed = AxolotyCheckpointCertification().certify(
+        manifest: certificationManifest(),
+        results: [AxolotyCheckResult(name: "checkpoint-node", status: .passed)],
+        metadata: certificationMetadata(),
+        evidence: ReleaseEvidenceInput(swiftPMSBOM: SwiftPMSBOMEvidence(
+            artifactPath: ".testing/release-evidence/swiftpm-sbom",
+            digest: nil,
+            failure: "mismatch"
+        ))
+    )
+    #expect(failed.manifest.releaseGates.first { $0.id == "swiftpm-sbom" }?.result == .failed)
+    #expect(failed.exitCode == 1)
+}
+
+@Test
 func checkpointCertificationPreservesBinaryArtifactBytesAndExactSubject() throws {
     let binary = Data([0x00, 0xFF, 0x10, 0x80, 0x0A])
     let bundle = try makeEvidenceBundle(
@@ -500,6 +562,33 @@ func checkpointCertificationPreservesBinaryArtifactBytesAndExactSubject() throws
     #expect(gate.note == "exact-subject evidence bundle validated")
     #expect(gate.evidenceDigest == AxolotySHA256().hash(envelope))
     #expect(result.exitCode == 0)
+}
+
+@Test
+func checkpointCertificationRejectsMismatchedExpectedProducerID() throws {
+    let bundle = try makeEvidenceBundle()
+    defer { try? FileManager.default.removeItem(at: bundle) }
+    let envelope = try Data(contentsOf: bundle.appendingPathComponent("evidence.json"))
+    let result = AxolotyCheckpointCertification().certify(
+        manifest: certificationManifest(gate: "wire-live"),
+        results: [AxolotyCheckResult(name: "checkpoint-node", status: .passed)],
+        metadata: certificationMetadata(),
+        evidence: ReleaseEvidenceInput(bundles: [
+            "wire-live": ReleaseEvidenceBundle(
+                path: bundle.path,
+                envelope: envelope,
+                artifacts: ["artifacts/capture.jsonl": Data("capture".utf8)],
+                files: ["evidence.json", "artifacts/capture.jsonl"],
+                source: .evidenceDirectory
+            ),
+        ]),
+        expectedProducerID: "expected-producer"
+    )
+
+    let gate = try #require(result.manifest.releaseGates.first)
+    #expect(gate.result == .failed)
+    #expect(gate.note == "invalid evidence producer: expected expected-producer, got test-producer")
+    #expect(result.exitCode == 1)
 }
 
 @Test

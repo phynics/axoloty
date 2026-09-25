@@ -162,7 +162,7 @@ func serveMcpStdioDefaults() {
     #expect(config.brokerHost == "localhost")
     #expect(config.brokerPort == 1883)
     #expect(config.namespace == "-")
-    #expect(config.connectTimeout == "10s")
+    #expect(config.connectTimeout.rawValue == "10s")
 }
 
 @Test
@@ -196,7 +196,7 @@ func serveMcpAcceptsBoundedConnectTimeout() {
         Issue.record("expected success")
         return
     }
-    #expect(config.connectTimeout == "2m")
+    #expect(config.connectTimeout.rawValue == "2m")
 }
 
 @Test
@@ -474,14 +474,14 @@ func dispatcherServeUnknownSubcommandReturnsError() {
 func dispatcherVersionUsesExecutableName() {
     let dispatcher = AxolotyCommandDispatcher(executableName: "ax", environment: [:])
     let result = dispatcher.run(arguments: ["version"])
-    #expect(result.standardOutput == "ax 0.7.0")
+    #expect(result.standardOutput == "ax 0.8.2")
 }
 
 @Test
 func dispatcherDefaultVersionIsAxolotyTool() {
     let dispatcher = AxolotyCommandDispatcher(environment: [:])
     let result = dispatcher.run(arguments: ["version"])
-    #expect(result.standardOutput == "axoloty-tool 0.7.0")
+    #expect(result.standardOutput == "axoloty-tool 0.8.2")
 }
 
 @Test

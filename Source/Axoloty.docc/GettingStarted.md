@@ -9,7 +9,7 @@ Add the package dependency and link the ``Axoloty`` product:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/phynics/axoloty", from: "0.7.0"),
+    .package(url: "https://github.com/phynics/axoloty", from: "0.8.2"),
 ]
 
 .target(

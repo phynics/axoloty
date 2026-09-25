@@ -75,6 +75,13 @@ struct WireCodecTests {
 
         #expect(view.eventType == .associate)
         #expect(try #require(view.eventTypeFilter).equals("io-context-1"))
+
+        let typedTopic = "coaty/3/wire-compat-v1/ADV::coaty.Sensor/33333333-3333-4333-8333-333333333333"
+        let typedBytes = Array(typedTopic.utf8)
+        let typedView = typedBytes.withUnsafeBufferPointer { buffer in
+            TopicView(topicBytes: buffer.baseAddress!, length: buffer.count)
+        }
+        #expect(try #require(typedView.eventTypeFilter).equals("coaty.Sensor"))
     }
 
     @Test
@@ -318,7 +325,7 @@ struct WireCodecTests {
             WireReader(bytes: buf.baseAddress!, length: buf.count)
         }
 
-        let raw = reader.readRaw("result")
+        let raw = reader.readField("result")
         #expect(raw != nil)
         // The raw bytes should contain the object
         let rawStr = String(decoding: (0..<raw!.length).map { raw!.byte(at: $0)! }, as: UTF8.self)
@@ -333,8 +340,8 @@ struct WireCodecTests {
             WireReader(bytes: buf.baseAddress!, length: buf.count)
         }
 
-        #expect(reader.readRaw("privateData") != nil)
-        #expect(reader.readRaw("filter") != nil)
+        #expect(reader.readField("privateData") != nil)
+        #expect(reader.readField("filter") != nil)
     }
 
     @Test
@@ -356,7 +363,7 @@ struct WireCodecTests {
             WireReader(bytes: buf.baseAddress!, length: buf.count)
         }
 
-        let raw = reader.readRaw("metadata")
+        let raw = reader.readField("metadata")
         #expect(try #require(raw).equals("null"))
     }
 
@@ -404,7 +411,7 @@ struct WireCodecTests {
             WireReader(bytes: buf.baseAddress!, length: buf.count)
         }
 
-        #expect(reader.readRaw("a") == nil)
+        #expect(reader.readField("a") == nil)
         #expect(reader.readBool("a") == nil)
     }
 
@@ -502,6 +509,46 @@ struct WireCodecTests {
         #expect(slice.byte(at: 3) == nil)
         #expect(slice.subSlice(from: -1, length: 1).length == 0)
         #expect(slice.subSlice(from: 2, length: 2).length == 0)
+    }
+
+    @Test
+    func byteSliceOwnedBytesCopyOutlivesTheBorrowedBuffer() {
+        var source: [UInt8] = [0x7B, 0x22, 0x61, 0x22, 0x7D]
+        let owned = source.withUnsafeBufferPointer { buffer in
+            ByteSlice(bytes: buffer.baseAddress! + 1, length: 3).ownedBytes()
+        }
+        source[2] = 0x58
+        #expect(owned == [0x22, 0x61, 0x22])
+        #expect(ByteSlice.empty.ownedBytes().isEmpty)
+    }
+
+    @Test
+    func byteSliceTestReflectionShowsHexAndText() {
+        Array("ADV".utf8).withUnsafeBufferPointer { buffer in
+            let slice = ByteSlice(bytes: buffer.baseAddress!, length: buffer.count)
+            let fields = wireTestMirrorFields(slice)
+            #expect(fields["length"] as? Int == 3)
+            #expect(fields["hex"] as? String == "41 44 56")
+            #expect(fields["text"] as? String == "ADV")
+        }
+    }
+
+    @Test
+    func byteSliceTestReflectionTruncatesHex() {
+        let bytes = [UInt8](repeating: 0xAB, count: 100)
+        #expect(WireTestReflection.hex(bytes, limit: 4) == "ab ab ab ab ...")
+    }
+
+    @Test
+    func topicViewTestReflectionShowsLevelsAndText() {
+        Array("coaty/3/ns/ADV/33333333-3333-4333-8333-333333333333".utf8).withUnsafeBufferPointer { buffer in
+            let view = TopicView(topicBytes: buffer.baseAddress!, length: buffer.count)
+            let fields = wireTestMirrorFields(view)
+            #expect(fields["levelCount"] as? Int == 5)
+            #expect(fields["namespace"] as? String == "ns")
+            #expect(fields["sourceId"] as? String == "33333333-3333-4333-8333-333333333333")
+            #expect((fields["text"] as? String)?.hasPrefix("coaty/3/ns/ADV/") == true)
+        }
     }
 
     @Test

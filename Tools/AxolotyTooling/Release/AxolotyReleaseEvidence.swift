@@ -603,6 +603,91 @@ public struct AxolotyValidatedGateEvidence: Equatable, Sendable {
     }
 }
 
+struct AxolotyEvidenceBundleValidator {
+    static func validate(
+        envelopeData data: Data,
+        expectedGate: AxolotyReleaseGateID,
+        context: AxolotyEvidenceValidationContext,
+        artifacts: [String: Data],
+        files: [String]
+    ) throws -> AxolotyValidatedGateEvidence {
+        let envelope: AxolotyEvidenceEnvelope<AxolotyJSONValue>
+        do {
+            envelope = try JSONDecoder().decode(
+                AxolotyEvidenceEnvelope<AxolotyJSONValue>.self,
+                from: data
+            )
+        } catch {
+            throw AxolotyReleaseEvidenceError.malformedEnvelope(error.localizedDescription)
+        }
+        guard envelope.envelopeSchema == AxolotyEvidenceEnvelope<AxolotyJSONValue>.currentSchemaVersion else {
+            throw AxolotyReleaseEvidenceError.unsupportedSchema("envelope=\(envelope.envelopeSchema)")
+        }
+        guard envelope.gate == expectedGate else {
+            throw AxolotyReleaseEvidenceError.gateMismatch(
+                expected: expectedGate.rawValue,
+                actual: envelope.gate.rawValue
+            )
+        }
+        guard envelope.subject == context.expectedSubject else {
+            throw AxolotyReleaseEvidenceError.subjectMismatch("repository, commit, tree, version, or clean state differs")
+        }
+        guard envelope.subject.clean else {
+            throw AxolotyReleaseEvidenceError.invalidSubject("release evidence must come from a clean checkout")
+        }
+        guard envelope.result == .passed else {
+            throw AxolotyReleaseEvidenceError.failedEvidence
+        }
+        try envelope.producer.validate(expectedCommit: envelope.subject.commit)
+        guard envelope.gateSchema == 1 else {
+            throw AxolotyReleaseEvidenceError.unsupportedSchema(
+                "gate=\(envelope.gate.rawValue), schema=\(envelope.gateSchema)"
+            )
+        }
+        if let expectedProducerID = context.expectedProducerID,
+           envelope.producer.id != expectedProducerID {
+            throw AxolotyReleaseEvidenceError.invalidProducer(
+                "expected \(expectedProducerID), got \(envelope.producer.id)"
+            )
+        }
+        if envelope.producer.disposition == .imported, envelope.producer.provenance == nil {
+            throw AxolotyReleaseEvidenceError.missingProvenance
+        }
+        guard !envelope.artifacts.isEmpty else {
+            throw AxolotyReleaseEvidenceError.artifactMismatch("evidence bundle declares no artifacts")
+        }
+        var paths = Set<String>()
+        for artifact in envelope.artifacts {
+            guard (try? AxolotyEvidenceArtifact(
+                role: artifact.role,
+                relativePath: artifact.relativePath,
+                sha256: artifact.sha256,
+                byteCount: artifact.byteCount,
+                mediaType: artifact.mediaType
+            )) != nil else {
+                throw AxolotyReleaseEvidenceError.invalidArtifact(artifact.relativePath)
+            }
+            guard paths.insert(artifact.relativePath).inserted else {
+                throw AxolotyReleaseEvidenceError.artifactMismatch(artifact.relativePath)
+            }
+            guard let artifactData = artifacts[artifact.relativePath],
+                  artifactData.count == artifact.byteCount,
+                  AxolotySHA256().hash(artifactData) == artifact.sha256.lowercased() else {
+                throw AxolotyReleaseEvidenceError.artifactMismatch(artifact.relativePath)
+            }
+        }
+        for file in files where file != "evidence.json" && !paths.contains(file) {
+            throw AxolotyReleaseEvidenceError.artifactMismatch(file)
+        }
+        return AxolotyValidatedGateEvidence(
+            gate: envelope.gate,
+            subject: envelope.subject,
+            bundleDigest: AxolotySHA256().hash(data),
+            producer: envelope.producer
+        )
+    }
+}
+
 /// A SHA-256 implementation used for evidence integrity without a platform crypto dependency.
 public struct AxolotySHA256: Sendable {
     /// Creates a SHA-256 hasher.
@@ -704,89 +789,24 @@ public struct AxolotyEvidenceBundleLoader: Sendable {
         guard let data = try? Data(contentsOf: evidenceURL) else {
             throw AxolotyReleaseEvidenceError.unreadable(evidenceURL.path)
         }
-        let envelope: AxolotyEvidenceEnvelope<AxolotyJSONValue>
-        do {
-            envelope = try JSONDecoder().decode(
-                AxolotyEvidenceEnvelope<AxolotyJSONValue>.self,
-                from: data
+        let files = try FileManager.default.subpathsOfDirectory(atPath: root.path).filter { file in
+            let attributes = try? FileManager.default.attributesOfItem(
+                atPath: root.appendingPathComponent(file).path
             )
-        } catch {
-            throw AxolotyReleaseEvidenceError.malformedEnvelope(error.localizedDescription)
+            return (attributes?[.type] as? FileAttributeType) != .typeDirectory
         }
-        guard envelope.envelopeSchema == AxolotyEvidenceEnvelope<AxolotyJSONValue>.currentSchemaVersion else {
-            throw AxolotyReleaseEvidenceError.unsupportedSchema("envelope=\(envelope.envelopeSchema)")
-        }
-        guard envelope.gate == expectedGate else {
-            throw AxolotyReleaseEvidenceError.gateMismatch(
-                expected: expectedGate.rawValue,
-                actual: envelope.gate.rawValue
-            )
-        }
-        guard envelope.subject == context.expectedSubject else {
-            throw AxolotyReleaseEvidenceError.subjectMismatch("repository, commit, tree, version, or clean state differs")
-        }
-        guard envelope.subject.clean else {
-            throw AxolotyReleaseEvidenceError.invalidSubject("release evidence must come from a clean checkout")
-        }
-        guard envelope.result == .passed else {
-            throw AxolotyReleaseEvidenceError.failedEvidence
-        }
-        try envelope.producer.validate(expectedCommit: envelope.subject.commit)
-        guard envelope.gateSchema == 1 else {
-            throw AxolotyReleaseEvidenceError.unsupportedSchema("gate=\(envelope.gate.rawValue), schema=\(envelope.gateSchema)")
-        }
-        if let expectedProducerID = context.expectedProducerID,
-           envelope.producer.id != expectedProducerID {
-            throw AxolotyReleaseEvidenceError.invalidProducer(
-                "expected \(expectedProducerID), got \(envelope.producer.id)"
-            )
-        }
-        if envelope.producer.disposition == .imported, envelope.producer.provenance == nil {
-            throw AxolotyReleaseEvidenceError.missingProvenance
-        }
-        guard !envelope.artifacts.isEmpty else {
-            throw AxolotyReleaseEvidenceError.artifactMismatch("evidence bundle declares no artifacts")
-        }
-        var paths = Set<String>()
-        for artifact in envelope.artifacts {
-            guard (try? AxolotyEvidenceArtifact(
-                role: artifact.role,
-                relativePath: artifact.relativePath,
-                sha256: artifact.sha256,
-                byteCount: artifact.byteCount,
-                mediaType: artifact.mediaType
-            )) != nil else {
-                throw AxolotyReleaseEvidenceError.invalidArtifact(artifact.relativePath)
+        let artifacts = Dictionary(uniqueKeysWithValues: files.compactMap { file -> (String, Data)? in
+            guard let artifactData = try? Data(contentsOf: root.appendingPathComponent(file)) else {
+                return nil
             }
-            guard paths.insert(artifact.relativePath).inserted else {
-                throw AxolotyReleaseEvidenceError.artifactMismatch(artifact.relativePath)
-            }
-            let artifactURL = root.appendingPathComponent(artifact.relativePath).standardizedFileURL
-            guard artifactURL.path.hasPrefix(root.path + "/") else {
-                throw AxolotyReleaseEvidenceError.invalidArtifact(artifact.relativePath)
-            }
-            guard let artifactData = try? Data(contentsOf: artifactURL),
-                  artifactData.count == artifact.byteCount,
-                  AxolotySHA256().hash(artifactData) == artifact.sha256 else {
-                throw AxolotyReleaseEvidenceError.artifactMismatch(artifact.relativePath)
-            }
-        }
-        let declared = Set(envelope.artifacts.map(\.relativePath))
-        let files = try FileManager.default.subpathsOfDirectory(atPath: root.path)
-        for file in files where file != "evidence.json" {
-            let fileURL = root.appendingPathComponent(file)
-            let attributes = try? FileManager.default.attributesOfItem(atPath: fileURL.path)
-            let isDirectory = (attributes?[.type] as? FileAttributeType) == .typeDirectory
-            if !isDirectory && !declared.contains(file) {
-                throw AxolotyReleaseEvidenceError.artifactMismatch(file)
-            }
-        }
-        let digest = AxolotySHA256().hash(data)
-        return AxolotyValidatedGateEvidence(
-            gate: envelope.gate,
-            subject: envelope.subject,
-            bundleDigest: digest,
-            producer: envelope.producer
+            return (file, artifactData)
+        })
+        return try AxolotyEvidenceBundleValidator.validate(
+            envelopeData: data,
+            expectedGate: expectedGate,
+            context: context,
+            artifacts: artifacts,
+            files: files
         )
     }
 }
@@ -835,7 +855,7 @@ public struct AxolotyGateEvidenceValidatorCatalog: Sendable {
     }
 
     /// Returns the registered validator, if the gate accepts envelope evidence.
-    public func validator(for gate: AxolotyReleaseGateID) -> (any GateEvidenceValidator)? {
+    public func validator(for gate: AxolotyReleaseGateID) -> any GateEvidenceValidator? {
         validators[gate]
     }
 }

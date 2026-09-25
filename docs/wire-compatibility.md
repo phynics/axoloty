@@ -9,13 +9,13 @@ Reference versions must be pinned before captured fixtures become normative:
 
 | Capability | JS → modern | Modern → JS | Legacy → modern | Modern → legacy | Gate |
 |---|---|---|---|---|---|
-| Advertise | Compatible | Compatible with normalization | Compatible | Not tested (macOS runner consumer mode added, requires macOS host) | PR |
-| Deadvertise | Compatible | Compatible with normalization | Compatible | Not tested (macOS runner consumer mode added, requires macOS host) | PR |
-| Discover / Resolve | Compatible | Compatible with normalization | Compatible | Not tested (macOS runner responder mode added, requires macOS host) | PR |
-| Query / Retrieve | Compatible | Compatible with normalization (filters exercised) | Not tested | Not tested (macOS runner responder mode added, requires macOS host) | PR |
-| Update / Complete | Compatible | Compatible with normalization | Not tested | Not tested (macOS runner consumer mode pending) | PR |
-| Call / Return | Compatible | Compatible with normalization | Not tested | Not tested (macOS runner responder mode added, requires macOS host) | PR |
-| Channel | Compatible | Compatible with normalization | Not tested | Not tested (macOS runner consumer mode added, requires macOS host) | PR |
+| Advertise | Compatible | Compatible with normalization | Compatible | Not tested (the macOS runner is producer-only) | PR |
+| Deadvertise | Compatible | Compatible with normalization | Compatible | Not tested (the macOS runner is producer-only) | PR |
+| Discover / Resolve | Compatible | Compatible with normalization | Compatible | Not tested (the macOS runner is producer-only) | PR |
+| Query / Retrieve | Compatible | Compatible with normalization (filters exercised) | Not tested | Not tested (the macOS runner is producer-only) | PR |
+| Update / Complete | Compatible | Compatible with normalization | Not tested | Not tested (the macOS runner is producer-only) | PR |
+| Call / Return | Compatible | Compatible with normalization | Not tested | Not tested (the macOS runner is producer-only) | PR |
+| Channel | Compatible | Compatible with normalization | Not tested | Not tested (the macOS runner is producer-only) | PR |
 | Identity lifecycle / last will | Not tested | Not tested | Not tested | Not tested | Nightly |
 | Associate / IoState / IoValue | Partial | Partial | Not tested | Not tested | Nightly |
 | Decentralized logging | Not tested | Not tested | Not tested | Not tested | Nightly |
@@ -39,8 +39,8 @@ covered by the host Advertise regression and is not used by static registration.
 The shared static-runtime migration corrected the embedded Advertise topic
 builder so the object-type filter is emitted as `ADV:coaty.test.Device`
 (not the legacy `ADV::coaty.test.Device` form). The exact ESP32-C6 smoke
-vector in `Embedded/swift/main/StaticDeviceAgent.swift` locks this output;
-the correction is intentional and keeps the topic aligned with the pinned
+vector, now owned by `phynics/axoloty-embedded`, locks this output; the
+correction is intentional and keeps the topic aligned with the pinned
 Coaty Core 3 grammar.
 
 ### Host lifecycle publications through the shared processor
@@ -112,10 +112,9 @@ wire-compatible with Axoloty for those messages.
 
 This decision is locked by the exact-limit and one-over-limit fixtures in
 [WireBoundsTests.swift](../Packages/AxolotyWire/Tests/AxolotyWireTests/WireBoundsTests.swift),
-the shared protocol action-sink tests, and the physical ESP32 vectors in
-[Main.swift](../Embedded/swift/main/Main.swift). Static runtimes may choose a
-smaller compile-time capacity, which narrows compatibility further for that
-firmware.
+the shared protocol action-sink tests, and the physical ESP32 vectors now
+owned by `phynics/axoloty-embedded`. Static runtimes may choose a smaller
+compile-time capacity, which narrows compatibility further for that firmware.
 
 As of issue #397, both shipping host directions use AxolotyWire event codecs:
 ingress owns `BorrowedWireEvent` before async delivery, and publication uses
@@ -151,7 +150,9 @@ Discover, and Resolve topics and payloads against the
 `coaty/<version>/<namespace>/<eventType>:<filter>/<sourceId>[/<correlationId>]`
 contract. Physical evidence was captured under #326 and is recorded under
 `.testing/embedded/`; it does not change the JS/modern columns above, which
-require separate pinned CoatyJS directions.
+require separate pinned CoatyJS directions. The firmware, its device commands,
+and its evidence now live in `phynics/axoloty-embedded`; the commands below are
+retained as the historical capture record.
 
 **Captured physical evidence (#326):**
 
@@ -203,9 +204,10 @@ reviewed physical evidence under `.testing/embedded/`.
 (T-021). Generic Associate and IoValue wire families remain owned by
 `AxolotyProtocol` and `AxolotyWire`; the current live subjects use
 `AxolotyRuntime` and bounded peer acknowledgements. The matrix stays `Partial`
-until the forced live gate is rerun in CI. The G4 runtime does not ship
-controller-based or rule-based IO routing, and `IoState` is an internal API,
-not a wire publication. Legacy CoatySwift IO directions remain descoped by
+until the forced live gate is rerun with current evidence. The optional
+`AxolotyIoRouting` product now provides the bounded host-side Basic IO routing
+policy; `IoState` remains an internal API, not a wire publication. Legacy
+CoatySwift IO directions remain descoped by
 `Audit/LegacySwiftIOScopeDecision.md` (no macOS/Xcode host). JS integer
 IoValues exceeding 2^53 lose precision through CoatyJS's float64
 (`Int64.max` round-trips as `9223372036854776000`); Axoloty preserves Int64

@@ -75,7 +75,7 @@ private enum TypedDynamicHandler {
 struct StaticTypedIoTests {
     @Test("source registration uses the ordinary Advertise path")
     func sourceRegistration() throws {
-        var runtime = StaticRuntimeESP32C6(
+        var runtime = try StaticRuntimeESP32C6(
             registryID: typedIoID("00000000-0000-4000-8000-000000000010")
         )
         let source = try runtime.registerIoSource(
@@ -97,7 +97,7 @@ struct StaticTypedIoTests {
 
     @Test("actor registration retains a macro entry and context")
     func actorRegistration() throws {
-        var runtime = StaticRuntimeESP32C6(
+        var runtime = try StaticRuntimeESP32C6(
             registryID: typedIoID("00000000-0000-4000-8000-000000000020")
         )
         let actor = try runtime.registerIoActor(
@@ -115,7 +115,7 @@ struct StaticTypedIoTests {
 
     @Test("foreign handles fail before publication state changes")
     func foreignHandle() throws {
-        var first = StaticRuntimeESP32C6(
+        var first = try StaticRuntimeESP32C6(
             registryID: typedIoID("00000000-0000-4000-8000-000000000030")
         )
         let source = try first.registerIoSource(
@@ -124,7 +124,7 @@ struct StaticTypedIoTests {
         )
         _ = first.drain { _ in }
 
-        var second = StaticRuntimeESP32C6(
+        var second = try StaticRuntimeESP32C6(
             registryID: typedIoID("00000000-0000-4000-8000-000000000032")
         )
         #expect(second.publishIoValue(true, from: source, nowMS: 1) == .rejected(.invalidEndpoint))
@@ -133,7 +133,7 @@ struct StaticTypedIoTests {
 
     @Test("tiny capacity commits one endpoint and rejects the next atomically")
     func tinyRegistrationIsAtomic() throws {
-        var runtime = StaticRuntimeTiny(
+        var runtime = try StaticRuntimeTiny(
             registryID: typedIoID("00000000-0000-4000-8000-000000000040")
         )
         let source = try runtime.registerIoSource(
@@ -162,7 +162,7 @@ struct StaticTypedIoTests {
     func typedDelivery() throws {
         let sourceID = typedIoID("00000000-0000-4000-8000-000000000051")
         let actorID = typedIoID("00000000-0000-4000-8000-000000000052")
-        var runtime = StaticRuntimeESP32C6(
+        var runtime = try StaticRuntimeESP32C6(
             registryID: typedIoID("00000000-0000-4000-8000-000000000050")
         )
         let source = try runtime.registerIoSource(
@@ -216,7 +216,7 @@ struct StaticTypedIoTests {
 
     @Test("latest publication retains one replacement until flush")
     func latestPublicationAndFlush() throws {
-        var runtime = StaticRuntimeESP32C6(
+        var runtime = try StaticRuntimeESP32C6(
             registryID: typedIoID("00000000-0000-4000-8000-000000000060")
         )
         let source = try runtime.registerIoSource(
@@ -255,7 +255,7 @@ struct StaticTypedIoTests {
 
     @Test("dynamic registration fixes representation before publication")
     func dynamicRepresentationMismatch() throws {
-        var runtime = StaticRuntimeESP32C6(
+        var runtime = try StaticRuntimeESP32C6(
             registryID: typedIoID("00000000-0000-4000-8000-000000000070")
         )
         let source = try runtime.registerDynamicIoSource(
@@ -289,7 +289,7 @@ struct StaticTypedIoTests {
 
     @Test("reset clears transport state and explicit replay restores advertisements")
     func resetAndReplayAdvertisement() throws {
-        var runtime = StaticRuntimeESP32C6(
+        var runtime = try StaticRuntimeESP32C6(
             registryID: typedIoID("00000000-0000-4000-8000-000000000080")
         )
         let source = try runtime.registerIoSource(

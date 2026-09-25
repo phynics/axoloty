@@ -14,15 +14,26 @@ dependency's GitHub releases page on 2026-07-15.
 | swift-nio-ssl | `from: 2.37.1` | 2.37.1 | 2.37.1 | Apache-2.0 | TLS on Linux (non-Apple platforms); Apple platforms use Network.framework via NIOTransportServices | current |
 | swift-log | `from: 1.14.0` | 1.14.0 | 1.14.0 | Apache-2.0 | Structured diagnostics logging for the Axoloty MCP server | current; MCP-only |
 | ErrorKit | `exact: 1.2.1` | 1.2.1 | 1.2.1 | MIT | `Throwable` error policy and user-facing error formatting (`AxolotyError`) | current; pinned exact |
+| swift-json (phynics fork) | `exact: 2.5.3` | n/a (fork) | 2.5.3 | MIT | `_JSONCore` structural parser behind `AxolotyWire` (product `IkigaJSONCore`) | pinned exact; see notes |
+| swift-syntax | `exact: 604.0.0` | 604.0.0 | 604.0.0 | Apache-2.0 | Swift macro implementation and macro-test support | pinned to Swift 6.4 |
 | swift-docc-plugin | `from: 1.5.0` | 1.5.0 | 1.5.0 | Apache-2.0 | Provides `swift package generate-documentation` used by `make docs` | current; build-tool only |
 
-The audited direct dependencies are resolved at their latest published release,
-so no version bump is required for freshness. Every dependency is licensed under
-Apache-2.0 or MIT, both permissive and compatible with the project's MIT
-license. Transitive dependencies recorded in `Package.resolved`
+The audited direct dependencies are current. SwiftSyntax is pinned to the
+release that matches the Swift 6.4 compiler. Its 6.4 macro-test support records
+failures through Swift Testing instead of routing them through XCTest. Every
+dependency is licensed under Apache-2.0 or MIT, both compatible with the
+project's MIT license. Transitive dependencies recorded in `Package.resolved`
 (swift-crypto, swift-asn1, swift-collections, swift-atomics,
 swift-nio-transport-services, swift-system, swift-docc-symbolkit) are brought
 in by the SwiftNIO family and swift-docc-plugin and inherit Apache-2.0.
+
+`make checkpoint` also generates a SwiftPM CycloneDX SBOM for the root package
+and verifies that every external dependency package in the SBOM has a matching
+identity, version, and revision in `Package.resolved`. The checkpoint writes
+the SBOM under `.testing/release-evidence/swiftpm-sbom/` and records its path
+and digest in the checkpoint manifest. This machine-readable release inventory
+complements this human-reviewed audit; it does not replace the purpose and
+dependency notes below.
 
 ## Per-dependency notes
 
@@ -31,7 +42,7 @@ in by the SwiftNIO family and swift-docc-plugin and inherit Apache-2.0.
 Imported only by `Packages/AxolotyMQTT/Sources/AxolotyMQTT/RuntimeMQTTClient.swift`, which the
 `MQTTBinding` owns for the host runtime. It is the sole MQTT transport and
 defines the wire path exercised by the compatibility suite. It must remain
-compatible with the Swift 6.3 container toolchain and the WASI feasibility
+compatible with the Swift 6.4 container toolchain and the WASI feasibility
 target (T-030). The `2.13.0` release adds Android support and is the current
 latest; no action needed. Keep as a `from:` range.
 
@@ -70,12 +81,47 @@ recommended by T-025. Current at latest (1.2.1 adds `Logger` convenience
 overloads). No action needed. Relaxing the `exact:` pin to a `from:` range is
 possible once the policy surface is stable, but is out of scope here.
 
+### swift-json (`2.5.3` exact, phynics fork, MIT)
+
+`AxolotyWire` depends on the `IkigaJSONCore` product, which exposes the
+Foundation-free `_JSONCore` target, and is the only target that does. Upstream
+swift-json declared no such product for Swift 6.2+
+([orlandos-nl/swift-json#63](https://github.com/orlandos-nl/swift-json/issues/63));
+the minimal manifest fix was submitted as
+[orlandos-nl/swift-json#68](https://github.com/orlandos-nl/swift-json/pull/68).
+Until that ships in an upstream release, Axoloty pins the
+`phynics/swift-json` fork that exposes the product; the fork is meant to carry
+only that manifest correction. Vendoring parser sources was considered and rejected
+(#394).
+
+swift-json declares swift-nio as an unconditional package dependency, so
+SwiftPM resolves swift-nio and its transitives even for a portable consumer.
+That cost is accepted because it is resolution-only: no NIO target is built or
+linked into `AxolotyWire` (module policy forbids the import), and
+`_JSONCore` compiles without Foundation or NIO.
+
+Before updating the pin, review upstream source and license changes, then
+confirm that `make check-embedded-core-consumer` still compiles and links
+`_JSONCore` for Embedded Swift. Reject the update if NIO begins building or
+linking into `AxolotyWire`, or if `_JSONCore` stops compiling on host or
+Embedded Swift. The one-off probes behind this decision (#394, #395) were
+removed once the required Embedded Swift gate took over the check; they
+remain in git history.
+
 ### swift-docc-plugin (`1.5.0`, Apache-2.0)
 
 A build-time-only command plugin providing `swift package
 generate-documentation`, invoked by `make docs`. It is not linked into the
 shipping target. Current at latest (`1.5.0` extends snippet extraction). No
 action needed.
+
+### swift-syntax (`604.0.0`, Apache-2.0)
+
+The macro implementation and test targets use SwiftSyntax. Keep its exact pin
+aligned with the compiler toolchain. SwiftSyntax 604 adds Swift Testing failure
+reporting to `SwiftSyntaxMacrosTestSupport`, which the schema macro tests use.
+SwiftSyntax 603 routed those failures through XCTest and caused every macro
+expansion assertion to fail under the Swift 6.4 test runner.
 
 ## Vendored code
 
@@ -87,9 +133,9 @@ does not reappear in `Source/`.
 
 ## Actionable recommendations
 
-1. **No version bumps required.** The audited dependencies are resolved at
-   their latest releases. Future updates flow automatically through the
-   `from:` ranges; only ErrorKit's `exact:` pin requires an intentional bump.
+1. **Keep the SwiftSyntax pin aligned with the compiler.** The `from:` ranges
+   resolve to current releases. ErrorKit and SwiftSyntax use exact pins and
+   require intentional updates.
 
 ## Roadmap alignment
 

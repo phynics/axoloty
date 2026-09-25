@@ -27,6 +27,7 @@ actor ProtocolExecutor {
     /// publication order after a successful reconnect.
     private var offlineOperations: [RuntimeOperation] = []
     var state: RuntimeLifecycleState = .stopped
+    private var terminationWaiter: CheckedContinuation<RuntimeLifecycleState, Never>?
     private var hasStarted = false
     var lifecycleAdvertisementActive = false
     var activeHandlers = 0
@@ -127,15 +128,19 @@ actor ProtocolExecutor {
         queuedTransportEffects = 0
         installOutboundPump()
         do {
-            await transport.setFailureHandler { [weak self] error in
-                Task { await self?.transportFailed(runtimeErrorDetail(error)) }
+            let lastWill = try makeTransportLastWill()
+            await transport.setFailureHandler { [weak self] failure in
+                Task { await self?.transportFailed(failure.detail) }
             }
-            try await transport.start { [weak self, continuation = ingressPipe.continuation, overflowGate = ingressOverflowGate] frame in
-                let result = continuation.yield(frame)
-                if case .dropped = result, overflowGate.claim() {
-                    Task { await self?.ingressOverflow() }
-                }
-            }
+            try await transport.start(
+                receive: { [weak self, continuation = ingressPipe.continuation, overflowGate = ingressOverflowGate] frame in
+                    let result = continuation.yield(frame)
+                    if case .dropped = result, overflowGate.claim() {
+                        Task { await self?.ingressOverflow() }
+                    }
+                },
+                lastWill: lastWill
+            )
             guard state == .starting, transportEpoch == epoch else {
                 await transport.stop()
                 return (.notStarted, "runtime start was superseded by another lifecycle transition")
@@ -173,37 +178,40 @@ actor ProtocolExecutor {
 
     func stop() async {
         guard state == .running || state == .starting || state == .reconnecting || state == .failed else { return }
-        await stopRuntimeModules()
-        state = .stopping
-        offlineOperations.removeAll(keepingCapacity: true)
-        pendingOutboundEffects.removeAll(keepingCapacity: true)
-        transportEpoch &+= 1
-        let stoppingEpoch = transportEpoch
-        await cancelAndDrainHandlers()
-        typedIoState.clearTransportState()
-        finishIoObservers()
-        cancelIngressPump()
-        let hasLifecycleEffects = lifecycleAdvertisementActive || typedIoState.hasEndpoints
-        do {
-            try enqueueIoDeadvertisements(nowMS: monotonicNowMS())
-            try enqueueLifecycleDeadvertisement(nowMS: monotonicNowMS())
-        } catch {
-            emit(.init(kind: .transportFailed, detail: runtimeErrorDetail(error)))
+        await withTaskCancellationShield {
+            await stopRuntimeModules()
+            state = .stopping
+            offlineOperations.removeAll(keepingCapacity: true)
+            pendingOutboundEffects.removeAll(keepingCapacity: true)
+            transportEpoch &+= 1
+            let stoppingEpoch = transportEpoch
+            await cancelAndDrainHandlers()
+            typedIoState.clearTransportState()
+            finishIoObservers()
+            cancelIngressPump()
+            let hasLifecycleEffects = lifecycleAdvertisementActive || typedIoState.hasEndpoints
+            do {
+                try enqueueIoDeadvertisements(nowMS: monotonicNowMS())
+                try enqueueLifecycleDeadvertisement(nowMS: monotonicNowMS())
+            } catch {
+                emit(.init(kind: .transportFailed, detail: runtimeErrorDetail(error)))
+            }
+            if hasLifecycleEffects {
+                await drainOutboundPump()
+            }
+            do {
+                try await transport.removeSubscriptions(namespace: definition.namespace)
+            } catch {
+                emit(.init(kind: .transportFailed, detail: runtimeErrorDetail(error)))
+            }
+            await transport.stop()
+            if !hasLifecycleEffects {
+                await drainOutboundPump()
+            }
+            guard state == .stopping, transportEpoch == stoppingEpoch else { return }
+            state = .stopped
+            signalTermination()
         }
-        if hasLifecycleEffects {
-            await drainOutboundPump()
-        }
-        do {
-            try await transport.removeSubscriptions(namespace: definition.namespace)
-        } catch {
-            emit(.init(kind: .transportFailed, detail: runtimeErrorDetail(error)))
-        }
-        await transport.stop()
-        if !hasLifecycleEffects {
-            await drainOutboundPump()
-        }
-        guard state == .stopping, transportEpoch == stoppingEpoch else { return }
-        state = .stopped
     }
 
     func close() async {
@@ -212,6 +220,7 @@ actor ProtocolExecutor {
             await stop()
         }
         state = .closed
+        signalTermination()
         finishIoObservers()
         for registration in eventRegistrations {
             registration.continuation.finish()
@@ -242,6 +251,7 @@ actor ProtocolExecutor {
             }
         }
         do {
+            let lastWill = try makeTransportLastWill()
             await stopOutboundPump()
             // A broker-side close can race this explicit reconnect.  The
             // binding may therefore already have lost its subscription
@@ -250,15 +260,18 @@ actor ProtocolExecutor {
             try? await transport.removeSubscriptions(namespace: definition.namespace)
             await transport.stop()
             installOutboundPump()
-            await transport.setFailureHandler { [weak self] error in
-                Task { await self?.transportFailed(runtimeErrorDetail(error)) }
+            await transport.setFailureHandler { [weak self] failure in
+                Task { await self?.transportFailed(failure.detail) }
             }
-            try await transport.start { [weak self, continuation = ingressPipe.continuation, overflowGate = ingressOverflowGate] frame in
-                let result = continuation.yield(frame)
-                if case .dropped = result, overflowGate.claim() {
-                    Task { await self?.ingressOverflow() }
-                }
-            }
+            try await transport.start(
+                receive: { [weak self, continuation = ingressPipe.continuation, overflowGate = ingressOverflowGate] frame in
+                    let result = continuation.yield(frame)
+                    if case .dropped = result, overflowGate.claim() {
+                        Task { await self?.ingressOverflow() }
+                    }
+                },
+                lastWill: lastWill
+            )
             guard state == .reconnecting, transportEpoch == epoch else { return }
             try await transport.installSubscriptions(namespace: definition.namespace)
             guard state == .reconnecting, transportEpoch == epoch else { return }
@@ -299,6 +312,48 @@ actor ProtocolExecutor {
 
     func lifecycleState() -> RuntimeLifecycleState { state }
 
+    /// Waits for the executor to reach a terminal lifecycle state.
+    ///
+    /// The waiter is owned by this actor so ``stop()`` and failure teardown
+    /// wake ``run()`` without a polling task or a second lifecycle owner.
+    func waitForTermination() async -> RuntimeLifecycleState {
+        if let terminalState = terminationState() {
+            return terminalState
+        }
+        return await withTaskCancellationHandler(operation: {
+            await withCheckedContinuation { continuation in
+                if let terminalState = self.terminationState() {
+                    continuation.resume(returning: terminalState)
+                } else {
+                    self.terminationWaiter = continuation
+                }
+            }
+        }, onCancel: {
+            Task { [weak self] in
+                await self?.cancelTerminationWaiter()
+            }
+        })
+    }
+
+    private func terminationState() -> RuntimeLifecycleState? {
+        switch state {
+        case .failed, .stopped, .closed: return state
+        case .starting, .running, .reconnecting, .stopping: return nil
+        }
+    }
+
+    private func signalTermination() {
+        guard let waiter = terminationWaiter, let terminalState = terminationState() else { return }
+        terminationWaiter = nil
+        waiter.resume(returning: terminalState)
+    }
+
+    private func cancelTerminationWaiter() {
+        guard let waiter = terminationWaiter else { return }
+        terminationWaiter = nil
+        waiter.resume(returning: state)
+    }
+
     func runtimeState() -> RuntimeState {
         switch state {
         case .stopped: return hasStarted ? .stopped : .initialized
@@ -306,7 +361,8 @@ actor ProtocolExecutor {
         case .running: return .running
         case .reconnecting: return .reconnecting
         case .stopping: return .stopping
-        case .failed, .closed: return .failed
+        case .failed: return .failed
+        case .closed: return .closed
         }
     }
 
@@ -710,9 +766,7 @@ actor ProtocolExecutor {
     private func channelIdentifier(for delivery: BorrowedProtocolDelivery) -> String? {
         guard delivery.routingKey.capability == .channel,
               case let .channel(identifier) = delivery.deliveryKey else { return nil }
-        return identifier.withBytes { pointer, length in
-            String(decoding: UnsafeBufferPointer(start: pointer.assumingMemoryBound(to: UInt8.self), count: length), as: UTF8.self)
-        }
+        return identifier.asString()
     }
     private func eventFamily(for capability: ProtocolCapability) -> RuntimeEventFamily {
         switch capability {
@@ -907,6 +961,7 @@ actor ProtocolExecutor {
         emit(.init(kind: diagnostic, detail: detail))
         guard state != .stopping, state != .stopped, state != .closed else { return }
         state = .failed
+        signalTermination()
         transportEpoch &+= 1
         cancelIngressPump()
         outboundContinuation?.finish()

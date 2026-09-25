@@ -39,7 +39,7 @@ private struct ParserTrace: Encodable {
 
 private struct Evidence: Encodable {
     let schemaVersion = 1
-    let toolchain = "Swift 6.3"
+    let toolchain = "Swift 6.4"
     let capacities: [Int]
     let experiments: [Experiment]
     let parser: ParserTrace

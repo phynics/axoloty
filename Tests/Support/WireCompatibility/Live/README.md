@@ -7,6 +7,23 @@ CoatyJS at both endpoints as reference-wire coverage. Generated captures are
 written to the ignored `.testing/wire/` directory and retained when verification
 fails.
 
+## Host MQTT binding network suite
+
+Run the focused host-adapter suite from the repository root:
+
+```sh
+Tests/Support/WireCompatibility/Live/run-mqtt-binding-network.sh
+```
+
+The runner starts a run-scoped Mosquitto broker and an independent CoatyJS
+capture probe. It runs `MQTTBindingNetworkTests` against the fresh broker,
+then restarts Mosquitto and verifies a new binding session installs profile
+subscriptions and receives a CoatyJS Advertise. Application JSONL, peer and
+broker logs, and the fresh MQTT capture remain under `WIRE_OUTPUT_DIR` (default
+`.testing/wire/mqtt-binding`). Offline MQTTBinding fixtures and the retained
+fresh-broker capture are separate evidence; this runner does not update the
+canonical test manifest.
+
 ## CoatyJS → wire capture: Advertise
 
 Run from the repository root:

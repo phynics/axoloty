@@ -304,18 +304,18 @@ public enum ObjectCoreType: Sendable, Equatable {
     case unknown(ObjectType)
 
     init?(bytes: ByteSlice) {
-        if bytes.equals("CoatyObject") { self = .coatyObject }
-        else if bytes.equals("User") { self = .user }
-        else if bytes.equals("Annotation") { self = .annotation }
-        else if bytes.equals("Task") { self = .task }
-        else if bytes.equals("IoSource") { self = .ioSource }
-        else if bytes.equals("IoActor") { self = .ioActor }
-        else if bytes.equals("IoNode") { self = .ioNode }
-        else if bytes.equals("IoContext") { self = .ioContext }
-        else if bytes.equals("Identity") { self = .identity }
-        else if bytes.equals("Log") { self = .log }
-        else if bytes.equals("Location") { self = .location }
-        else if bytes.equals("Snapshot") { self = .snapshot }
+        if bytes.semanticEquals("CoatyObject") { self = .coatyObject }
+        else if bytes.semanticEquals("User") { self = .user }
+        else if bytes.semanticEquals("Annotation") { self = .annotation }
+        else if bytes.semanticEquals("Task") { self = .task }
+        else if bytes.semanticEquals("IoSource") { self = .ioSource }
+        else if bytes.semanticEquals("IoActor") { self = .ioActor }
+        else if bytes.semanticEquals("IoNode") { self = .ioNode }
+        else if bytes.semanticEquals("IoContext") { self = .ioContext }
+        else if bytes.semanticEquals("Identity") { self = .identity }
+        else if bytes.semanticEquals("Log") { self = .log }
+        else if bytes.semanticEquals("Location") { self = .location }
+        else if bytes.semanticEquals("Snapshot") { self = .snapshot }
         else if let raw = ObjectType(bytes: bytes) { self = .unknown(raw) }
         else { return nil }
     }

@@ -149,8 +149,174 @@ graph. A maintainer adding it to CI should add
 `check-no-foundation-types.sh`) in whatever manifest drives the check-plan
 (e.g. `test-tiers.json` / the CI workflow that invokes `Tests/Support/*.sh`).
 
+## Swift 6.4 `~Escapable` + `RawSpan` spike (#872)
+
+Question: should the borrowed wire views (`ByteSlice`, `TopicView`,
+`WireValueReader`) store a `RawSpan` and become `~Escapable`, so the rule
+above ("borrowed values stay inside synchronous calls") is enforced by the
+compiler instead of by convention and review?
+
+A prototype was compiled with the pinned `swift:6.4-jammy` toolchain for both
+the host and `riscv32-none-none-eabi` Embedded. The viable shape is:
+
+```swift
+public struct SpanSlice: ~Escapable {
+    @usableFromInline let raw: RawSpan
+
+    @_lifetime(borrow raw)
+    @usableFromInline init(borrowing raw: RawSpan) { self.raw = raw }
+
+    public var length: Int { raw.byteCount }
+
+    public func byte(at index: Int) -> UInt8? {
+        guard index >= 0, index < raw.byteCount else { return nil }
+        return raw[index]
+    }
+
+    @_lifetime(copy self)
+    public consuming func subSlice(from start: Int, length len: Int) -> SpanSlice {
+        let lower = Swift.max(0, start)
+        let end = Swift.min(start + len, raw.byteCount)
+        return SpanSlice(borrowing: raw.extracting(lower..<end))
+    }
+}
+```
+
+Findings:
+
+- The shape works. With `-enable-experimental-feature Lifetimes`, the struct,
+  the `@_lifetime` annotations, safe construction from `Array.span.bytes`, a
+  localized `@unsafe RawSpan(_unsafeBytes:)` pointer bridge, a static `empty`
+  sentinel, noncopyable `Equatable`/`Hashable`, and passing into an `async`
+  function all compile. They also compile for Embedded riscv32.
+- The feature is still experimental in 6.4. Without the flag the host build
+  fails with `'@_lifetime' attribute is only valid when experimental feature
+  Lifetimes is enabled`. Only
+  `Tests/Support/checks/check-embedded-swift-core.sh` passes the flag today;
+  no host target enables it. Adopting `~Escapable` publicly would mean
+  enabling an experimental compiler feature on every host target.
+- `~Escapable` values cannot be stored in `Array` or `Set`. The compiler
+  reports `generic struct 'Array' requires that 'SpanSlice' conform to
+  'Escapable'` and `type 'SpanSlice' does not conform to protocol
+  'Escapable'`. No first-party code stores `ByteSlice` in a container today,
+  so this does not block now, but it removes that option.
+- The change is API-breaking. `ByteSlice` reaches 53 production files and 268
+  public-signature sites and conforms to `Equatable, Hashable`. Every
+  returning or accepting signature needs a `@_lifetime` annotation and every
+  caller must respect the borrow.
+
+**Decision: defer.** Keep `~Escapable` as the target end state for the
+borrowed-view types, but do not convert in #872. It is the correct
+compiler-enforced form of the invariant, but it depends on the `Lifetimes`
+feature stabilizing and on an API-breaking sweep that overlaps #871
+(`~Sendable` and borrowed-value isolation) and #873 (ownership features). Do
+not enable an experimental feature host-wide as part of the Span migration.
+
+**Consequence for #872.** Adopt the safe Span APIs inside the current
+escapable views instead: derive a local `RawSpan` through a narrowly-scoped
+`unsafe RawSpan(_unsafeBytes:)` bridge, use checked `RawSpan` subscripts or
+`RawSpan.load(fromByteOffset:as:)` for byte reads, and use
+`withTemporaryAllocation` for temporary padding buffers. Keep `RawSpan` local:
+it cannot be returned from an ordinary computed property or stored in the
+current escapable cursor without lifetime annotations. This path needs no
+experimental feature flag and no public API break.
+
+### #872 migration status
+
+The production wire reader now uses checked `RawSpan` byte access in
+`ByteSlice`, `TopicView`, `WireValueView`, and `WireKeyCursor`. The default
+tokenizer scratch buffers in `WireReader` and `WireValueReader` now use
+`withTemporaryAllocation` and `OutputSpan`; conversion to
+`UnsafeBufferPointer` is kept inside the scoped `Span.withUnsafeBufferPointer`
+interop call because `_JSONCore.JSONTokenizer` still accepts that pointer
+type. The pointer-to-`RawSpan` bridges are localized at these borrowed-view
+boundaries. No public wire signatures changed.
+
+Pointer-based uses remaining in `Packages/AxolotyWire/Sources/AxolotyWire/`
+are retained for these reasons:
+
+| Use | Reason it remains |
+|---|---|
+| `ByteSlice`, `TopicView`, `BorrowedMessage`, `WireReader`, `WireWriter`, `WireValueView`, and `WireValueReader` pointer initializers and stored pointers | These are existing public or internal borrowing boundaries. `RawSpan` cannot be stored by ordinary escapable views without an API/lifetime change. `WireKeyCursor` creates a local `RawSpan` for each bounded load because storing a `RawSpan` would require lifetime annotations. |
+| `ByteSlice.withBytes`, `ownedBytes`, and host `asString` | The callback and standard-library array/string APIs require pointer interop. The pointer stays scoped to the callback or is consumed by an owning copy. |
+| `WireReader` tokenizer `UnsafeBufferPointer` parameters and `WireParserWorkspace.withStorage` | `_JSONCore.JSONTokenizer` and its destination protocol use pointer-based buffer parameters. A future `_JSONCore` Span interface would remove this boundary. |
+| `WireParserWorkspace` inline storage and `UUID16` tuple mutation | These expose or mutate storage owned by an `InlineArray` or tuple. Their existing pointer access is scoped and there is no equivalent Span-based mutation interface for these container shapes. |
+| `WireEvents` array encoding and `OwnedWireDataValidation` array validation | These use scoped Array pointer access to provide storage to existing synchronous wire APIs and tokenizer entry points. |
+| `WireReader` aligned staging in `isValidJSONValue` | The staging buffer is a local `SIMD64` value; `withUnsafeMutableBytes` is the current way to initialize its bytes before an aligned tokenizer call. |
+
+`TopicView.levelOffsets`/`levelLengths` and `WireBufferConfig.TopicLevelStorage`
+already expose fixed `InlineArray` storage directly; no intermediate collection
+copy exists to remove with borrow/mutate accessors.
+
 ## Explicitly out of scope
 
 `Packages/AxolotyStaticRuntime/` and `Tests/AxolotyTests/ProtocolTrace/`
 were excluded per instructions (reserved for a concurrent SIGBUS fix) and
 were not audited or scanned by the gate.
+
+## Swift 6.4 borrowed-value isolation and unchecked Sendable audit (#871)
+
+### Borrowed values
+
+Swift 6.4 supports negative conformance spelling with `~Sendable` (SE-0518).
+This is the appropriate feature for the synchronous borrowed wire API: unlike
+`~Escapable`, it does not require enabling the experimental `Lifetimes`
+feature, does not change the pointer representation or ordinary call-site
+lifetimes, and does not prohibit storing a view in a synchronous local or
+fixed data structure. It prevents a borrowed value from satisfying a
+`Sendable` constraint or crossing a checked asynchronous/isolation boundary.
+`~Escapable` remains a separate possible lifetime-hardening step; it is not
+required to establish the isolation invariant.
+
+Explicit `~Sendable` is applied to every public wire value that carries or
+derives a borrowed pointer:
+
+| Type | Borrowed storage | Why it is explicitly non-Sendable |
+|---|---|---|
+| `ByteSlice` | Raw pointer and byte count | Its pointer refers to caller-owned storage and its accessors return derived slices. |
+| `TopicView` | Topic pointer and parsed offsets | Topic-level slices borrow the input topic bytes. |
+| `BorrowedMessage` | `TopicView` and payload `ByteSlice` | It combines both borrowed buffers and is the transport callback's synchronous view. |
+| `WireReader` | Payload pointer and indexed ranges | Reads continue to refer to the caller's payload after construction. |
+| `WireObjectField` | Payload pointer and key/value ranges | Fields are visitor-scoped projections into a `WireReader` buffer. |
+| `WireValueView` | JSON value pointer and length | Nested values are passed only to synchronous borrowing visitors. |
+| `WireValueReader` | JSON value pointer and length | Its child ranges and borrowed views derive from the caller's JSON bytes. |
+| `BorrowedProtocolFrame` | Topic and payload `ByteSlice` values | Call `owned()` to copy the payload into a `ProtocolFrame` before an isolation hop. |
+| `BorrowedProtocolInput`, `BorrowedProtocolDeliveryKey`, `BorrowedProtocolPublishTarget`, `BorrowedProtocolDelivery`, `BorrowedProtocolPublication`, `BorrowedIoAssociationTransition`, and `BorrowedProtocolAction` | Nested borrowed frames, selectors, payloads, and topic slices | These protocol-level wrappers carry wire borrows across the processor API; their `owned()` projections are the sendable boundary. |
+
+These declarations compile in the pinned Swift 6.4 host build and the
+RISC-V Embedded Swift Core gate. The compile-fail fixture
+`Tests/Support/lib/borrowed-action-sendability-probe.swift` passes each type
+to `func requiresSendable<T: Sendable>(_ value: T)`; the paired check script
+requires Swift to reject the fixture for a sendability/isolation diagnostic.
+`ProtocolFrame` and decoded/owned value types remain `Sendable` where their
+storage is owned.
+
+### `@unchecked Sendable` inventory
+
+`RuntimeModuleRegistration` was the one unnecessary production annotation
+removed by this change. Its stored lifecycle callbacks are already
+`@Sendable`, so ordinary structural `Sendable` conformance is sufficient.
+Remaining annotations are retained only where the implementation relies on
+external synchronization, framework confinement, or test-only synchronization
+that the compiler cannot inspect:
+
+| Declaration(s) | Classification and justification |
+|---|---|
+| `ManagedProcessSupervisor`, `FoundationProcessRunner`, `ServiceSignalHandler` (`Tools/AxolotyTooling/Services/AxolotyServiceSupervisor.swift`) | Needed. These host service objects coordinate `Process`, signal-source, and supervisor state across callbacks; the implementations serialize mutable state with their lock/queue or dispatch-source lifecycle. |
+| `FoundationCommandExecution`, `CommandReaders`, `CommandPipeReader`, `FoundationProcessHandle` (`Tools/AxolotyTooling/Execution/FoundationCommandExecution.swift`) | Needed. Process and pipe callbacks run concurrently; shared state is guarded by locks and reader completion coordination. |
+| `AxolotySignalLease`, `AxolotySignalMultiplexer` (`Tools/AxolotyTooling/Execution/CommandSignals.swift`) | Needed. These wrap process-global signal disposition and lease state behind synchronized operations. |
+| `AxolotyCommandOutputCollector` (`Tools/AxolotyTooling/Execution/CommandOutput.swift`), `AxolotyCommandCancellation`, `AxolotyCancellationObservation` (`.../CommandCancellation.swift`), and `AxolotyCommandArtifactStore` (`.../CommandArtifacts.swift`) | Needed. Each exposes a small thread-safe reference handle whose mutable state is synchronized and shared among command execution callbacks. |
+| `AxolotyCommandProgressTracker`, `AxolotyContinuousProgressRenderer`, `AxolotyInteractiveProgressRenderer` (`Tools/AxolotyTooling/Progress/`) | Needed. These are concurrent command-progress handles; their mutable progress/render state is serialized internally. |
+| `FoundationResourceLease` (`Tools/AxolotyTooling/Leases/AxolotyResourceLease.swift`), `DispatchOverrunCancellation` (`Tools/AxolotyTooling/Check/AxolotyCheckEvents.swift`) | Needed. These bridge OS lease/dispatch cancellation handles across task boundaries and synchronize their lifecycle through the underlying OS primitive. |
+| `RuntimeMQTTClient`, `MQTTBinding`, `RuntimeMQTTDelegate` (`Packages/AxolotyMQTT/Sources/`) | Needed. MQTT callbacks and async runtime operations share transport lifecycle state. `RuntimeMQTTClient` and `MQTTBinding` guard mutable state with `NIOLock`; the delegate only forwards owned callback values through the synchronized binding seam. |
+| `SensorThingsTransactionToken` (`Packages/AxolotySensorThings/Sources/AxolotySensorThings/SensorThingsRuntime.swift`) | Needed. It is the shared invalidation flag for a configuration transaction; `SensorThingsConfiguration` checks it synchronously while the builder commits or rolls back, and runtime closures may observe invalidation from another task. |
+| `HTTPHandler` (`Apps/AxolotyMCP/MCPHTTPServer.swift`), `BrokerConnectionHandler` (`Tests/AxolotyTestBroker/BrokerConnectionHandler.swift`) | Needed for NIO's `ChannelInboundHandler` contract. Handler state is channel/event-loop confined; it does not permit arbitrary concurrent mutation. |
+| `InspectorSignalHandler` (`Apps/axoloty-inspect/InspectorSignalHandler.swift`) | Needed. The signal callback shares its one-shot signal state with the inspector shutdown path under the handler's synchronization. |
+| `DeadlineResultBox`, `MCPProcessExit`, `MCPExecutableOutputDrain`, `ConfigurationBox`, `OneShotPhase`, `FakeSignalHandler`, `CompletionSignal`, `FailureBox`, `RuntimeTestIteratorBox`, `RuntimeTestDiagnosticIteratorBox`, `LargeStackResultBox`, and `HostTraceTransport` (`Apps/` and `Tests/`) | Test-only. These bridge test results, iterators, or protocol transports between the test task and a callback/task. Their state is either lock-protected, one-shot, or used under the test's explicit completion/ownership protocol; none is a shipped API. |
+| `TimingRecordingRunner`, `TimingRecordingClock`, `TimingRecordingWorkspace`, `TimingSequenceCacheReader`, `ConcurrentPipeCapture`, its nested `State`, `FakeProcessRunner`, `FakePortProbe`, `FakeTempDirProvider`, `DevFakeProcessRunner`, `DevInjectedSignalHandler`, `DevInjectedSignalSource`, `DevStartupSignalPortProbe`, `DevTempDirProvider`, `AnyRunnerSource`, `ExitCodeBox`, `EmissionRecorder`, `MutableClock`, `RecordingRunner`, `RecordingFileSystem`, `RecordingIntegrationRunner`, `RecordingSequenceRunner`, `RecordingEventSink`, `ObservedLines`, `StreamRecorder`, `OutputRecorder`, `CheckTestClock`, `ManualOverrunTask`, `ManualOverrunScheduler`, `CheckEventRecorder`, `OverrunFiringRunner`, `DeadlineRecordingRunner`, `OutputEvents`, `CommandResultBox`, `LockedCounter`, `RecordingLease`, `RecordingLeaseManager`, `AdvancingLeaseManager` (`Tools/AxolotyToolingTests/`) | Test-only. These mutable fakes/recorders are shared by concurrent tests and callbacks. Each is intentionally a synchronization fixture (typically lock-protected or test-owned until its awaited completion); replacing them with actors would make synchronous test protocols and deterministic clock/runner controls asynchronous. |
+| `FrameRecorder`, `ErrorRecorder`, `FakeMQTTClient` (`Packages/AxolotyMQTT/Tests/`), `BrokerClient`, `MessageCollector` (`Tests/AxolotyTestBrokerTests/`), `AsyncWaitResultBox`, `AsyncStreamBox` (`Tests/AxolotyTestSupport/`) | Test-only. They capture callback results/stream iteration across concurrency boundaries and provide the corresponding lock or single-consumer handoff. |
+
+The test-only fakes are intentionally not promoted into production helpers.
+The remaining production conformances describe synchronization or framework
+confinement boundaries; removing `@unchecked` from those requires changing
+the owner model, not changing only the declaration.

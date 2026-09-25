@@ -504,7 +504,7 @@ struct ProtocolFoundationTests {
 
     @Test("borrowed frames and actions cross into owned values explicitly")
     func borrowedOwnedBoundary() throws {
-        let topic = Array("coaty/3/test/DSC/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000".utf8)
+        let topic = Array("coaty/3/test/DSC:objects/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000000".utf8)
         let payload = Array("{\"value\":1}".utf8)
         let frame = try topic.withUnsafeBufferPointer { topicBuffer in
             try payload.withUnsafeBufferPointer { payloadBuffer in
@@ -515,6 +515,7 @@ struct ProtocolFoundationTests {
         }
         let owned = frame.owned()
         #expect(owned.routingKey.capability == .discover)
+        #expect(frame.eventTypeFilter?.equals("objects") == true)
         #expect(owned.payload == payload)
 
         let action = BorrowedProtocolAction.deliver(

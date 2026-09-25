@@ -55,6 +55,16 @@ func repositoryAuthorityCommandSupportsHumanAndJSONOutput() throws {
     )
     #expect(report.status == "passed")
     #expect(report.findings.isEmpty)
+
+    let embeddedContract = dispatcher.run(arguments: [
+        "repository", "validate", "--embedded-consumer-contract", "--format", "json",
+    ])
+    #expect(embeddedContract.exitCode == 0)
+    let embeddedReport = try JSONDecoder().decode(
+        AxolotyRepositoryAuthorityReport.self,
+        from: Data(embeddedContract.standardOutput.utf8)
+    )
+    #expect(embeddedReport.status == "passed", "\(embeddedReport.findings)")
 }
 
 @Test
@@ -197,22 +207,15 @@ func repositoryAuthorityChecksDocCVersionArticlesAndMarkdownAnchors() throws {
 }
 
 @Test
-func repositoryAuthorityRejectsVolatileRootAndUnscopedAgentGuides() throws {
+func repositoryAuthorityRejectsVolatileRootGuidance() throws {
     let fixture = try makeAuthorityFixture()
     defer { try? FileManager.default.removeItem(at: fixture) }
     let rootAgents = fixture.appendingPathComponent("AGENTS.md")
     try (try String(contentsOf: rootAgents, encoding: .utf8) + "Use /dev/ttyACM0 for release 0.6.0.\n")
         .write(to: rootAgents, atomically: true, encoding: .utf8)
-    try "# Tools\nRoot rules apply.\n".write(
-        to: fixture.appendingPathComponent("Tools/AGENTS.md"),
-        atomically: true,
-        encoding: .utf8
-    )
-
     let rules = Set(AxolotyRepositoryAuthorityValidator(root: fixture).validate().findings.map(\.rule))
     #expect(rules.contains("agents.release-number"))
     #expect(rules.contains("agents.volatile"))
-    #expect(rules.contains("agents.scoped"))
 }
 
 @Test
@@ -455,11 +458,7 @@ private func makeAuthorityFixture(
         "docs/ROADMAP.md": "# Roadmap\ncurrent released version (`\(version)`)\n[Issue #629](https://github.com/phynics/axoloty/issues/629)\n",
         "docs/FEATURE_MATRIX.md": "# Feature matrix\nfull \(version) support\n",
         "docs/protocol/coaty-core-3.md": "# Profile\n",
-        "AGENTS.md": "# Instructions\n## Jurisdiction\n## Documentation authority\n## Architectural invariants\n## Supported workflow\n## Prohibited shortcuts\n## Authority links\n",
-        "Embedded/AGENTS.md": "# Instructions\n## Jurisdiction\nThis guide applies to `Embedded/`. The root [`AGENTS.md`](../AGENTS.md) rules apply.\n## Specialized rules\n",
-        "Packages/AxolotyWire/AGENTS.md": "# Instructions\n## Jurisdiction\nThis guide applies to `Packages/AxolotyWire/`. The root [`AGENTS.md`](../../AGENTS.md) rules apply.\n## Specialized rules\n",
-        "Tests/AGENTS.md": "# Instructions\n## Jurisdiction\nThis guide applies to `Tests/`. The root [`AGENTS.md`](../AGENTS.md) rules apply.\n## Specialized rules\n",
-        "Tools/AGENTS.md": "# Instructions\n## Jurisdiction\nThis guide applies to `Tools/`. The root [`AGENTS.md`](../AGENTS.md) rules apply.\n## Specialized rules\n",
+        "AGENTS.md": "# Instructions\n## Documentation authority\n## Supported workflow\n## GitHub-centered work\n## Architectural invariants\n## Module ownership\n## Source conventions\n## Wire compatibility\n",
         "docs/architecture-exceptions.yml": exception,
         "docs/module-policy.yml": modulePolicy,
         "Packages/FixtureWire/Sources/Wire.swift": "import AllowedModule\n",
@@ -485,4 +484,3 @@ private let defaultFixtureModulePolicy = """
    "allowedImports":["AllowedModule"],
    "forbiddenImports":["Foundation","NIO"]}]}
 """
-

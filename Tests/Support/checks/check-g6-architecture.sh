@@ -1,9 +1,9 @@
 #!/bin/sh
 # Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
-# Validate the G6 source and product boundaries without maintaining a second
-# source-file allowlist. The package source directories remain authoritative;
-# this check proves that SwiftPM and ESP-IDF point at those same directories.
+# Validate the G6 source and product boundaries from the portable package
+# manifests and the external-consumer contract. Firmware composition is not a
+# Core input to this check.
 
 set -eu
 
@@ -15,10 +15,7 @@ fail() {
 
 wire_dir="$root/Packages/AxolotyWire/Sources/AxolotyWire"
 protocol_dir="$root/Packages/AxolotyProtocol/Sources/AxolotyProtocol"
-wire_cmake="$root/Embedded/swift/components/axoloty_wire/CMakeLists.txt"
-protocol_cmake="$root/Embedded/swift/components/axoloty_protocol/CMakeLists.txt"
-
-for path in "$wire_dir" "$protocol_dir" "$wire_cmake" "$protocol_cmake"; do
+for path in "$wire_dir" "$protocol_dir" "$root/Packages/AxolotyWire/Package.swift" "$root/Packages/AxolotyProtocol/Package.swift"; do
     test -e "$path" || fail "missing required source boundary path: $path"
 done
 
@@ -26,7 +23,6 @@ check_package_path() {
     package=$1
     expected=$2
     manifest="$package/Package.swift"
-    test -f "$manifest" || fail "missing package manifest: $manifest"
     grep -Fq "path: \"Sources/$(basename "$expected")\"" "$manifest" \
         || fail "standalone manifest does not name its source root: $manifest"
 }
@@ -40,22 +36,46 @@ printf '%s' "$root_manifest" | grep -Fq 'path: "Packages/AxolotyWire/Sources/Axo
 printf '%s' "$root_manifest" | grep -Fq 'path: "Packages/AxolotyProtocol/Sources/AxolotyProtocol"' \
     || fail "root SwiftPM manifest does not name AxolotyProtocol source root"
 
-wire_text=$(sed -E 's:#.*$::' "$wire_cmake")
-protocol_text=$(sed -E 's:#.*$::' "$protocol_cmake")
-printf '%s' "$wire_text" | grep -Fq 'Packages/AxolotyWire/Sources/AxolotyWire/*.swift' \
-    || fail "ESP-IDF AxolotyWire component does not compile the package source root"
-printf '%s' "$protocol_text" | grep -Fq 'Packages/AxolotyProtocol/Sources/AxolotyProtocol/*.swift' \
-    || fail "ESP-IDF AxolotyProtocol component does not compile the package source root"
+consumer_contract=${AXOLOTY_G6_CONSUMER_REPORT:-$root/docs/embedded-consumer-contract.json}
+test -f "$consumer_contract" || fail "consumer contract/report is missing: $consumer_contract"
+node - "$consumer_contract" "$root" <<'NODE'
+const fs = require("node:fs");
+const path = require("node:path");
+const [reportPath, root] = process.argv.slice(2);
+const report = JSON.parse(fs.readFileSync(reportPath, "utf8"));
+const packages = report.portablePackages ?? [];
+const names = packages.map(item => item.name ?? item.package);
+const expected = ["AxolotyWire", "AxolotyObjectModel", "AxolotyProtocol", "AxolotyCoatyModels", "AxolotyStaticRuntime"];
+if (JSON.stringify(names) !== JSON.stringify(expected)) {
+  throw new Error("consumer report portable package order is not authoritative");
+}
+for (const item of packages) {
+  const source = path.resolve(root, item.sourcePath);
+  const expectedSource = path.resolve(root, "Packages", item.name ?? item.package, "Sources", item.name ?? item.package);
+  if (source !== expectedSource) {
+    throw new Error(`consumer report points ${item.name ?? item.package} outside its portable package source: ${source}`);
+  }
+  if (!fs.statSync(source).isDirectory()) throw new Error(`missing consumer source directory: ${source}`);
+}
+const flags = report.swift?.compilerFlags ?? report.swift?.requiredCompilerFlags;
+const expectedFlags = ["-swift-version", "6", "-enable-experimental-feature", "Embedded", "-enable-experimental-feature", "Lifetimes"];
+if (JSON.stringify(flags) !== JSON.stringify(expectedFlags)) {
+  throw new Error("consumer report compiler flags are not the canonical Embedded Swift sequence");
+}
+const macro = report.staticRuntimeMacro?.executable;
+if (typeof macro !== "string" || macro.length === 0 || !report.staticRuntimeMacro?.pluginModule) {
+  throw new Error("consumer report does not identify the StaticRuntime macro executable");
+}
+if (report.contractSHA256 !== undefined && !/^[0-9a-f]{64}$/.test(report.contractSHA256)) {
+  throw new Error("consumer preparation report has an invalid contract digest");
+}
+NODE
 
 wire_sources=$(find "$wire_dir" -maxdepth 1 -type f -name '*.swift' -printf '%f\n' | sort)
 protocol_sources=$(find "$protocol_dir" -maxdepth 1 -type f -name '*.swift' -printf '%f\n' | sort)
 [ -n "$wire_sources" ] || fail "AxolotyWire has no production Swift sources"
 [ -n "$protocol_sources" ] || fail "AxolotyProtocol has no production Swift sources"
 
-# Emit deterministic fingerprints for the configured source roots. A release
-# checkpoint may additionally require actual compiler-input receipts through
-# AXOLOTY_G6_REQUIRE_SOURCE_RECEIPTS=1; the receipt validator then proves the
-# compiler consumed these exact paths and hashes.
 source_fingerprint() {
     directory=$1
     find "$directory" -maxdepth 1 -type f -name '*.swift' -print0 \
@@ -67,7 +87,7 @@ source_fingerprint() {
 wire_fingerprint=$(source_fingerprint "$wire_dir")
 protocol_fingerprint=$(source_fingerprint "$protocol_dir")
 
-source_identity="configured-source-roots"
+source_identity="consumer-contract"
 if [ "${AXOLOTY_G6_REQUIRE_SOURCE_RECEIPTS:-0}" = "1" ]; then
     host_receipt=${AXOLOTY_G6_HOST_RECEIPT:-}
     embedded_receipt=${AXOLOTY_G6_EMBEDDED_RECEIPT:-}
@@ -80,13 +100,11 @@ if [ "${AXOLOTY_G6_REQUIRE_SOURCE_RECEIPTS:-0}" = "1" ]; then
     source_identity="compiler-input-receipts"
 fi
 
-# The processor critical path may not be reimplemented under Embedded.
-embedded_copies=$(find "$root/Embedded" -type f -name '*.swift' \
-    \( -path '*AxolotyWire*' -o -path '*AxolotyProtocol*' -o -name 'ProtocolProcessor.swift' \) -print)
-[ -z "$embedded_copies" ] || fail "Embedded contains a copied portable protocol/wire source: $embedded_copies"
+if git -C "$root" rev-parse --is-inside-work-tree >/dev/null 2>&1 && [ "${AXOLOTY_G6_SKIP_COPY_CHECK:-0}" != "1" ]; then
+    copied_portable=$(git -C "$root" grep -l -E 'struct ProtocolProcessor|enum WireEventType' -- '*.swift' ':!Packages/**' ':!Tests/**' ':!Spikes/**' ':!Tools/**' || true)
+    [ -z "$copied_portable" ] || fail "a non-package source copies portable protocol/wire implementation: $copied_portable"
+fi
 
-# Parser API availability is allowed. Semantic Embedded branches are not. The
-# remaining allowlist names host-only conveniences, not protocol transitions.
 semantic_conditionals=$(rg -n '#if[[:space:]]+(!)?hasFeature\(Embedded\)' \
     "$wire_dir" "$protocol_dir" \
     | grep -Ev 'ByteSlice\.swift|TopicView\.swift|UUID16\.swift' || true)

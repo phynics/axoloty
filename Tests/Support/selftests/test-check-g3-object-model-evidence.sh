@@ -8,18 +8,33 @@ probe="$root/Spikes/BoundedObjectModelEvidence"
 schema="$probe/Evidence/evidence.schema.json"
 validator="$probe/Evidence/validate-evidence.mjs"
 assembler="$probe/Evidence/assemble-host-evidence.mjs"
-embedded_assembler="$probe/Evidence/assemble-embedded-evidence.mjs"
+portable_check="$probe/check-portable.sh"
+portable_assembler="$probe/Evidence/assemble-portable-evidence.mjs"
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
 test -x "$probe/check-host.sh"
 test -x "$probe/check-sanitized.sh"
-test -x "$assembler"
-test -x "$probe/check-embedded.sh"
-test -f "$embedded_assembler"
+test -x "$portable_check"
+test -f "$assembler"
+test -f "$portable_assembler"
 sh -n "$probe/check-host.sh" "$probe/check-sanitized.sh" \
-    "$probe/check-embedded.sh" \
+    "$portable_check" \
     "$root/Spikes/BoundedPortableRuntime/measure-allocations.sh"
+node --check "$validator"
+node --check "$assembler"
+node --check "$portable_assembler"
+if grep -Eq 'Embedded|ESP-IDF|IDF_PATH|idf\.py' "$portable_check" "$portable_assembler"; then
+    echo "error: Core object-model evidence still owns firmware-tree or ESP-IDF access" >&2
+    exit 1
+fi
+node - "$schema" <<'NODE'
+const fs = require("node:fs");
+const schema = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+if (JSON.stringify(schema).includes(["Embedded", "swift"].join("/"))) {
+    throw new Error("Core evidence schema still names the firmware tree");
+}
+NODE
 node - "$probe/check-sanitized.sh" <<'NODE'
 const fs = require("node:fs");
 const source = fs.readFileSync(process.argv[2], "utf8");
@@ -27,12 +42,6 @@ const propagated = /CONTAINER_ENV_VARS=ASAN_OPTIONS\s*\\\n\s*ASAN_OPTIONS="\$\{A
 if (!propagated.test(source)) {
   throw new Error("sanitized node does not propagate ASAN_OPTIONS=detect_leaks=0 to both execution branches");
 }
-NODE
-node --check "$validator"
-node --check "$embedded_assembler"
-node - "$schema" <<'NODE'
-const fs = require("node:fs");
-JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
 NODE
 grep -Fq '.package(path: "../../Packages/AxolotyObjectModel")' "$probe/Package.swift"
 grep -Fq '.package(path: "../../Packages/AxolotyCoatyModels")' "$probe/Package.swift"
@@ -43,29 +52,7 @@ grep -Fq 'saturationMeasurement' "$probe/Sources/BoundedObjectModelProbe/main.sw
 grep -Fq 'schemaRegistryOperation' "$probe/Sources/BoundedObjectModelProbe/main.swift"
 grep -Fq 'typedObjectOperation' "$probe/Sources/BoundedObjectModelProbe/main.swift"
 grep -Fq 'predicateOperation' "$probe/Sources/BoundedObjectModelProbe/main.swift"
-grep -Fq '. "${IDF_PATH:-/opt/esp/idf}/export.sh" >"$idf_log" 2>&1' "$probe/check-embedded.sh"
-grep -Fq 'rm -f "$idf_log"' "$probe/check-embedded.sh"
-grep -Fq '/workspace/.devcontainer/resolve.sh' "$probe/check-embedded.sh"
-grep -Fq 'pinned swift-json _JSONCore checkout is unavailable' "$probe/check-embedded.sh"
-grep -Fq 'run the checked-in SwiftPM resolution before configuring Embedded Swift' "$root/Embedded/swift/components/json_core/CMakeLists.txt"
-grep -Fq 'riscv32-esp-elf-size -A "$elf"' "$probe/check-embedded.sh"
-grep -Fq '$1 ~ /^\./' "$probe/check-embedded.sh"
-grep -Fq 'print $1 "\t" $2' "$probe/check-embedded.sh"
-if grep -Fq '$1 ~ /^\\./' "$probe/check-embedded.sh"; then
-    echo "error: embedded section extraction still over-escapes the ESP section pattern" >&2
-    exit 1
-fi
-grep -Fq 'CoatyFilterAdapter<16, 16, 16, 64>' "$root/Embedded/swift/main/CoatyModelsModuleConsumer.swift"
-grep -Fq 'do throws(ProtocolError)' "$root/Embedded/swift/main/CoatyModelsModuleConsumer.swift"
-grep -Fq 'let adapter = try CoatyFilterAdapter<16, 16, 16, 64>' "$root/Embedded/swift/main/CoatyModelsModuleConsumer.swift"
-if grep -Fq 'let adapter: CoatyFilterAdapter' "$root/Embedded/swift/main/CoatyModelsModuleConsumer.swift"; then
-    echo "error: embedded CoatyModels consumer reintroduces an outer noncopyable adapter binding" >&2
-    exit 1
-fi
-grep -Fq 'adapter.matches(object: object)' "$root/Embedded/swift/main/CoatyModelsModuleConsumer.swift"
-grep -Fq 'adapter.encode(to: &writer)' "$root/Embedded/swift/main/CoatyModelsModuleConsumer.swift"
 grep -Fq 'heaptrack-call-growth' "$assembler"
-grep -Fq 'foundation-schema-model-predicate-module-linkage' "$embedded_assembler"
 
 node - "$tmp/probe.json" "$tmp/allocations.tsv" "$tmp/sections.tsv" <<'NODE'
 const fs = require("node:fs");
@@ -73,6 +60,7 @@ const [probe, allocations, sections] = process.argv.slice(2);
 fs.writeFileSync(probe, JSON.stringify({
   schemaVersion: 1,
   evidenceKind: "object-model-probe",
+  candidateSha: "0123456",
   measurementPoints: [1, 16, 64],
   measurementPolicy: "simultaneous-object-envelope-schema-model-specializations",
   layouts: [1, 16, 64].flatMap(measurementPoint => [
@@ -82,18 +70,10 @@ fs.writeFileSync(probe, JSON.stringify({
   schemaLayouts: [1, 16, 64].map(measurementPoint => ({measurementPoint, axis: "schema-registry", type: "ObjectSchemaRegistry", size: 1, alignment: 1, stride: 1, registryCapacity: measurementPoint})),
   predicateLayouts: [1, 16, 64].map(measurementPoint => ({measurementPoint, axis: "predicate", type: "ObjectPredicate", size: 1, alignment: 1, stride: 1, nodeCapacity: measurementPoint, pathCapacity: measurementPoint, literalCapacity: measurementPoint, arenaCapacity: measurementPoint})),
   operations: [1, 16, 64].map(measurementPoint => ({measurementPoint, byteCapacity: measurementPoint, fieldCapacity: measurementPoint, nameCapacity: measurementPoint, externalIDCapacity: measurementPoint, objectInitialization: measurementPoint === 1 ? "rejected-capacityExceeded" : "accepted", envelopeInitialization: true, randomizedEditRead: measurementPoint > 1, saturationMeasurement: measurementPoint === 1 ? "minimum-object-rejection" : "edit-capacity-failure", saturationRejected: true, unchangedAfterSaturation: true, schemaRegistration: measurementPoint === 1 ? "rejected-capacityExceeded" : "accepted", schemaRegistryCount: measurementPoint === 1 ? 1 : 4, schemaRegistrySaturated: measurementPoint === 1, schemaRegistryUnchangedAfterSaturation: measurementPoint === 1, typedObjectInitialization: measurementPoint === 1 ? "rejected-capacityExceeded" : "accepted", typedObjectValueTypePreserved: measurementPoint > 1, typedObjectByteCapacity: 512, typedObjectFieldCapacity: measurementPoint, predicateInitialization: measurementPoint === 1 ? "rejected-capacityExceeded" : "accepted", predicateDecodeEvaluateEncode: measurementPoint > 1, predicateRoundTrip: measurementPoint > 1})),
+  compilation: {releaseSections: [{name: ".text", bytes: 123}]},
 }));
-fs.writeFileSync(allocations, [1, 16, 64].flatMap(capacity => [
-  [capacity, "object-initialization", 3, 4, 7],
-  [capacity, "object-warmed", 0, 4, 4],
-  [capacity, "envelope-initialization", 2, 5, 7],
-  [capacity, "envelope-warmed", 0, 5, 5],
-  [capacity, "schema-registry-initialization", 1, 1, 2],
-  [capacity, "typed-object-initialization", 1, 1, 2],
-  [capacity, "typed-object-warmed", 0, 1, 1],
-  [capacity, "predicate-initialization", 1, 1, 2],
-  [capacity, "predicate-warmed", 0, 1, 1],
-]).map(row => row.join("\t")).join("\n") + "\n");
+const cases = ["object-initialization", "object-warmed", "envelope-initialization", "envelope-warmed", "schema-registry-initialization", "typed-object-initialization", "typed-object-warmed", "predicate-initialization", "predicate-warmed"];
+fs.writeFileSync(allocations, [1, 16, 64].flatMap(capacity => cases.map((measurementCase, index) => `${capacity}\t${measurementCase}\t${index % 2 === 1 || index === 6 || index === 8 ? 0 : index + 1}\t4\t7`)).join("\n") + "\n");
 fs.writeFileSync(sections, ".text\t123\n");
 NODE
 node "$assembler" "$tmp/probe.json" "$tmp/allocations.tsv" "$tmp/sections.tsv" \
@@ -101,8 +81,8 @@ node "$assembler" "$tmp/probe.json" "$tmp/allocations.tsv" "$tmp/sections.tsv" \
 node - "$tmp/assembled.json" <<'NODE'
 const fs = require("node:fs");
 const report = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
-if (report.allocations[0].objectInitialization !== 3) process.exit(1);
-if (report.allocations[0].envelopeInitialization !== 2) process.exit(1);
+if (report.allocations[0].objectInitialization !== 1) process.exit(1);
+if (report.allocations[0].envelopeInitialization !== 3) process.exit(1);
 if (report.allocations[0].byteCapacity !== 1 || report.allocations[0].nameCapacity !== 1) process.exit(1);
 NODE
 node "$validator" "$schema" "$tmp/assembled.json" >/dev/null
@@ -146,8 +126,7 @@ done
 
 node - "$tmp/sanitized.json" <<'NODE'
 const fs = require("node:fs");
-const output = process.argv[2];
-fs.writeFileSync(output, JSON.stringify({
+fs.writeFileSync(process.argv[2], JSON.stringify({
   schemaVersion: 1,
   evidenceKind: "sanitized",
   candidateSha: "0123456",
@@ -160,41 +139,9 @@ fs.writeFileSync(output, JSON.stringify({
 NODE
 node "$validator" "$schema" "$tmp/sanitized.json" >/dev/null
 
-printf '%s\n' \
-    'compileSuccess	true' \
-    'compileSeconds	12.5' \
-    'toolchain	Swift version 6.3 (swift-6.3-RELEASE)' \
-    'firmwareBytes	100' \
-    'elfBytes	200' \
-    'mapBytes	300' >"$tmp/embedded-metadata.tsv"
-printf '.iram0.text\t64\n.flash.text\t128\n.data\t4\n' >"$tmp/embedded-sections.tsv"
-node "$embedded_assembler" "$tmp/embedded-metadata.tsv" "$tmp/embedded-sections.tsv" 0123456 "$tmp/embedded.json"
-node "$validator" "$schema" "$tmp/embedded.json" >/dev/null
-node - "$tmp/embedded.json" <<'NODE'
-const fs = require("node:fs");
-const report = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
-if (report.evidenceKind !== "embedded-cross-build" || report.coverage !== "foundation-schema-model-predicate-module-linkage") process.exit(1);
-if (!report.sections.some(section => section.name === ".iram0.text") || !report.sections.some(section => section.name === ".flash.text")) process.exit(1);
-NODE
-printf '.iram0.text\t64\n.data\t4\n' >"$tmp/missing-embedded-executable-section.tsv"
-if node "$embedded_assembler" "$tmp/embedded-metadata.tsv" "$tmp/missing-embedded-executable-section.tsv" 0123456 "$tmp/missing-embedded.json" >/dev/null 2>&1; then
-    echo "error: embedded assembler accepted missing .flash.text section" >&2
-    exit 1
-fi
-node - "$tmp/embedded.json" "$tmp/invalid-embedded.json" <<'NODE'
-const fs = require("node:fs");
-const report = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
-report.sections = report.sections.filter(section => section.name !== ".flash.text");
-fs.writeFileSync(process.argv[3], JSON.stringify(report));
-NODE
-if node "$validator" "$schema" "$tmp/invalid-embedded.json" >/dev/null 2>&1; then
-    echo "error: evidence validator accepted missing .flash.text section" >&2
-    exit 1
-fi
-printf '%s\n' '.iram0.text\t64' '.flash.text\t128' >"$tmp/literal-tab-sections.tsv"
-if node "$embedded_assembler" "$tmp/embedded-metadata.tsv" "$tmp/literal-tab-sections.tsv" 0123456 "$tmp/literal-tab.json" >/dev/null 2>&1; then
-    echo "error: embedded assembler accepted literal backslash-t section separators" >&2
-    exit 1
-fi
+printf 'compileSuccess\ttrue\ncompileSeconds\t12.5\ntoolchain\tSwift version 6.3 (swift-6.3-RELEASE)\n' >"$tmp/portable-metadata.tsv"
+printf '.text\t64\n' >"$tmp/portable-sections.tsv"
+node "$portable_assembler" "$tmp/portable-metadata.tsv" "$tmp/portable-sections.tsv" 0123456 "$tmp/portable.json"
+node "$validator" "$schema" "$tmp/portable.json" >/dev/null
 
 echo "G3 object-model evidence harness checks passed"

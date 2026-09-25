@@ -12,6 +12,14 @@ public struct SwiftTestingProgressParser: AxolotyCommandProgressParsing {
     private var currentSuite: String?
     private var currentTest: String?
     private var counters = AxolotyCommandProgressCounters()
+    private var failedTests = Set<String>()
+
+    /// Every test name reported failed or as having recorded an issue, across
+    /// the whole run. This is a live-progress parser incidentally reused as
+    /// the only source of per-test outcome, so a caller deciding whether a
+    /// node's failure is quarantine-eligible reads this after the command
+    /// completes rather than during live rendering.
+    public var failedTestNames: Set<String> { failedTests }
 
     /// Creates a test progress parser.
     public init() {}
@@ -104,6 +112,7 @@ public struct SwiftTestingProgressParser: AxolotyCommandProgressParsing {
             name = Self.name(from: body, terminator: " failed")
                 ?? Self.name(from: body, terminator: " recorded an issue")
             counters.failed += 1
+            if let name { failedTests.insert(name) }
             outcome = AxolotyCommandProgress(
                 phase: .testing,
                 completed: counterTotal,

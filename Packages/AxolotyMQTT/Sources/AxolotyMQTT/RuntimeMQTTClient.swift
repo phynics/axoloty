@@ -21,12 +21,29 @@ protocol RuntimeMQTTClientDelegate: AnyObject, Sendable {
     func runtimeMQTTClientDidFail(_ error: Error)
 }
 
+/// The transport operations consumed by ``MQTTBinding``.
+///
+/// This internal seam keeps broker I/O replaceable in adapter tests. Production
+/// callers still receive the concrete ``RuntimeMQTTClient`` through the public
+/// binding initializer.
+protocol RuntimeMQTTClientAdapter: AnyObject, Sendable {
+    func connect(will: RuntimeTransportLastWill?)
+    func disconnect() async
+    func publish(topic: String, payload: [UInt8]) async throws
+
+    @MainActor
+    func subscribe(_ topic: String) async throws
+
+    @MainActor
+    func unsubscribe(_ topic: String) async throws
+}
+
 /// A bounded MQTT-NIO adapter for the structured runtime.
 ///
 /// This type owns only the broker socket and copies publish data at the
 /// synchronous MQTT callback boundary. Protocol parsing and lifecycle policy
 /// remain in ``AxolotyRuntime``.
-final class RuntimeMQTTClient: @unchecked Sendable {
+final class RuntimeMQTTClient: RuntimeMQTTClientAdapter, @unchecked Sendable {
     private let lock = NIOLock()
     private let delegate: RuntimeMQTTClientDelegate
     private let qos: MQTTQoS = .atMostOnce
@@ -78,9 +95,14 @@ final class RuntimeMQTTClient: @unchecked Sendable {
         eventLoopGroup.shutdownGracefully { _ in }
     }
 
-    func connect() {
+    func connect(will: RuntimeTransportLastWill?) {
         lock.withLock { intentionalDisconnect = false }
-        client.connect(cleanSession: true, will: nil).whenComplete { [weak self] result in
+        let mqttWill: (topicName: String, payload: ByteBuffer, qos: MQTTQoS, retain: Bool)? = will.map {
+            var buffer = ByteBufferAllocator().buffer(capacity: $0.payload.count)
+            buffer.writeBytes($0.payload)
+            return (topicName: $0.topic, payload: buffer, qos: .atMostOnce, retain: false)
+        }
+        client.connect(cleanSession: true, will: mqttWill).whenComplete { [weak self] result in
             switch result {
             case .success:
                 self?.delegate.runtimeMQTTClientDidBecomeOnline()

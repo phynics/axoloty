@@ -19,10 +19,19 @@ public protocol WireParserWorkspace: ~Copyable {
 
 /// Fixed inline tokenizer storage for Embedded Swift.
 public struct InlineWireParserWorkspace<let capacity: Int>: ~Copyable, WireParserWorkspace {
+    /// Forces the workspace to eight-byte alignment.
+    ///
+    /// The tokenizer scans eight bytes at a time and rebinds the buffer to
+    /// `UInt64`, which requires an eight-byte-aligned base. An
+    /// `InlineArray<_, UInt8>` is byte-aligned, so without this anchor the
+    /// buffer can be unaligned. Embedded Swift disables the alignment
+    /// precondition, so the firmware happened to work; a host build traps.
+    private var alignmentAnchor: UInt64
     private var bytes: InlineArray<capacity, UInt8>
 
     /// Creates zeroed inline storage.
     public init() {
+        alignmentAnchor = 0
         bytes = InlineArray(repeating: 0)
     }
 

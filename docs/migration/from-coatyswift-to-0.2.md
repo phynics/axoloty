@@ -23,7 +23,7 @@ package), module `AxolotyWire`.
 
 ## Swift version requirements
 
-Axoloty requires Swift 6.3 (Swift 6 language mode). CoatySwift 2.4.0
+Axoloty requires Swift 6.4 (Swift 6 language mode). CoatySwift 2.4.0
 targeted Swift 5.x. The minimum deployment targets are now:
 
 - macOS 26.0+

@@ -88,6 +88,19 @@ extension ProtocolExecutor {
         lifecycleAdvertisementActive = true
     }
 
+    func makeTransportLastWill() throws -> RuntimeTransportLastWill? {
+        guard let identity = definition.identity else { return nil }
+        let routingKey = try ProtocolRoutingKey(
+            capability: .deadvertise,
+            sourceID: identity.id
+        )
+        let topic = try CoatyRoute.route(for: routingKey, namespace: definition.namespace)
+        return RuntimeTransportLastWill(
+            topic: topic,
+            payload: RuntimeLifecyclePayload.deadvertise(identity)
+        )
+    }
+
     func publishLifecycleDeadvertisement(nowMS: UInt32) async throws {
         guard lifecycleAdvertisementActive, let identity = definition.identity else { return }
         let operation = RuntimeOperation.deadvertise(

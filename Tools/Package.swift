@@ -1,4 +1,4 @@
-// swift-tools-version: 6.2
+// swift-tools-version: 6.4
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
 import PackageDescription
@@ -29,18 +29,13 @@ let package = Package(
             path: "axoloty-tool"
         ),
         .executableTarget(
-            name: "AxolotyDeviceLeaseProbe",
-            dependencies: ["AxolotyTooling"],
-            path: "AxolotyDeviceLeaseProbe"
-        ),
-        .executableTarget(
             name: "AxolotyResourceLeaseProbe",
             dependencies: ["AxolotyTooling"],
             path: "AxolotyResourceLeaseProbe"
         ),
         .testTarget(
             name: "AxolotyToolingTests",
-            dependencies: ["AxolotyTooling", "AxolotyDeviceLeaseProbe", "AxolotyResourceLeaseProbe"],
+            dependencies: ["AxolotyTooling", "AxolotyResourceLeaseProbe"],
             path: "AxolotyToolingTests",
             resources: [.copy("Fixtures/legacy-check-plan-v1.json")]
         ),

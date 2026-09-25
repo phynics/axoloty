@@ -12,7 +12,7 @@ write_fixture() {
     rm -rf "$tmp/Packages" "$tmp/Source"
     mkdir -p "$tmp/Source/Runtime" \
         "$tmp/Packages/AxolotyStaticRuntime/Sources/AxolotyStaticRuntime"
-    printf '%s\n' '// swift-tools-version:6.3' 'import PackageDescription' \
+    printf '%s\n' '// swift-tools-version:6.4' 'import PackageDescription' \
         'let package = Package(name: "AxolotyStaticRuntime", targets: [.target(name: "AxolotyStaticRuntime")])' \
         > "$tmp/Packages/AxolotyStaticRuntime/Package.swift"
     printf '%s\n' 'struct AxolotyRuntimeFixture {}' > "$tmp/Source/Runtime/AxolotyRuntimeFixture.swift"

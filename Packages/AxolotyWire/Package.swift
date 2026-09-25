@@ -1,4 +1,4 @@
-// swift-tools-version:6.3
+// swift-tools-version:6.4
 // The swift-tools-version declares the minimum version of Swift required to build this package.
 
 import PackageDescription
@@ -9,13 +9,18 @@ import PackageDescription
 /// SwiftPM consumer can build it without host runtime targets. Its tested
 /// resolved package closure is exactly `axolotywire`, `swift-json`,
 /// `swift-nio`, `swift-atomics`, `swift-collections`, and `swift-system`;
-/// `swift-nio` is resolution-only. The root Axoloty package declares the same
-/// target directly and re-exports its public symbols through
-/// ``WireImportShim`` so existing `import Axoloty` clients keep working.
+/// `swift-nio` is resolution-only.
 ///
 /// See the repository `ARCHITECTURE.md` for the boundary contract.
 let package = Package(
     name: "AxolotyWire",
+    // Apple platforms only: the portable sources use InlineArray and other
+    // Swift 6 features available from the 26.0 SDKs, matching the root
+    // package's floor. Linux and Embedded targets are unaffected.
+    platforms: [
+        .macOS("26.0"),
+        .iOS("26.0"),
+    ],
     products: [
         .library(
             name: "AxolotyWire",
@@ -35,7 +40,9 @@ let package = Package(
             dependencies: [
                 .product(name: "IkigaJSONCore", package: "swift-json"),
             ],
-            path: "Sources/AxolotyWire"
+            path: "Sources/AxolotyWire",
+            // The embedded-core-consumer gate remains the enforcing portability check.
+            swiftSettings: [.treatWarning("EmbeddedRestrictions", as: .warning)]
         ),
         .testTarget(
             name: "AxolotyWireTests",

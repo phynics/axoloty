@@ -5,15 +5,15 @@
 </p>
 
 [![Swift
-version](https://img.shields.io/badge/swift-6.3-%23F05138?logo=swift)](https://developer.apple.com/swift/)
+version](https://img.shields.io/badge/swift-6.4-%23F05138?logo=swift)](https://developer.apple.com/swift/)
 [![License:
 MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
 > **Development checkpoint.** [`VERSION`](./VERSION) identifies the current
-> published release (`0.7.0`). Axoloty is not API-stable. The 0.7 line makes
-> runtime composition explicit through `RuntimeBuilder` and the immutable
-> `RuntimeDefinition`, on the shared host and Embedded Swift wire and protocol
-> path established by 0.6.
+> published release (`0.8.2`). Axoloty is not API-stable. The 0.8 line
+> publishes a versioned contract for firmware that consumes the portable Core
+> from outside this repository, on the explicit runtime composition introduced
+> by 0.7 and the shared host and Embedded Swift path established by 0.6.
 
 ## About Axoloty
 
@@ -22,9 +22,9 @@ applications out of loosely coupled, decentralized components called *agents*.
 Agents communicate with each other in (soft) real time over a publish-subscribe
 messaging backbone, and can run on IoT devices, mobile devices, in
 microservices, or in cloud and backend services. MQTT is the transport Axoloty
-ships, validates against live CoatyJS, and exercises on hardware; it reaches
-the runtime through a replaceable adapter (`AxolotyMQTT`) rather than defining
-what Axoloty networking is.
+ships and validates against live CoatyJS; it reaches the runtime through a
+replaceable adapter (`AxolotyMQTT`) rather than defining what Axoloty
+networking is.
 
 Axoloty provides an application and communication layer foundation for
 collaborative IoT prosumer scenarios where smart agents act in an autonomous,
@@ -47,7 +47,14 @@ collaborative, and ad-hoc fashion. Its key properties include:
   standalone package boundary for embedded targets,
 * a Foundation-free `AxolotyProtocol` foundation package with the shared
   fixed-inline processor, bounded request state, and borrowed/owned actions,
-* and an ESP32-C6 embedded proof in Embedded Swift.
+* and a hardware-free Core Embedded Swift compatibility gate that compiles
+  every portable module and a real macro consumer.
+
+Concrete embedded firmware lives in
+[`phynics/axoloty-embedded`](https://github.com/phynics/axoloty-embedded),
+which consumes an exact Axoloty revision through the
+[embedded consumer contract](./docs/embedded-consumer-contract.md). This
+repository owns the portable packages and the hardware-free Core gate.
 
 Axoloty is a modernized fork of
 [coatyio/coaty-swift](https://github.com/coatyio/coaty-swift) and follows its
@@ -75,7 +82,7 @@ Add Axoloty to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/phynics/axoloty", from: "0.7.0"),
+    .package(url: "https://github.com/phynics/axoloty", from: "0.8.2"),
 ],
 targets: [
     .executableTarget(
@@ -91,7 +98,7 @@ For a wire target in a consumer that already resolves the root package:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/phynics/axoloty", from: "0.7.0"),
+    .package(url: "https://github.com/phynics/axoloty", from: "0.8.2"),
 ],
 targets: [
     .executableTarget(
@@ -171,15 +178,17 @@ registration) with bounded capacities:
   limit, so messages above 2 KiB are an intentional compatibility divergence.
 - Static runtimes may select a smaller compile-time payload capacity (for
   example, `StaticRuntime<16, 128>`); 2,048 bytes remains the sealed maximum.
-- Max subscribers: 8
-- Max family entries: 16
+- Protocol state capacity is a compile-time preset of `ProtocolBufferConfig`.
+  The ESP32-C6 firmware profile uses `esp32C6Static = 16` simultaneous
+  objects and outstanding correlations.
 - QoS: 0 only
 - TLS: not supported
 - No IO routing, Channel, Query/Retrieve, Update/Complete, or Call/Return
 
-See [docs/embedded-toolchain.md](./docs/embedded-toolchain.md) for toolchain
-setup and [SUPPORT_MATRIX.md](./docs/SUPPORT_MATRIX.md) for the full
-capability matrix.
+See [SUPPORT_MATRIX.md](./docs/SUPPORT_MATRIX.md) for the full capability
+matrix. Firmware, board integration, and device qualification are owned by
+[`phynics/axoloty-embedded`](https://github.com/phynics/axoloty-embedded);
+this repository keeps the hardware-free Core Embedded Swift gate.
 
 API documentation is built from in-source DocC comments and published to
 GitHub Pages: <https://phynics.github.io/axoloty/documentation/Axoloty/>.
@@ -195,8 +204,6 @@ macOS runs the same offline plan with native Swift:
 ```sh
 make worktree-bootstrap  # resolve dependencies into the shared SwiftPM cache
 make verify              # Linux: canonical ordinary verification
-make hardware-check      # run or skip the sporadically attached ESP32-C6
-make hardware-require    # require the ESP32-C6 for an explicit release gate
 
 # local services
 make serve-mqtt
@@ -217,17 +224,19 @@ without writing a custom agent — passive catalogue (`catalog`) or active
 discovery (`discover`):
 
 ```sh
-swift run --package-path Tools axoloty-inspect catalog --duration 10s
-swift run --package-path Tools axoloty-inspect discover --core-type Identity
+swift run --package-path Apps axoloty-inspect catalog --duration 10s
+swift run --package-path Apps axoloty-inspect discover --core-type Identity
 ```
 
 See [docs/inspector.md](./docs/inspector.md) for the full reference.
 
 For the current release's changes, see
-[0.7.0 release notes](./docs/releases/0.7.0.md). For migrating from legacy
+[0.8.2 release notes](./docs/releases/0.8.2.md). For migrating from legacy
 CoatySwift, see [the 0.2 migration guide](./docs/migration/from-coatyswift-to-0.2.md).
 For the 0.7 runtime-registration migration, see
-[the 0.6-to-0.7 guide](./docs/migration/from-0.6-to-0.7.md).
+[the 0.6-to-0.7 guide](./docs/migration/from-0.6-to-0.7.md). For the 0.8
+transport and static-runtime changes, see
+[the 0.7-to-0.8 guide](./docs/migration/from-0.7-to-0.8.md).
 
 ## Contributing
 

@@ -3,9 +3,8 @@
 
 # Enforce the G3 portable object-model package boundary. This checker is
 # intentionally source-level: the production packages are expected to be
-# independently buildable, and the Embedded Swift component must compile the
-# same object-model source glob. It does not claim that G3 is implemented when
-# either package or its source inclusion is absent.
+# independently buildable, and no firmware checkout is needed to prove their
+# dependency and source policy.
 
 set -eu
 
@@ -13,7 +12,6 @@ root=$(CDPATH= cd -- "$(dirname -- "$0")/../../.." && pwd)
 model=${AXOLOTY_OBJECT_MODEL_PACKAGE_DIR:-$root/Packages/AxolotyObjectModel}
 macros=${AXOLOTY_OBJECT_MACROS_PACKAGE_DIR:-$root/Packages/AxolotyObjectMacros}
 coaty=${AXOLOTY_COATY_MODELS_PACKAGE_DIR:-$root/Packages/AxolotyCoatyModels}
-component=${AXOLOTY_OBJECT_MODEL_COMPONENT_DIR:-$root/Embedded/swift/components/axoloty_object_model}
 
 fail() {
     echo "error: $*" >&2
@@ -27,8 +25,6 @@ test -f "$model/Package.swift" || fail "missing AxolotyObjectModel Package.swift
 test -f "$macros/Package.swift" || fail "missing AxolotyObjectMacros Package.swift"
 test -f "$model/Package.resolved" || fail "missing AxolotyObjectModel Package.resolved"
 test -f "$macros/Package.resolved" || fail "missing AxolotyObjectMacros Package.resolved"
-test -f "$model/AGENTS.md" || fail "missing AxolotyObjectModel AGENTS.md"
-test -f "$macros/AGENTS.md" || fail "missing AxolotyObjectMacros AGENTS.md"
 test -f "$coaty/Package.swift" || fail "missing AxolotyCoatyModels Package.swift"
 
 model_sources="$model/Sources"
@@ -81,9 +77,9 @@ fi
 printf '%s' "$macro_manifest" | grep -Fq 'name: "AxolotyObjectMacros"' || fail "AxolotyObjectMacros manifest has no matching package/target name"
 test -d "$macros/Sources/AxolotyObjectMacros" || fail "AxolotyObjectMacros omits its default source path"
 printf '%s' "$macro_manifest" | grep -Fq 'swift-syntax' || fail "AxolotyObjectMacros must declare SwiftSyntax"
-printf '%s' "$macro_manifest" | grep -Eq '603\.[0-9]+' || fail "AxolotyObjectMacros must pin SwiftSyntax 603.x"
+printf '%s' "$macro_manifest" | grep -Eq '604\.[0-9]+' || fail "AxolotyObjectMacros must pin SwiftSyntax 604.x"
 grep -Fq 'swift-syntax' "$macros/Package.resolved" || fail "AxolotyObjectMacros Package.resolved omits SwiftSyntax"
-grep -Eq '"version"[[:space:]]*:[[:space:]]*"603\.[0-9]+' "$macros/Package.resolved" || fail "AxolotyObjectMacros Package.resolved must pin SwiftSyntax 603.x"
+grep -Eq '"version"[[:space:]]*:[[:space:]]*"604\.[0-9]+' "$macros/Package.resolved" || fail "AxolotyObjectMacros Package.resolved must pin SwiftSyntax 604.x"
 if printf '%s' "$macro_manifest" | grep -Eiq '(Foundation|MQTTNIO|mqtt-nio|swift-nio|Logging|swift-log|OSLog|ErrorKit|Combine|Actor|Controller|Lifecycle)'; then
     fail "forbidden manifest dependency or host boundary in AxolotyObjectMacros"
 fi
@@ -94,9 +90,4 @@ if printf '%s' "$coaty_manifest" | grep -Eiq '(Foundation|MQTTNIO|mqtt-nio|swift
     fail "forbidden manifest dependency or host boundary in AxolotyCoatyModels"
 fi
 
-test -f "$component/CMakeLists.txt" || fail "missing Embedded Swift object-model component"
-component_text=$(sed -E 's:#.*$::' "$component/CMakeLists.txt")
-printf '%s' "$component_text" | grep -Fq 'Packages/AxolotyObjectModel/Sources/AxolotyObjectModel/*.swift' || fail "Embedded Swift component omits the object-model source glob"
-printf '%s' "$component_text" | grep -Fq 'idf_component_register_swift' || fail "Embedded Swift component does not register Swift sources"
-
-echo "AxolotyObjectModel/AxolotyObjectMacros boundary and source inclusion passed"
+echo "AxolotyObjectModel/AxolotyObjectMacros boundary and source policy passed"

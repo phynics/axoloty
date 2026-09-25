@@ -275,12 +275,13 @@ final class FoundationCommandExecution: @unchecked Sendable {
             exitCode: emptyTestRun ? 65 : processExitCode,
             standardOutput: String(decoding: standardOutput, as: UTF8.self),
             standardError: String(decoding: standardError, as: UTF8.self) + emptyTestDiagnostic,
-            observation: AxolotyCommandObservation(
+            payload: .observation(AxolotyCommandObservation(
                 elapsedSeconds: finishedAt.timeIntervalSince(state.startedAt),
                 lastTest: snapshot.lastTest,
                 outputBytes: snapshot.outputBytes,
-                artifactPath: state.artifact.directory.path
-            )
+                artifactPath: state.artifact.directory.path,
+                failedTestNames: state.tracker?.failedTestNames() ?? []
+            ))
         )
         state.tracker?.complete(
             success: result.exitCode == 0,
@@ -493,7 +494,7 @@ final class FoundationCommandExecution: @unchecked Sendable {
             exitCode: outcome == .timedOut ? 124 : 130,
             standardOutput: String(decoding: collector.data(for: .standardOutput), as: UTF8.self),
             standardError: standardError,
-            lifecycle: lifecycle
+            payload: .lifecycle(lifecycle)
         )
     }
 

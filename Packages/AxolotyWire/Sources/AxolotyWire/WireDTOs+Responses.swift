@@ -66,7 +66,7 @@ public struct ResolveWireData: WireDecodable, WireEncodable, Equatable {
     /// - Throws: ``WireDecodeError`` if the `object` field is missing.
     public init(from reader: WireReader) throws(WireDecodeError) {
         try reader.validate()
-        guard let obj = reader.readRaw("object") else {
+        guard let obj = reader.readField("object") else {
             throw WireDecodeError(.missingField, field: "object")
         }
         self.object = obj
@@ -109,7 +109,7 @@ public struct RetrieveWireData: WireDecodable, WireEncodable, Equatable {
     /// - Throws: ``WireDecodeError`` if the `object` field is missing.
     public init(from reader: WireReader) throws(WireDecodeError) {
         try reader.validate()
-        guard let objects = reader.readRaw("objects") ?? reader.readRaw("object") else {
+        guard let objects = reader.readField("objects") ?? reader.readField("object") else {
             throw WireDecodeError(.missingField, field: "objects")
         }
         self.objects = objects
@@ -144,7 +144,7 @@ public struct UpdateWireData: WireDecodable, WireEncodable, Equatable {
     /// - Throws: ``WireDecodeError`` if the `object` field is missing.
     public init(from reader: WireReader) throws(WireDecodeError) {
         try reader.validate()
-        guard let obj = reader.readRaw("object") else {
+        guard let obj = reader.readField("object") else {
             throw WireDecodeError(.missingField, field: "object")
         }
         self.object = obj

@@ -1,7 +1,7 @@
-# Axoloty 0.7.0 API documentation
+# Axoloty 0.8.2 API documentation
 
-The current released API is Axoloty 0.7.0. The body below describes the active
-0.7 development API and does not change the released version.
+The current released API is Axoloty 0.8.2. The body below describes the active
+0.8 development API and does not change the released version.
 
 ## Package boundaries
 
@@ -10,9 +10,12 @@ The current released API is Axoloty 0.7.0. The body below describes the active
 | `AxolotyWire` | Foundation-free topics, codecs, envelopes, validation, and borrowed/owned wire values. |
 | `AxolotyObjectModel` | Bounded object envelopes, dynamic objects, predicates, and sealed schema registries. |
 | `AxolotyProtocol` | The shared fixed-inline processor, correlations, association state, route classification, and normalized actions. |
-| `Axoloty` | The host lifecycle, bounded ingress, scheduling, handler supervision, and `MQTTBinding`. |
+| `Axoloty` | The host lifecycle, bounded ingress, scheduling, and handler supervision. |
+| `AxolotyMQTT` | The host MQTT transport binding used to connect `AxolotyRuntime` to a broker. |
 | `AxolotyStaticRuntime` | Synchronous fixed-storage composition for Embedded Swift. |
-| `AxolotySensorThings` | Optional bounded SensorThings schemas and one atomic runtime-owned source/direct-observation module. |
+| `AxolotyIoRouting` | Optional typed routing between runtime events and fixed IO endpoints. |
+| `AxolotySensorThingsModel` | Portable bounded SensorThings schemas and JSON codecs. |
+| `AxolotySensorThings` | Optional bounded SensorThings source and observation workflows built on the model package. |
 
 Every host and static protocol transition enters `AxolotyProtocol`. The host
 runtime owns transport and concurrency policy; the static runtime owns only a
@@ -131,7 +134,8 @@ growable collection is part of the static runtime.
 Wire views such as `ByteSlice` and `TopicView` borrow externally owned bytes for
 synchronous work. Never retain them, pass them across an actor or task, or
 store them in an asynchronous stream. Copy the required bytes into an owned
-value before any suspension point. Validate untrusted bytes at the wire
+value before any suspension point; `ByteSlice.ownedBytes()` returns such a
+copy. Validate untrusted bytes at the wire
 boundary before reading fields.
 
 `BorrowedProtocolAction` is valid only during the synchronous handler or sink

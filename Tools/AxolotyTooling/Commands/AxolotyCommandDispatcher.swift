@@ -12,11 +12,11 @@ public struct AxolotyCommandDispatcher: Sendable {
     private let version: String
     private let checkCommands: AxolotyCheckCommands
     private let wireCommands: AxolotyWireCommands
-    private let hardwareCommands: AxolotyHardwareCommands
     private let serveCommands: AxolotyServeCommandRunner
     private let timingCommands: AxolotyTimingCommandRunner
     private let repositoryValidationCommands: AxolotyRepositoryValidationCommands
     private let releaseCommands: AxolotyReleaseCommands
+    private let embeddedConsumerPreparation: AxolotyEmbeddedConsumerPreparation
 
     /// Creates a dispatcher from live executable configuration.
     ///
@@ -48,19 +48,19 @@ public struct AxolotyCommandDispatcher: Sendable {
     init(
         executableName: String = "axoloty-tool",
         commandRunner: any AxolotyCheckCommandRunning = FoundationCommandRunner(),
-        integrationRunner: (any AxolotyIntegrationRunning)? = nil,
-        deviceLeaseManager: any AxolotyDeviceLeasing = FoundationDeviceLeaseManager(),
-        fileSystem: (any AxolotyFileSystem)? = nil,
+        integrationRunner: any AxolotyIntegrationRunning? = nil,
+        fileSystem: any AxolotyFileSystem? = nil,
         environment: [String: String] = ProcessInfo.processInfo.environment,
         processRunnerFactory: (@Sendable () -> any AxolotyManagedProcessRunning)? = nil,
-        portProbe: (any AxolotyServiceProbing)? = nil,
-        tempDirProvider: (any AxolotyTempDirectoryProvider)? = nil,
+        portProbe: any AxolotyServiceProbing? = nil,
+        tempDirProvider: any AxolotyTempDirectoryProvider? = nil,
         timingRunner: AxolotyTimingRunner? = nil,
         repositoryRoot: URL? = nil,
         installSignalHandler: Bool = true,
         cancellation: AxolotyCommandCancellation? = nil,
         eventSink: (@Sendable (AxolotyCheckExecutionEvent) -> Void)? = nil,
         timestampProvider: (@Sendable () -> String)? = nil,
+        suppliedSwiftPMSBOM: SwiftPMSBOMEvidence? = nil,
         clock: any AxolotyTimingClock = AxolotyContinuousTimingClock(),
         overrunScheduler: any AxolotyOverrunScheduling = DispatchOverrunScheduler()
     ) {
@@ -92,8 +92,12 @@ public struct AxolotyCommandDispatcher: Sendable {
             planResolver: try? planResolution.get()
         )
         let fileSystem = fileSystem ?? FoundationFileSystem()
-        let normalizedRepositoryRoot = (repositoryRoot ?? URL(fileURLWithPath: FileManager.default.currentDirectoryPath))
-            .standardizedFileURL
+        let environmentRepositoryRoot = environment["AXOLOTY_SOURCE_DIR"].flatMap { path in
+            path.isEmpty ? nil : URL(fileURLWithPath: path)
+        }
+        let normalizedRepositoryRoot = (
+            repositoryRoot ?? environmentRepositoryRoot ?? URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        ).standardizedFileURL
         let processRunnerFactory = processRunnerFactory ?? { FoundationProcessRunner() }
         let portProbe = portProbe ?? FoundationServiceProbe()
         let tempDirProvider = tempDirProvider ?? FoundationTempDirectoryProvider()
@@ -111,6 +115,7 @@ public struct AxolotyCommandDispatcher: Sendable {
             cancellation: invocationCancellation,
             clock: clock,
             overrunScheduler: overrunScheduler,
+            quarantine: AxolotyQuarantineLedger(entries: (try? planResolution.get())?.manifest.quarantine ?? []),
             eventSink: eventSink ?? { event in
                 try? FileHandle.standardError.write(contentsOf: Data(event.diagnosticLine().utf8))
             }
@@ -133,13 +138,6 @@ public struct AxolotyCommandDispatcher: Sendable {
             outputMode: runnerConfiguration.outputMode,
             planResolver: planResolution,
             executor: executor
-        )
-        self.hardwareCommands = AxolotyHardwareCommands(
-            commandRunner: configuredCommandRunner,
-            contextValidator: contextValidator,
-            deviceLeaseManager: deviceLeaseManager,
-            fileSystem: fileSystem,
-            environment: environment
         )
         self.serveCommands = AxolotyServeCommandRunner(
             executableName: executableName,
@@ -166,9 +164,14 @@ public struct AxolotyCommandDispatcher: Sendable {
             outputMode: runnerConfiguration.outputMode,
             resolver: planResolution,
             executor: executor,
+            suppliedSwiftPMSBOM: suppliedSwiftPMSBOM,
             timestampProvider: timestampProvider ?? {
                 ISO8601DateFormatter().string(from: Date())
             }
+        )
+        self.embeddedConsumerPreparation = AxolotyEmbeddedConsumerPreparation(
+            environment: environment,
+            commandRunner: configuredCommandRunner
         )
     }
 
@@ -202,10 +205,8 @@ public struct AxolotyCommandDispatcher: Sendable {
             return timingCommands.run(arguments: arguments)
         case .repositoryValidation(let arguments):
             return repositoryValidationCommands.run(arguments: arguments)
-        case .hardware(let required, let device):
-            return hardwareCommands.run(AxolotyHardwareCommand(required: required, device: device))
-        case .testOne(let filter):
-            return checkCommands.run(.testOne(filter: filter))
+        case .testOne(let filter, let repetition):
+            return checkCommands.run(.testOne(filter: filter, repetition: repetition))
         case .testTier(let name, let ci):
             return checkCommands.run(.testTier(name: name, ci: ci))
         case .explain(let name, let ci):
@@ -228,12 +229,8 @@ public struct AxolotyCommandDispatcher: Sendable {
             return wireCommands.run(.capture)
         case .wireVerify:
             return wireCommands.run(.verifyFixtures)
-        case .embeddedBuild:
-            return checkCommands.run(.embeddedBuild)
-        case .embeddedDoctor:
-            return checkCommands.run(.embeddedDoctor)
-        case .embeddedVerify:
-            return checkCommands.run(.embeddedVerify)
+        case .embeddedConsumerPrepare(let arguments):
+            return embeddedConsumerPreparation.run(arguments: arguments)
         case .release(let command):
             return releaseCommands.run(command)
         }

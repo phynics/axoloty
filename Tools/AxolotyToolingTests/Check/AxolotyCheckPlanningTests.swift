@@ -14,12 +14,6 @@ func checkpointPlansCarryNoUnresolvedPlaceholders() throws {
     let resolver = try AxolotyCanonicalTestPlanResolver(environment: ProcessInfo.processInfo.environment)
     let plans = [
         try resolver.resolve(.checkpoint(
-            hardwareDevice: nil,
-            consumerEnvironment: [:],
-            platform: AxolotyCheckPlan.currentPlatform
-        )),
-        try resolver.resolve(.checkpoint(
-            hardwareDevice: "/dev/ttyACM0",
             consumerEnvironment: [:],
             platform: AxolotyCheckPlan.currentPlatform
         )),
@@ -62,11 +56,11 @@ func injectedManifestSchemaIsValidatedBeforeResolution() throws {
         manifestID: resolver.manifest.manifestID,
         nodes: resolver.manifest.nodes,
         tiers: resolver.manifest.tiers,
-        requiredGates: resolver.manifest.requiredGates,
         testOne: resolver.manifest.testOne,
         selfTests: resolver.manifest.selfTests,
         artifactContract: resolver.manifest.artifactContract,
-        flakePolicy: resolver.manifest.flakePolicy
+        flakePolicy: resolver.manifest.flakePolicy,
+        quarantine: resolver.manifest.quarantine
     )
 
     #expect(throws: AxolotyCanonicalTestManifestError.unsupportedSchema(1)) {
@@ -102,6 +96,59 @@ func releaseCategoryDeclaresEveryOtherCategoryAndRunsWhatItCan() throws {
             #expect(try resolved(narrower).isSubset(of: release), "\(narrower.rawValue) must run inside release")
         }
     }
+}
+
+@Test
+func resolvedPlanRetainsMaintainedPackageAndRouteCoverage() throws {
+    let resolver = try AxolotyCanonicalTestPlanResolver(environment: ProcessInfo.processInfo.environment)
+    let plan = try resolver.resolve(.tier(
+        name: CanonicalTier.ci.rawValue,
+        ci: false,
+        platform: .linux
+    ))
+    let byName = Dictionary(uniqueKeysWithValues: plan.nodes.map { ($0.name, $0) })
+    for name in ["g4-host-runtime", "g4-static-runtime", "g5-optional-products-tests", "test-module"] {
+        #expect(byName[name] != nil, "missing canonical coverage node: \(name)")
+    }
+    func filterArgument(for name: String) throws -> String {
+        let arguments = try #require(byName[name]?.command.arguments)
+        let index = try #require(arguments.firstIndex(of: "--filter"))
+        let valueIndex = arguments.index(after: index)
+        try #require(valueIndex < arguments.endIndex)
+        return arguments[valueIndex]
+    }
+    let hostFilter = try filterArgument(for: "g4-host-runtime")
+    #expect(hostFilter.contains("CoatyRouteTests"))
+    #expect(hostFilter.contains("CoatyRouteCapacityTests"))
+    let staticFilter = try filterArgument(for: "g4-static-runtime")
+    #expect(staticFilter.contains("StaticIoActorMacroTests"))
+    #expect(staticFilter.contains("staticIoActorRejectsNonEnum"))
+    let mqttFilter = try filterArgument(for: "g4-mqtt-tests")
+    #expect(mqttFilter.contains("MQTTBindingTests"))
+    #expect(mqttFilter.contains("MQTTBindingExternalRouteTests"))
+    #expect(mqttFilter.contains("MQTTBindingOperationTimeoutTests"))
+    let routingFilter = try filterArgument(for: "g4-io-routing-tests")
+    #expect(routingFilter == "AxolotyIoRoutingTests")
+    let moduleFilter = try filterArgument(for: "test-module")
+    #expect(moduleFilter.contains("AxolotySensorThingsTests"))
+}
+
+@Test
+func resolverKeepsPackageScopedFilterCommandsBoundToTheirOwner() throws {
+    let resolver = try AxolotyCanonicalTestPlanResolver(environment: ProcessInfo.processInfo.environment)
+    func filterArgument(for command: AxolotyCommandPlan) throws -> String {
+        let index = try #require(command.arguments.firstIndex(of: "--filter"))
+        let valueIndex = command.arguments.index(after: index)
+        try #require(valueIndex < command.arguments.endIndex)
+        return command.arguments[valueIndex]
+    }
+    let staticCommand = try resolver.command(.node(name: "g4-static-runtime"))
+    #expect(staticCommand.arguments.contains("--package-path"))
+    #expect(staticCommand.arguments.contains("Packages/AxolotyStaticRuntime"))
+    #expect(try filterArgument(for: staticCommand).contains("staticIoActorRejectsNonEnum"))
+    let protocolCommand = try resolver.command(.node(name: "g4-protocol-lifecycle"))
+    #expect(protocolCommand.arguments.contains("Packages/AxolotyProtocol"))
+    #expect(try filterArgument(for: protocolCommand).contains("ProtocolProcessorTests"))
 }
 
 @Test
@@ -188,7 +235,8 @@ func verifyPlanPropagatesCalibratedTimingExpectations() throws {
     #expect(plan.schemaVersion == 1)
     #expect(plan.expectedDurationSeconds == 1_200)
     #expect(plan.deadlineSeconds == 3_600)
-    #expect(expectations["embedded-build"] == 180)
+    #expect(expectations["embedded-core-consumer"] == 300)
+    #expect(expectations["embedded-build"] == nil)
     #expect(expectations["g4-static-runtime"] == 120)
     #expect(expectations["g2-trace-corpus"] == 90)
     #expect(expectations["wire-distribution"] == 60)
@@ -226,11 +274,9 @@ func offlinePlanIncludesEmbeddedChecksOnLinux() throws {
     let resolver = try AxolotyCanonicalTestPlanResolver(environment: ProcessInfo.processInfo.environment)
     let plan = try resolver.resolve(.tier(name: CanonicalTier.ci.rawValue, ci: false, platform: .linux, requested: nil))
     let names = plan.nodes.map(\.name)
-    let embeddedBuild = names.firstIndex(of: "embedded-build")
-    let embeddedLinker = names.firstIndex(of: "embedded-linker")
+    let embeddedCoreConsumer = names.firstIndex(of: "embedded-core-consumer")
     let boundedHost = names.firstIndex(of: "g1-bounded-runtime-host")
     let boundedSanitized = names.firstIndex(of: "g1-bounded-runtime-sanitized")
-    let boundedEmbedded = names.firstIndex(of: "g1-bounded-runtime-embedded")
     let objectBoundary = names.firstIndex(of: "g3-object-boundary")
     let objectPackage = names.firstIndex(of: "g3-object-model-package")
     let objectTests = names.firstIndex(of: "g3-object-model-tests")
@@ -238,13 +284,13 @@ func offlinePlanIncludesEmbeddedChecksOnLinux() throws {
     let coatyModels = names.firstIndex(of: "g3-coaty-models-tests")
     let objectHost = names.firstIndex(of: "g3-object-model-evidence-host")
     let objectSanitized = names.firstIndex(of: "g3-object-model-evidence-sanitized")
-    let objectEmbedded = names.firstIndex(of: "g3-object-model-evidence-embedded")
+    let objectPortable = names.firstIndex(of: "g3-object-model-evidence-portable")
 
-    #expect(embeddedBuild != nil)
-    #expect(embeddedLinker != nil)
+    #expect(embeddedCoreConsumer != nil)
+    #expect(!names.contains("embedded-build"))
+    #expect(!names.contains("embedded-linker"))
     #expect(boundedHost != nil)
     #expect(boundedSanitized != nil)
-    #expect(boundedEmbedded != nil)
     #expect(objectBoundary != nil)
     #expect(objectPackage != nil)
     #expect(objectTests != nil)
@@ -252,22 +298,19 @@ func offlinePlanIncludesEmbeddedChecksOnLinux() throws {
     #expect(coatyModels != nil)
     #expect(objectHost != nil)
     #expect(objectSanitized != nil)
-    #expect(objectEmbedded != nil)
-    if let embeddedBuild, let embeddedLinker, let boundedHost, let boundedSanitized, let boundedEmbedded,
+    #expect(objectPortable == nil)
+    if let embeddedCoreConsumer, let boundedHost, let boundedSanitized,
        let objectBoundary, let objectPackage, let objectTests, let objectMacros, let coatyModels,
-       let objectHost, let objectSanitized, let objectEmbedded {
-        #expect(embeddedBuild < embeddedLinker)
-        #expect(embeddedLinker < boundedHost)
+       let objectHost, let objectSanitized {
+        #expect(embeddedCoreConsumer < boundedHost)
         #expect(boundedHost < boundedSanitized)
-        #expect(boundedSanitized < boundedEmbedded)
-        #expect(boundedEmbedded < objectBoundary)
+        #expect(boundedSanitized < objectBoundary)
         #expect(objectBoundary < objectPackage)
         #expect(objectPackage < objectTests)
         #expect(objectTests < objectMacros)
         #expect(objectMacros < coatyModels)
         #expect(coatyModels < objectHost)
         #expect(objectHost < objectSanitized)
-        #expect(objectSanitized < objectEmbedded)
     }
 }
 
@@ -278,11 +321,11 @@ func namedPlanRejectsRequestedNodesOutsideItsResolvedClosure() throws {
     )
 
     #expect(throws: AxolotyCanonicalTestManifestError.unavailableNode(
-        "checkpoint-hardware-smoke"
+        "checkpoint-semver-consumer"
     )) {
         _ = try resolver.resolve(.tier(name: CanonicalTier.ci.rawValue, ci: false,
             platform: .linux,
-            requested: ["checkpoint-hardware-smoke"]
+            requested: ["checkpoint-semver-consumer"]
         ))
     }
 }

@@ -40,8 +40,6 @@ public struct UnitOfMeasurement: ObjectSchema, Sendable, Equatable {
     /// Unit definition URI.
     public var definition: Presence<BoundedEncodedText<128>>
 
-    private var rawSnapshot: SensorThingsJSONValue?
-
     /// The fixed SensorThings schema descriptor.
     public static let schema: PortableObjectSchema<UnitOfMeasurement> = sensorThingsSchema(
         "coaty.sensorThings.UnitOfMeasurement",
@@ -57,7 +55,6 @@ public struct UnitOfMeasurement: ObjectSchema, Sendable, Equatable {
         self.name = name
         self.symbol = symbol
         self.definition = definition
-        self.rawSnapshot = nil
     }
 
     /// Decodes a unit while preserving missing/null/value state.
@@ -65,16 +62,15 @@ public struct UnitOfMeasurement: ObjectSchema, Sendable, Equatable {
         name = try fields.presence("name", as: BoundedEncodedText<128>.self)
         symbol = try fields.presence("symbol", as: BoundedEncodedText<128>.self)
         definition = try fields.presence("definition", as: BoundedEncodedText<128>.self)
-        fields.withEncodedBytes { bytes in self.rawSnapshot = try? SensorThingsJSONValue(copying: bytes) }
     }
 
     /// Encodes all unit keys while preserving missing and explicit null states.
     public borrowing func encodeFields<let capacity: Int>(
         to encoder: inout ObjectFieldEncoder<capacity>
     ) throws(ObjectEncodingError) {
-        try encoder.encode(name, forKey: "name")
-        try encoder.encode(symbol, forKey: "symbol")
-        try encoder.encode(definition, forKey: "definition")
+        try name.encode(to: &encoder, forKey: "name")
+        try symbol.encode(to: &encoder, forKey: "symbol")
+        try definition.encode(to: &encoder, forKey: "definition")
     }
 
     public static func == (lhs: Self, rhs: Self) -> Bool {
@@ -91,8 +87,6 @@ public struct ObservedProperty: ObjectSchema, Sendable, Equatable {
     /// Human-readable property description.
     public var description: BoundedEncodedText<128>
 
-    private var rawSnapshot: SensorThingsJSONValue?
-
     /// The fixed SensorThings schema descriptor.
     public static let schema: PortableObjectSchema<ObservedProperty> = sensorThingsSchema(
         "coaty.sensorThings.ObservedProperty",
@@ -108,7 +102,6 @@ public struct ObservedProperty: ObjectSchema, Sendable, Equatable {
         self.name = name
         self.definition = definition
         self.description = description
-        self.rawSnapshot = nil
     }
 
     /// Decodes an observed property.
@@ -116,16 +109,15 @@ public struct ObservedProperty: ObjectSchema, Sendable, Equatable {
         name = try fields.decode("name", as: BoundedEncodedText<128>.self)
         definition = try fields.decode("definition", as: BoundedEncodedText<128>.self)
         description = try fields.decode("description", as: BoundedEncodedText<128>.self)
-        fields.withEncodedBytes { bytes in self.rawSnapshot = try? SensorThingsJSONValue(copying: bytes) }
     }
 
     /// Encodes an observed property.
     public borrowing func encodeFields<let capacity: Int>(
         to encoder: inout ObjectFieldEncoder<capacity>
     ) throws(ObjectEncodingError) {
-        try encoder.encode(name, forKey: "name")
-        try encoder.encode(definition, forKey: "definition")
-        try encoder.encode(description, forKey: "description")
+        try name.encode(to: &encoder, forKey: "name")
+        try definition.encode(to: &encoder, forKey: "definition")
+        try description.encode(to: &encoder, forKey: "description")
     }
 
     public static func == (lhs: Self, rhs: Self) -> Bool {
@@ -373,9 +365,9 @@ public struct FeatureOfInterest: SensorThingsTopLevelSchema, Sendable, Equatable
     public borrowing func encodeFields<let capacity: Int>(
         to encoder: inout ObjectFieldEncoder<capacity>
     ) throws(ObjectEncodingError) {
-        try encoder.encode(description, forKey: "description")
-        try encoder.encode(encodingType, forKey: "encodingType")
-        try encoder.encode(metadata, forKey: "metadata")
+        try description.encode(to: &encoder, forKey: "description")
+        try encodingType.encode(to: &encoder, forKey: "encodingType")
+        try metadata.encode(to: &encoder, forKey: "metadata")
     }
 }
 
@@ -440,13 +432,13 @@ public struct Observation: SensorThingsTopLevelSchema, Sendable, Equatable {
     public borrowing func encodeFields<let capacity: Int>(
         to encoder: inout ObjectFieldEncoder<capacity>
     ) throws(ObjectEncodingError) {
-        try encoder.encode(phenomenonTime, forKey: "phenomenonTime")
-        try encoder.encode(result, forKey: "result")
-        try encoder.encode(resultTime, forKey: "resultTime")
-        try encoder.encode(resultQuality, forKey: "resultQuality")
-        try encoder.encode(validTime, forKey: "validTime")
-        try encoder.encode(parameters, forKey: "parameters")
-        try encoder.encode(featureOfInterest, forKey: "featureOfInterest")
+        try phenomenonTime.encode(to: &encoder, forKey: "phenomenonTime")
+        try result.encode(to: &encoder, forKey: "result")
+        try resultTime.encode(to: &encoder, forKey: "resultTime")
+        try resultQuality.encode(to: &encoder, forKey: "resultQuality")
+        try validTime.encode(to: &encoder, forKey: "validTime")
+        try parameters.encode(to: &encoder, forKey: "parameters")
+        try featureOfInterest.encode(to: &encoder, forKey: "featureOfInterest")
     }
 }
 
@@ -522,15 +514,15 @@ public struct Sensor: SensorThingsTopLevelSchema, Sendable, Equatable {
     public borrowing func encodeFields<let capacity: Int>(
         to encoder: inout ObjectFieldEncoder<capacity>
     ) throws(ObjectEncodingError) {
-        try encoder.encode(description, forKey: "description")
-        try encoder.encode(encodingType, forKey: "encodingType")
-        try encoder.encode(metadata, forKey: "metadata")
-        try encoder.encode(unitOfMeasurement, forKey: "unitOfMeasurement")
-        try encoder.encode(observationType, forKey: "observationType")
-        try encoder.encode(observedArea, forKey: "observedArea")
-        try encoder.encode(phenomenonTime, forKey: "phenomenonTime")
-        try encoder.encode(resultTime, forKey: "resultTime")
-        try encoder.encode(observedProperty, forKey: "observedProperty")
+        try description.encode(to: &encoder, forKey: "description")
+        try encodingType.encode(to: &encoder, forKey: "encodingType")
+        try metadata.encode(to: &encoder, forKey: "metadata")
+        try unitOfMeasurement.encode(to: &encoder, forKey: "unitOfMeasurement")
+        try observationType.encode(to: &encoder, forKey: "observationType")
+        try observedArea.encode(to: &encoder, forKey: "observedArea")
+        try phenomenonTime.encode(to: &encoder, forKey: "phenomenonTime")
+        try resultTime.encode(to: &encoder, forKey: "resultTime")
+        try observedProperty.encode(to: &encoder, forKey: "observedProperty")
     }
 }
 
@@ -573,8 +565,8 @@ public struct Thing: SensorThingsTopLevelSchema, Sendable, Equatable {
     public borrowing func encodeFields<let capacity: Int>(
         to encoder: inout ObjectFieldEncoder<capacity>
     ) throws(ObjectEncodingError) {
-        try encoder.encode(description, forKey: "description")
-        try encoder.encode(properties, forKey: "properties")
+        try description.encode(to: &encoder, forKey: "description")
+        try properties.encode(to: &encoder, forKey: "properties")
     }
 }
 
@@ -589,11 +581,7 @@ extension UnitOfMeasurement: ObjectFieldDecodable, ObjectFieldEncodable {
         to editor: inout ObjectFieldEncoder<capacity>,
         forKey key: StaticString
     ) throws(ObjectEncodingError) {
-        if let rawSnapshot {
-            try rawSnapshot.encode(to: &editor, forKey: key)
-        } else {
-            try encodeNested(self, to: &editor, forKey: key)
-        }
+        try encodeNested(self, to: &editor, forKey: key)
     }
 }
 
@@ -607,11 +595,7 @@ extension ObservedProperty: ObjectFieldDecodable, ObjectFieldEncodable {
         to editor: inout ObjectFieldEncoder<capacity>,
         forKey key: StaticString
     ) throws(ObjectEncodingError) {
-        if let rawSnapshot {
-            try rawSnapshot.encode(to: &editor, forKey: key)
-        } else {
-            try encodeNested(self, to: &editor, forKey: key)
-        }
+        try encodeNested(self, to: &editor, forKey: key)
     }
 }
 

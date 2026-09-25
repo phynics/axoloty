@@ -29,7 +29,7 @@ public struct AxolotyTimingRunner: Sendable {
         platform: AxolotyCheckPlan.Platform = AxolotyCheckPlan.currentPlatform,
         workspace: any AxolotyTimingWorkspaceManaging = FoundationTimingWorkspaceManager(),
         clock: any AxolotyTimingClock = AxolotyContinuousTimingClock(),
-        cacheReader: (any AxolotyTimingCacheStatsReading)? = nil,
+        cacheReader: any AxolotyTimingCacheStatsReading? = nil,
         identity: AxolotyTimingToolchainIdentity? = nil
     ) {
         let planResolver: Result<AxolotyCanonicalTestPlanResolver, AxolotyCanonicalTestManifestError>
@@ -61,7 +61,7 @@ public struct AxolotyTimingRunner: Sendable {
         platform: AxolotyCheckPlan.Platform = AxolotyCheckPlan.currentPlatform,
         workspace: any AxolotyTimingWorkspaceManaging = FoundationTimingWorkspaceManager(),
         clock: any AxolotyTimingClock = AxolotyContinuousTimingClock(),
-        cacheReader: (any AxolotyTimingCacheStatsReading)? = nil,
+        cacheReader: any AxolotyTimingCacheStatsReading? = nil,
         identity: AxolotyTimingToolchainIdentity? = nil,
         planResolver: Result<AxolotyCanonicalTestPlanResolver, AxolotyCanonicalTestManifestError>
     ) {
@@ -175,7 +175,7 @@ public struct AxolotyTimingRunner: Sendable {
                 buildSteps: AxolotyTimingMetric(unavailable: "command unavailable"),
                 cache: AxolotyTimingCacheStats(hits: nil, misses: nil),
                 scratchReused: workspace.reused, scratchPath: workspace.path,
-                command: AxolotyCommandPlan(executable: "unavailable"), toolchain: identity
+                command: AxolotyCommandPlan(executable: "unavailable")
             )
         }
         guard workspace.diagnostic == nil else {
@@ -185,7 +185,7 @@ public struct AxolotyTimingRunner: Sendable {
                 buildSteps: AxolotyTimingMetric(unavailable: "workspace unavailable"),
                 cache: AxolotyTimingCacheStats(hits: nil, misses: nil),
                 scratchReused: workspace.reused, scratchPath: workspace.path,
-                command: command, toolchain: identity
+                command: command
             )
         }
         let before = cacheReader.read()
@@ -207,8 +207,7 @@ public struct AxolotyTimingRunner: Sendable {
             cache: cache,
             scratchReused: workspace.reused,
             scratchPath: workspace.path,
-            command: command,
-            toolchain: identity
+            command: command
         )
     }
 

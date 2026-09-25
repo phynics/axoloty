@@ -14,7 +14,7 @@ let bytes = Array(payload.utf8)
 let result = bytes.withUnsafeBufferPointer { buffer -> String in
     guard let base = buffer.baseAddress else { return "nil" }
     let reader = WireReader(bytes: base, length: buffer.count)
-    let object = reader.readRaw("object")
+    let object = reader.readField("object")
     return object != nil ? "found" : "nil"
 }
 print("AXOLOTY_WIRE_CONSUMER_OK: \(result)")

@@ -2,33 +2,6 @@
 
 import Foundation
 
-/// The outcome status of a hardware check.
-public enum AxolotyHardwareStatus: String, Codable, Equatable, Sendable {
-    /// The check was successful.
-    case passed
-    /// The device was absent and the check was not run.
-    case skipped
-    /// The device was present but the check failed.
-    case failed
-}
-
-/// A structured result from an embedded hardware check.
-public struct AxolotyHardwareOutcome: Codable, Equatable, Sendable {
-    /// The check outcome.
-    public let status: AxolotyHardwareStatus
-    /// The selected device path.
-    public let device: String
-    /// The reason for the outcome.
-    public let reason: String
-
-    /// Creates a hardware outcome.
-    public init(status: AxolotyHardwareStatus, device: String, reason: String) {
-        self.status = status
-        self.device = device
-        self.reason = reason
-    }
-}
-
 /// The filesystem boundary used by hardware checks.
 public protocol AxolotyFileSystem: Sendable {
     /// Returns whether a path exists.

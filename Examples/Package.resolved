@@ -1,5 +1,5 @@
 {
-  "originHash" : "086250c2e4461d66568f972a2bad7ac6687d0e296ed9ad3937fe735b697c4156",
+  "originHash" : "8eefd1ba5a79413adf71bc039886c51847d561ab890ef4357a41d6fe2c1f7a97",
   "pins" : [
     {
       "identity" : "errorkit",
@@ -8,15 +8,6 @@
       "state" : {
         "revision" : "94d08765d65a7fc7b64730b0a9920ce4246d9fa0",
         "version" : "1.2.1"
-      }
-    },
-    {
-      "identity" : "eventsource",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/mattt/eventsource.git",
-      "state" : {
-        "revision" : "86b5096ac59ab46e66bd1f6377c604bc1dab0bc2",
-        "version" : "1.5.1"
       }
     },
     {
@@ -110,21 +101,12 @@
       }
     },
     {
-      "identity" : "swift-sdk",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/modelcontextprotocol/swift-sdk.git",
-      "state" : {
-        "revision" : "a0ae212ebf6eab5f754c3129608bc5557637e605",
-        "version" : "0.12.1"
-      }
-    },
-    {
       "identity" : "swift-syntax",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/swiftlang/swift-syntax.git",
       "state" : {
-        "revision" : "2b59c0c741e9184ab057fd22950b491076d42e91",
-        "version" : "603.0.0"
+        "revision" : "050f1a346fbbac0ca2cfb15a95274f7bd1cf0ccf",
+        "version" : "604.0.0"
       }
     },
     {

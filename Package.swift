@@ -1,4 +1,4 @@
-// swift-tools-version:6.3
+// swift-tools-version:6.4
 // The swift-tools-version declares the minimum version of Swift required to build this package.
 
 import CompilerPluginSupport
@@ -52,6 +52,13 @@ let package = Package(
             name: "AxolotyStaticRuntime",
             targets: ["AxolotyStaticRuntime"]
         ),
+        // Verification infrastructure, not a shipped product: an in-process
+        // MQTT 3.1.1 broker so broker-backed checks need no container, no
+        // fixed port, and no Mosquitto. No shipped product may depend on it.
+        .library(
+            name: "AxolotyTestBroker",
+            targets: ["AxolotyTestBroker"]
+        ),
     ],
     dependencies: [
         .package(url: "https://github.com/swift-server-community/mqtt-nio.git", from: "2.13.0"),
@@ -61,7 +68,7 @@ let package = Package(
         .package(url: "https://github.com/FlineDev/ErrorKit.git", exact: "1.2.1"),
         .package(url: "https://github.com/phynics/swift-json.git", exact: "2.5.3"),
         .package(url: "https://github.com/swiftlang/swift-docc-plugin.git", from: "1.5.0"),
-        .package(url: "https://github.com/swiftlang/swift-syntax.git", exact: "603.0.0"),
+        .package(url: "https://github.com/swiftlang/swift-syntax.git", exact: "604.0.0"),
     ],
     targets: [
         .macro(
@@ -80,22 +87,30 @@ let package = Package(
             dependencies: [
                 .product(name: "IkigaJSONCore", package: "swift-json"),
             ],
-            path: "Packages/AxolotyWire/Sources/AxolotyWire"
+            path: "Packages/AxolotyWire/Sources/AxolotyWire",
+            // The embedded-core-consumer gate remains the enforcing portability check.
+            swiftSettings: [.treatWarning("EmbeddedRestrictions", as: .warning)]
         ),
         .target(
             name: "AxolotyProtocol",
             dependencies: ["AxolotyWire", "AxolotyObjectModel"],
-            path: "Packages/AxolotyProtocol/Sources/AxolotyProtocol"
+            path: "Packages/AxolotyProtocol/Sources/AxolotyProtocol",
+            // The embedded-core-consumer gate remains the enforcing portability check.
+            swiftSettings: [.treatWarning("EmbeddedRestrictions", as: .warning)]
         ),
         .target(
             name: "AxolotyObjectModel",
             dependencies: ["AxolotyWire"],
-            path: "Packages/AxolotyObjectModel/Sources/AxolotyObjectModel"
+            path: "Packages/AxolotyObjectModel/Sources/AxolotyObjectModel",
+            // The embedded-core-consumer gate remains the enforcing portability check.
+            swiftSettings: [.treatWarning("EmbeddedRestrictions", as: .warning)]
         ),
         .target(
             name: "AxolotyCoatyModels",
             dependencies: ["AxolotyObjectModel"],
-            path: "Packages/AxolotyCoatyModels/Sources/AxolotyCoatyModels"
+            path: "Packages/AxolotyCoatyModels/Sources/AxolotyCoatyModels",
+            // The embedded-core-consumer gate remains the enforcing portability check.
+            swiftSettings: [.treatWarning("EmbeddedRestrictions", as: .warning)]
         ),
         .target(
             name: "AxolotyIoRouting",
@@ -123,7 +138,9 @@ let package = Package(
                 "AxolotyWire",
                 "AxolotyStaticRuntimeMacrosImplementation",
             ],
-            path: "Packages/AxolotyStaticRuntime/Sources/AxolotyStaticRuntime"
+            path: "Packages/AxolotyStaticRuntime/Sources/AxolotyStaticRuntime",
+            // The embedded-core-consumer gate remains the enforcing portability check.
+            swiftSettings: [.treatWarning("EmbeddedRestrictions", as: .warning)]
         ),
         .target(
             name: "Axoloty",
@@ -134,7 +151,6 @@ let package = Package(
                 .product(name: "ErrorKit", package: "ErrorKit"),
             ],
             path: "Source",
-            exclude: ["Runtime/AGENTS.md"],
             sources: [
                 "Common/AxolotyError.swift",
                 "Runtime/AxolotyRuntimeConfiguration.swift",
@@ -192,6 +208,30 @@ let package = Package(
             name: "AxolotyTestSupport",
             path: "Tests/AxolotyTestSupport"
         ),
+        // In-process MQTT 3.1.1 broker for hardware-free, container-free
+        // end-to-end tests. It depends on NIO only, so it adds no new
+        // dependency to the package. It is deliberately outside every shipped
+        // product's dependency closure.
+        .target(
+            name: "AxolotyTestBroker",
+            dependencies: [
+                .product(name: "NIOCore", package: "swift-nio"),
+                .product(name: "NIOPosix", package: "swift-nio"),
+                .product(name: "NIOConcurrencyHelpers", package: "swift-nio"),
+            ],
+            path: "Tests/AxolotyTestBroker"
+        ),
+        .testTarget(
+            name: "AxolotyTestBrokerTests",
+            dependencies: [
+                "AxolotyTestBroker",
+                .product(name: "MQTTNIO", package: "mqtt-nio"),
+                .product(name: "NIOCore", package: "swift-nio"),
+                .product(name: "NIOPosix", package: "swift-nio"),
+                .product(name: "NIOConcurrencyHelpers", package: "swift-nio"),
+            ],
+            path: "Tests/AxolotyTestBrokerTests"
+        ),
         .testTarget(
             name: "AxolotyTests",
             dependencies: [
@@ -201,7 +241,6 @@ let package = Package(
                 "AxolotyStaticRuntime",
                 "AxolotyTestSupport",
                 .product(name: "ErrorKit", package: "ErrorKit"),
-                .product(name: "IkigaJSON", package: "swift-json"),
             ],
             path: "Tests/AxolotyTests",
             resources: [
@@ -218,6 +257,7 @@ let package = Package(
                 "AxolotyWire",
                 "AxolotyProtocol",
                 "AxolotyTestSupport",
+                "AxolotyTestBroker",
             ],
             path: "Tests/AxolotyLiveWireTests"
         ),

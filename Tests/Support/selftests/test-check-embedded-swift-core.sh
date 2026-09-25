@@ -1,0 +1,123 @@
+#!/bin/sh
+# Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
+
+# Self-test for the Core-owned Embedded Swift consumer gate (issue #850).
+# The real check is intentionally run against the production fixture, a
+# malformed fixture, and a failing RISC-V linker. The negative runs prove that
+# consumer and link failures cannot be hidden by successful Core module builds.
+
+set -eu
+
+root=$(CDPATH= cd -- "$(dirname -- "$0")/../../.." && pwd)
+checker="$root/Tests/Support/checks/check-embedded-swift-core.sh"
+source_root=${AXOLOTY_SOURCE_DIR:-$root}
+[ -x "$checker" ] || {
+    echo "checker is not executable: $checker" >&2
+    exit 1
+}
+
+tmpdir=$(mktemp -d)
+trap 'rm -rf -- "$tmpdir"' EXIT HUP INT TERM
+macro_scratch=${AXOLOTY_STATIC_RUNTIME_MACRO_SCRATCH_DIR:-$tmpdir/macro-tools}
+
+# A nonexistent firmware project and SDK must not affect this Core-only gate.
+if ! AXOLOTY_SOURCE_DIR="$source_root" \
+    AXOLOTY_STATIC_RUNTIME_MACRO_SCRATCH_DIR="$macro_scratch" \
+    EMBEDDED_PROJECT_DIR="$tmpdir/missing-firmware" \
+    IDF_PATH="$tmpdir/missing-sdk" \
+    "$checker" >"$tmpdir/pass.log" 2>&1; then
+    cat "$tmpdir/pass.log" >&2
+    echo "expected Core-owned Embedded Swift checker to pass" >&2
+    exit 1
+fi
+grep -Fq 'five portable modules' "$tmpdir/pass.log"
+echo "  PASS: five portable modules and real StaticIoActor consumer compile/link"
+echo "  PASS: missing firmware and SDK paths are irrelevant"
+
+# Reuse the macro/dependency preparation from the successful run. This keeps
+# the negative test focused on the consumer source rather than dependency
+# setup, and avoids an unnecessary second cold SwiftPM build.
+macro_tool=$(find "$macro_scratch" -type f \
+    \( -name AxolotyStaticRuntimeMacrosImplementation-tool \
+    -o -name AxolotyStaticRuntimeMacrosImplementation \) \
+    -perm -111 -print -quit)
+[ -n "$macro_tool" ] || {
+    echo "could not locate prepared StaticIoActor macro tool" >&2
+    exit 1
+}
+cp "$source_root/Tests/Support/fixtures/StaticIoActorEmbeddedConsumer.swift" "$tmpdir/BadConsumer.swift"
+printf '\nthis is not valid Swift source\n' >>"$tmpdir/BadConsumer.swift"
+
+if AXOLOTY_SOURCE_DIR="$source_root" \
+    AXOLOTY_STATIC_RUNTIME_MACRO_SCRATCH_DIR="$macro_scratch" \
+    AXOLOTY_STATIC_RUNTIME_MACRO_TOOL="$macro_tool" \
+    AXOLOTY_EMBEDDED_CORE_FIXTURE="$tmpdir/BadConsumer.swift" \
+    EMBEDDED_PROJECT_DIR="$tmpdir/also-missing-firmware" \
+    "$checker" >"$tmpdir/fail.log" 2>&1; then
+    cat "$tmpdir/fail.log" >&2
+    echo "malformed consumer unexpectedly passed" >&2
+    exit 1
+fi
+echo "  PASS: malformed Embedded consumer source is rejected"
+
+# The RISC-V link probe must remain a required part of the surviving gate.
+# Inject a deterministic linker failure after compilation to prove that the
+# checker does not regress to compile-only coverage.
+failing_linker="$tmpdir/failing-linker"
+cat > "$failing_linker" <<'SH'
+#!/bin/sh
+echo "synthetic unresolved RISC-V relocation" >&2
+exit 42
+SH
+chmod +x "$failing_linker"
+if AXOLOTY_SOURCE_DIR="$source_root" \
+    AXOLOTY_STATIC_RUNTIME_MACRO_SCRATCH_DIR="$macro_scratch" \
+    AXOLOTY_STATIC_RUNTIME_MACRO_TOOL="$macro_tool" \
+    AXOLOTY_RISCV_LINKER="$failing_linker" \
+    "$checker" >"$tmpdir/link-fail.log" 2>&1; then
+    cat "$tmpdir/link-fail.log" >&2
+    echo "failing RISC-V linker unexpectedly passed" >&2
+    exit 1
+fi
+grep -Fq 'synthetic unresolved RISC-V relocation' "$tmpdir/link-fail.log"
+echo "  PASS: RISC-V link failures are rejected"
+
+# The relocatable link permits known runtime references, but it must reject an
+# unresolved symbol introduced by the consumer.
+cp "$source_root/Tests/Support/fixtures/StaticIoActorEmbeddedConsumer.swift" "$tmpdir/UnresolvedConsumer.swift"
+node - "$tmpdir/UnresolvedConsumer.swift" <<'NODE'
+const fs = require("node:fs");
+const fixture = process.argv[2];
+const source = fs.readFileSync(fixture, "utf8");
+const entryPoint = "func embeddedMacroEntry() -> StaticIoHandlerEntry {\n    EmbeddedProbeActor.staticIoHandlerEntry\n}";
+const replacement = "@_silgen_name(\"axoloty_unresolved_consumer_probe\")\nfunc axolotyUnresolvedConsumerProbe()\n\n@_cdecl(\"axoloty_unresolved_consumer_anchor\")\nfunc axolotyUnresolvedConsumerAnchor() {\n    axolotyUnresolvedConsumerProbe()\n}\n\n" + entryPoint;
+if (!source.includes(entryPoint)) throw new Error("consumer fixture entry point changed");
+fs.writeFileSync(fixture, source.replace(entryPoint, replacement));
+NODE
+if AXOLOTY_SOURCE_DIR="$source_root" \
+    AXOLOTY_STATIC_RUNTIME_MACRO_SCRATCH_DIR="$macro_scratch" \
+    AXOLOTY_STATIC_RUNTIME_MACRO_TOOL="$macro_tool" \
+    AXOLOTY_EMBEDDED_CORE_FIXTURE="$tmpdir/UnresolvedConsumer.swift" \
+    "$checker" >"$tmpdir/unresolved.log" 2>&1; then
+    cat "$tmpdir/unresolved.log" >&2
+    echo "unresolved consumer symbol unexpectedly passed" >&2
+    exit 1
+fi
+if ! grep -Fq 'partial link leaves unexpected unresolved symbols' "$tmpdir/unresolved.log" ||
+    ! grep -Fq 'axoloty_unresolved_consumer_probe' "$tmpdir/unresolved.log"; then
+    cat "$tmpdir/unresolved.log" >&2
+    echo "unresolved consumer failed for an unexpected reason" >&2
+    exit 1
+fi
+echo "  PASS: unresolved Embedded consumer symbols are rejected"
+
+# Keep this check auditable: this gate must not grow a hidden firmware/SDK
+# dependency while its manifest remains a hardware-free CI requirement.
+if grep -Eq 'Embedded/swift|ESP-IDF|idf\.py|IDF_PATH' "$checker"; then
+    echo "Core checker contains a firmware or SDK dependency" >&2
+    exit 1
+fi
+echo "  PASS: checker source has no firmware or ESP-IDF dependency"
+
+echo ""
+echo "SELF-TEST OK (6 checks passed, 0 failed)"

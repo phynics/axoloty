@@ -4,8 +4,8 @@ import Foundation
 
 /// The canonical test categories. A category says what a run needs, and that
 /// is the only axis: `ci` needs nothing beyond the container, `wire` needs
-/// broker infrastructure, `embedded` needs an attached board, and `release`
-/// is everything the host can run.
+/// broker infrastructure, `embedded` proves Core Embedded Swift compatibility,
+/// and `release` is everything the host can run.
 enum CanonicalTier: String, CaseIterable, Sendable {
     case ci
     case wire
@@ -21,7 +21,6 @@ enum CanonicalPlanRequest: Sendable {
         requested: [String]? = nil
     )
     case checkpoint(
-        hardwareDevice: String?,
         consumerEnvironment: [String: String],
         platform: AxolotyCheckPlan.Platform
     )
@@ -33,7 +32,7 @@ enum CanonicalPlanRequest: Sendable {
 
 enum CanonicalCommandRequest: Sendable {
     case node(name: String)
-    case testOne(filter: String)
+    case testOne(filter: String, repetition: AxolotyTestRepetition?)
     case testOneOrNode(value: String, platform: AxolotyCheckPlan.Platform)
     case timing(
         scenario: AxolotyTimingScenario,
@@ -41,6 +40,16 @@ enum CanonicalCommandRequest: Sendable {
         workspace: String,
         filter: String
     )
+}
+
+enum AxolotyTestRepeatCondition: String, Equatable, Sendable {
+    case pass
+    case fail
+}
+
+struct AxolotyTestRepetition: Equatable, Sendable {
+    let maximumRepetitions: Int
+    let repeatUntil: AxolotyTestRepeatCondition?
 }
 
 struct AxolotyCanonicalTestPlanResolver: Sendable {
@@ -67,17 +76,13 @@ struct AxolotyCanonicalTestPlanResolver: Sendable {
             let plan = try resolveTier(name, ci: ci, platform: platform, requested: requested)
             guard name == CanonicalTier.wire.rawValue else { return plan }
             return wireOutputRewritten(plan, environment: environment)
-        case .checkpoint(let hardwareDevice, let consumerEnvironment, let platform):
+        case .checkpoint(let consumerEnvironment, let platform):
             let plan = try resolveTier(
                 CanonicalTier.release.rawValue,
                 ci: false,
                 platform: platform
             )
-            var environment = consumerEnvironment
-            if let hardwareDevice {
-                environment["EMBEDDED_DEVICE"] = hardwareDevice
-            }
-            return rewrite(plan, substitutions: [:], environment: environment)
+            return rewrite(plan, substitutions: [:], environment: consumerEnvironment)
         case .wireCapture(let environment, let platform):
             let plan = try resolveTier(CanonicalTier.wire.rawValue, ci: false, platform: platform)
             return wireOutputRewritten(plan, environment: environment)
@@ -89,11 +94,12 @@ struct AxolotyCanonicalTestPlanResolver: Sendable {
         switch request {
         case .node(let name):
             return command(for: try node(named: name))
-        case .testOne(let filter):
+        case .testOne(let filter, let repetition):
             return command(
                 from: manifest.testOne.command,
                 filter: filter,
-                timeoutSeconds: manifest.testOne.timeoutSeconds
+                timeoutSeconds: manifest.testOne.timeoutSeconds,
+                repetition: repetition
             )
         case .testOneOrNode(let value, let platform):
             if let node = manifest.nodes.first(where: { $0.id == value }),
@@ -112,11 +118,7 @@ struct AxolotyCanonicalTestPlanResolver: Sendable {
             case .hostBuild:
                 try command(.node(name: "build"))
             case .focusedTestBuild:
-                try command(.testOne(filter: filter))
-            case .embeddedBuild:
-                try command(.node(name: "embedded-build"))
-            case .linkerValidation:
-                try command(.node(name: "embedded-linker"))
+                try command(.testOne(filter: filter, repetition: nil))
             }
             var arguments = base.arguments
             var environment = base.environment
@@ -128,12 +130,6 @@ struct AxolotyCanonicalTestPlanResolver: Sendable {
                 if !arguments.contains("--scratch-path") {
                     arguments += ["--scratch-path", workspace]
                 }
-            case .embeddedBuild:
-                environment["EMBEDDED_BUILD_DIR"] = workspace
-                environment["AXOLOTY_TIMING_EVIDENCE"] = "1"
-            case .linkerValidation:
-                environment["AXOLOTY_EMBEDDED_LINKER_BUILD_DIR"] = workspace
-                environment["AXOLOTY_TIMING_EVIDENCE"] = "1"
             }
             return AxolotyCommandPlan(
                 executable: base.executable,
@@ -309,7 +305,8 @@ struct AxolotyCanonicalTestPlanResolver: Sendable {
     private func command(
         from specification: AxolotyCanonicalTestCommand,
         filter: String?,
-        timeoutSeconds: TimeInterval?
+        timeoutSeconds: TimeInterval?,
+        repetition: AxolotyTestRepetition? = nil
     ) -> AxolotyCommandPlan {
         var arguments = specification.arguments
         if let filterFlag = specification.filterFlag, let filter {
@@ -318,6 +315,15 @@ struct AxolotyCanonicalTestPlanResolver: Sendable {
                 arguments[arguments.index(after: flagIndex)] = filter
             } else {
                 arguments.append(contentsOf: [filterFlag, filter])
+            }
+        }
+        if let repetition {
+            arguments.append(contentsOf: [
+                "--maximum-repetitions",
+                String(repetition.maximumRepetitions),
+            ])
+            if let repeatUntil = repetition.repeatUntil {
+                arguments.append(contentsOf: ["--repeat-until", repeatUntil.rawValue])
             }
         }
         return AxolotyCommandPlan(

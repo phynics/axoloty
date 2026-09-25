@@ -18,14 +18,23 @@ Run the hardware-free nodes from the repository root:
 ```sh
 make test-one FILTER='g1-bounded-runtime-host'
 make test-one FILTER='g1-bounded-runtime-sanitized'
-make test-one FILTER='g1-bounded-runtime-embedded'
 ```
 
-With an ESP32-C6 at `AXOLOTY_DEVICE` (default `/dev/ttyACM0`), run:
+The `g1-bounded-runtime-embedded` cross-build and `g1-bounded-runtime-device`
+nodes were retired from Axoloty during the cutover. No G1 device producer was
+migrated to `phynics/axoloty-embedded`. The measurements below are historical
+evidence for the named candidates, not qualification evidence for the current
+Core lock or a firmware release.
 
-```sh
-make g1-bounded-runtime-device
-```
+Capacity `0` in the embedded cross-build report is the no-table size baseline.
+It is not a supported runtime capacity. The measured runtime capacities are
+`1`, `4`, `16`, and `64`.
+
+The report value
+`unsupported-embedded-manual-conformance` means ESP-IDF could not expand the
+Swift macro directly. The firmware build compiled its source-level equivalent
+instead. The value does not claim that the macro plugin ran in the firmware
+compiler.
 
 Generated, schema-validated reports and raw logs are written under
 `.testing/g1-bounded-runtime/<candidate-sha>/`. Build products and generated

@@ -35,11 +35,6 @@ public struct IoValueType: Sendable, Equatable, Hashable {
         guard let result else { throw ProtocolError(.malformedPayload) }
         self = result
     }
-    /// Encodes the identifier into an object field.
-    public borrowing func encodeField<let capacity: Int>(to editor: inout ObjectFieldEncoder<capacity>, forKey key: StaticString) throws(ObjectEncodingError) {
-        do throws(ObjectError) { try value.encodeField(key, to: &editor) }
-        catch { throw error.reason == .capacityExceeded ? .capacityExceeded : .invalidField }
-    }
 }
 
 extension IoValueType: ObjectFieldEncodable {
@@ -619,11 +614,11 @@ public struct IoSourceMetadata: ObjectSchema, Sendable {
     }
     /// Encodes source metadata fields.
     public borrowing func encodeFields<let capacity: Int>(to encoder: inout ObjectFieldEncoder<capacity>) throws(ObjectEncodingError) {
-        try encoder.encode(valueType, forKey: "valueType")
-        try encoder.encode(updateStrategy, forKey: "updateStrategy")
-        try encoder.encode(useRawIoValues, forKey: "useRawIoValues")
-        try encoder.encode(updateRate, forKey: "updateRate")
-        try encoder.encode(externalRoute, forKey: "externalRoute")
+        try valueType.encode(to: &encoder, forKey: "valueType")
+        try updateStrategy.encode(to: &encoder, forKey: "updateStrategy")
+        try useRawIoValues.encode(to: &encoder, forKey: "useRawIoValues")
+        try updateRate.encode(to: &encoder, forKey: "updateRate")
+        try externalRoute.encode(to: &encoder, forKey: "externalRoute")
     }
 }
 /// Portable actor metadata; policy fields are derived by the runtime builder.
@@ -648,10 +643,10 @@ public struct IoActorMetadata: ObjectSchema, Sendable {
     }
     /// Encodes actor metadata fields.
     public borrowing func encodeFields<let capacity: Int>(to encoder: inout ObjectFieldEncoder<capacity>) throws(ObjectEncodingError) {
-        try encoder.encode(valueType, forKey: "valueType")
-        try encoder.encode(useRawIoValues, forKey: "useRawIoValues")
-        try encoder.encode(updateRate, forKey: "updateRate")
-        try encoder.encode(externalRoute, forKey: "externalRoute")
+        try valueType.encode(to: &encoder, forKey: "valueType")
+        try useRawIoValues.encode(to: &encoder, forKey: "useRawIoValues")
+        try updateRate.encode(to: &encoder, forKey: "updateRate")
+        try externalRoute.encode(to: &encoder, forKey: "externalRoute")
     }
 }
 

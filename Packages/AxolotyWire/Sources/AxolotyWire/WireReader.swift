@@ -21,7 +21,7 @@ public enum WireObjectFieldKind: UInt8, Sendable {
 }
 
 /// A borrowed top-level object field produced by ``WireReader/withObjectFields(_:)``.
-public struct WireObjectField: ~Copyable {
+public struct WireObjectField: ~Copyable, ~Sendable {
     @usableFromInline let bytes: UnsafeRawPointer
     /// The decoded key content range, excluding JSON quotes.
     public let keyRange: Range<Int>
@@ -197,7 +197,10 @@ struct WireKeyCursor {
     }
 
     @inline(__always) private func loadByte(at offset: Int) -> UInt8 {
-        bytes.load(fromByteOffset: offset, as: UInt8.self)
+        let span = unsafe RawSpan(
+            _unsafeBytes: UnsafeRawBufferPointer(start: bytes, count: end)
+        )
+        return span.load(fromByteOffset: offset, as: UInt8.self)
     }
 
     private mutating func invalidate() -> UInt32? {
@@ -230,7 +233,7 @@ func wireSemanticKeysEqual(bytes: UnsafeBufferPointer<UInt8>, lhs: Range<Int>, r
 }
 
 /// A Foundation-free reader which tokenizes once into bounded borrowed slots.
-public struct WireReader {
+public struct WireReader: ~Sendable {
     @usableFromInline let bytes: UnsafeRawPointer
     public let length: Int
     @usableFromInline let index: WireFieldIndex
@@ -257,15 +260,15 @@ public struct WireReader {
             self.index = index
             return
         }
-        withUnsafeTemporaryAllocation(of: UInt8.self, capacity: buffer.count + 8) { padded in
-            if buffer.count > 0 {
-                padded.baseAddress!.initialize(from: buffer.baseAddress!, count: buffer.count)
+        let source = unsafe RawSpan(
+            _unsafeBytes: UnsafeRawBufferPointer(start: bytes, count: buffer.count)
+        )
+        withTemporaryAllocation(of: UInt8.self, capacity: buffer.count + 8) { padded in
+            for offset in 0..<buffer.count { padded.append(source[offset]) }
+            for _ in 0..<8 { padded.append(0x7D) }
+            padded.span.withUnsafeBufferPointer { paddedBuffer in
+                index = Self.tokenize(buffer: buffer, padded: paddedBuffer)
             }
-            for offset in buffer.count..<(buffer.count + 8) { padded[offset] = 0x7D }
-            index = Self.tokenize(
-                buffer: buffer,
-                padded: UnsafeBufferPointer(start: padded.baseAddress!, count: buffer.count + 8)
-            )
         }
         self.index = index
     }
@@ -348,8 +351,11 @@ public struct WireReader {
                 guard count <= WireBufferConfig.maxPayloadSize else { return false }
                 var alignedStorage = SIMD64<UInt64>(repeating: 0)
                 return withUnsafeMutableBytes(of: &alignedStorage) { storage in
+                    let raw = unsafe RawSpan(
+                        _unsafeBytes: UnsafeRawBufferPointer(start: pointer, count: count)
+                    )
                     for offset in 0..<count {
-                        storage[offset] = pointer.load(fromByteOffset: offset, as: UInt8.self)
+                        storage[offset] = raw[offset]
                     }
                     let aligned = storage.baseAddress!.assumingMemoryBound(to: UInt8.self)
                     let reader = WireReader(bytes: aligned, length: count)
@@ -422,9 +428,6 @@ public struct WireReader {
         guard index.failure == nil, let slot = index.find(bytes: bytes, key: key) else { return nil }
         if slot.kind == .trueValue { return true }; if slot.kind == .falseValue { return false }; return nil
     }
-
-    /// Reads a complete raw JSON value, including quotes for strings.
-    public func readRaw(_ key: StaticString) -> ByteSlice? { readField(key) }
 
     /// Reads an optional raw value, treating an explicit JSON `null` as absent.
     public func readOptionalRaw(_ key: StaticString) -> ByteSlice? {

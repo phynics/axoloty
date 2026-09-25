@@ -36,9 +36,13 @@ node Tests/Support/validate-test-tiers.mjs
 The validator checks category metadata and resolves every self-test against
 the nodes of the category that owns it, failing if a maintained self-test is
 unmapped, owned by more than one category, or owned by a category whose nodes
-never run it. It does not invoke Swift; run it through
-`make test-tier TIER=ci` for the standard Makefile path. Build and test
-execution must always use the root Makefile and Podman.
+never run it. It also checks Makefile wrapper ownership when invocation data is
+available. Filtered Swift nodes are checked against their owning package's
+discovered test targets, files, and suites; each alternation branch must match,
+and production symbols are not accepted as test selectors. It does not invoke
+Swift; `make test-tier TIER=ci` is the standard Makefile path for the complete
+hardware-free category. Build and test execution must always use the root
+Makefile and Podman.
 
 The required G3 object-model gates include the portable package graph and
 `g3-object-boundary`. `Tests/Support/checks/check-axoloty-object-boundary.sh`
@@ -51,15 +55,15 @@ enforced by ordinary verification and the release checkpoint.
 
 ## Canonical `axoloty-tool` workflow
 
-The Swift `axoloty-tool` executable is the in-progress replacement for build and test
-orchestration. During the migration, invoke it through the lightweight Makefile
-wrapper so Linux execution continues to use the pinned development container:
+The Swift `axoloty-tool` executable is the control plane for build and test
+orchestration. Invoke it through the lightweight Makefile wrapper so Linux
+execution continues to use the pinned development container:
 
 ```sh
 make verify
 make test-one FILTER='AxolotyCheckTests'
-make test-tier TIER=unit
-make explain TIER=unit
+make test-tier TIER=ci
+make explain TIER=ci
 ```
 
 `make verify` runs the ordinary pre-PR plan from the manifest. `make verify-ci`
@@ -68,8 +72,9 @@ runs the mandatory CI plan and support gates. Use
 streaming progress and summaries. `FILTER` is passed as one argv element, never
 through a shell command string. `make explain` never executes a command and
 prints the graph, durations, deadlines, policies, locks/lanes, and artifacts.
-`make test-wire` remains the semantic offline-wire tier front and does not run
-tooling tests. For the other tooling plans, use
+`axoloty-tool wire verify` checks offline wire fixtures without a broker. Use
+`make test-tier TIER=wire` for live CoatyJS interoperability. For the other
+tooling plans, use
 `make axoloty-tool AXOLOTY_TOOL_ARGS='test tooling'` or
 `make axoloty-tool AXOLOTY_TOOL_ARGS='test offline'`.
 
@@ -94,15 +99,11 @@ Markdown summary. CI rejects missing, incomplete, or multiple primary reports.
 It uploads both reports, every command artifact, and
 `.testing/required-checks.log` on success and failure.
 
-Required Linux checks restore three independent caches. The SwiftPM download
+Required Linux checks restore two independent caches. The SwiftPM download
 cache uses an exact dependency key. The Swift compiler cache may restore the
-most recent cache for the current image and manifest identity. The ESP-IDF
-compiler cache uses `esp-idf-ccache-v1-<image-identity>-<commit>`, may restore a
-prior default-branch entry with the same image identity, and is limited to
-512 MiB. Only a successful push to `main` may save a new Swift compiler or
-ESP-IDF cache. Pull requests restore caches but never publish them. Timing
-evidence records ESP-IDF ccache statistics before and after each embedded
-build; the three embedded build directories remain separate evidence lanes.
+most recent cache for the current image and manifest identity. Only a
+successful push to `main` may save a new Swift compiler cache. Pull requests
+restore caches but never publish them.
 
 The G6 plan split is unchanged. Ordinary CI runs the G6 inventory and
 non-divergence checks without `g6-public-products-build`. Local G6 and release
@@ -112,48 +113,34 @@ Process-global signal, logging, environment, and fixed-port tests are declared
 as separate Swift invocations/lanes. The canonical graph executor invokes
 nodes serially, which enforces lane/resource non-overlap; ordinary Swift tests
 may still use their own internal parallel execution. Ordinary verification
-declares hardware forbidden and never probes or reserves a device; hardware
-remains opt-in through checkpoint-hardware or hardware-require.
+declares hardware forbidden and never probes or reserves a device; device
+qualification runs in `phynics/axoloty-embedded`.
 
 On macOS, `axoloty-tool check` selects the same host and offline-wire checks but omits the
-Linux-only ESP-IDF nodes. This is an explicit platform capability difference,
+Linux-only Embedded Swift gate. This is an explicit platform capability difference,
 not a silent skip. Ordinary verification has no broker-backed integration tier;
 wire parser correctness never requires a broker. Fresh broker evidence is
 collected only by the explicit live-wire workflow.
 
-The G3 object-model foundation is a required canonical tier. Run
-`axoloty-tool test-tier g3-object-model` (or invoke the standalone package
-directly) to validate the bounded model tests, schema/model packages, and
-source/dependency boundary. Its host, sanitized, and Linux-only embedded
-cross-build evidence nodes are included in the required verification and
-release-checkpoint plans; platform filtering omits the embedded node on macOS.
-The embedded Swift image compiles the same sources through the
-`axoloty_object_model` ESP-IDF component and the static main consumer imports
-`AxolotyObjectModel` to prove module discovery and linkage.
+The G3 object-model foundation is required coverage within the `ci` category.
+The category validates the bounded model tests, schema/model packages, and
+source/dependency boundary. Its host and sanitized evidence nodes are included
+in required verification and release-checkpoint plans. On Linux, the separate
+`embedded-core-consumer` gate compiles the object model with every portable
+Core module and a real macro-expanded consumer. This proof does not use an
+ESP-IDF component or firmware checkout; platform filtering omits it on macOS.
 The required G3 evidence nodes additionally record measured layouts, heaptrack
 allocation growth, deterministic edit/read behavior, sanitizer results, and
 release size/timing under `.testing/g3-object-model/<candidate-sha>/`.
 
-G4 migration is represented by the optional `g4-runtime` tier. Run
-`make test-one FILTER=g4-runtime` while developing the replacement runtime.
-`g4-runtime-package-boundary` and `g4-runtime-consumer-boundary` are explicitly
-deferred until the host `AxolotyRuntime` source seam and
-`AxolotyStaticRuntime` package root exist. Once those seams exist, the same nodes reject inherited
-Container/controller/CommunicationManager symbols, the current protocol
-encoder, raw MQTT dependencies, and stale first-party tool imports. A deferred
-pass is a migration-state report, not evidence that G4 runtime replacement is
-complete. The existing inspector/MCP roots are explicitly listed as historical
-consumers until the host transport adapter and typed event projection land;
-new examples or consumer roots are not covered by that allowlist and fail the
-boundary immediately. The tier also runs the host runtime suite whole, then
-runs the protocol and static-runtime tests through their own package
-manifests; a successful filtered process must therefore exercise a real test
-target rather than a root-package zero-test selection. A gate selects a
-module, suite, or file and never a hand-listed set of test methods, because a
-method list stops covering tests added to that suite afterwards; the tier
-validator rejects the method-list form. The tier
-becomes a strict migration gate as those historical roots are removed from the
-allowlist.
+G4 runtime boundaries are required nodes in the `ci` category, not a deferred
+migration tier. The manifest covers the protocol lifecycle, static runtime,
+host runtime, MQTT, IO routing, package boundaries, and runtime-consumer
+boundaries. The same category also runs the optional-product boundary and
+workflow tests. Use `make test-one FILTER=...` for a focused suite and
+`make test-tier TIER=ci` for the complete hardware-free coverage; a filtered
+process must select a real test target rather than a root-package zero-test
+selection.
 
 ## The four test categories
 
@@ -164,7 +151,7 @@ manifest belongs to exactly one narrower category and to `release`.
 |---|---|---|---|
 | `ci` | `make test-tier TIER=ci` | The pinned container | Everything that needs no broker infrastructure and no attached board. Every pull request. |
 | `wire` | `make test-tier TIER=wire` | Containers, a broker, the CoatyJS image | Live CoatyJS interoperability, with the host runtime bridge. |
-| `embedded` | `make test-tier TIER=embedded` | An attached ESP32-C6 | Checks that need real hardware. |
+| `embedded` | `make test-tier TIER=embedded` | The pinned container; no firmware or hardware | Core Embedded Swift compatibility: portable-module compilation, macro expansion, and RISC-V linkage. |
 | `release` | `make test-tier TIER=release` | Whatever the host has | Every test the host can run: `ci`, `wire`, `embedded`, the Apple-host oracle, and the release consumer checks. |
 
 `make verify` runs the `ci` category, and is the ordinary pre-PR command.
@@ -186,7 +173,7 @@ self-test is run by some node of the category that owns it.
 |---|---|---|---:|---|
 | `ci` | Build, unit, module, offline wire, boundary, and harness self-test coverage | Container only | 60 min | Every PR |
 | `wire` | Representative Axoloty/CoatyJS interoperability plus CoatyJS reference-wire protocol coverage | Containers, broker, CoatyJS image | 60 min | Protocol-facing PRs (enforced by the `Live CoatyJS compatibility gate`); full run before merge |
-| `embedded` | On-device evidence on an attached ESP32-C6 | Hardware | 60 min | Hardware checkpoints |
+| `embedded` | Core Embedded Swift compatibility on the pinned Linux container | Container only | 60 min | Every PR |
 | `release` | Everything above plus the Apple-host oracle and release consumer checks | Whatever the host has | 300 min | Release candidates |
 
 The subsections below describe the kinds of test that make up `ci`; they are
@@ -288,6 +275,61 @@ for a recorded, expiring reviewed exemption.
 - Avoid public internet access during tests. Reference images and dependencies
   are prepared before execution.
 
+## Compiler warning policy
+
+The canonical Swift builds treat warnings as errors
+(`swift build -Xswiftc -warnings-as-errors`). That global switch is the policy:
+a new warning fails the plan rather than being suppressed.
+
+Swift 6.4 adds `@diagnose` (SE-0522) for narrowly scoped warning control. It is
+**not adopted as a general suppression mechanism**. The zero-warning build is
+retained, and a diagnostic is fixed rather than silenced. If a migration makes a
+suppression unavoidable for a bounded interval, it must be a temporary,
+expiring entry in `docs/architecture-exceptions.yml` with an owner and a removal
+deadline, and it must never mask a protocol, ownership, concurrency, or
+wire-compatibility diagnostic.
+
+Swift 6.4 module selectors (SE-0491, `Module::Name`) are adopted only where an
+unqualified name is genuinely ambiguous. The current source has no such site, so
+there is no module-qualified reference to convert. Trailing closures after array
+or dictionary literals (SE-0508) are permitted where they read more clearly;
+they are a style choice, not a requirement.
+
+## SwiftPM build system
+
+The repository adopts Swift Build, SwiftPM's default build system in Swift
+6.4, on the canonical Linux verification path. Its artifacts live under
+`out/` rather than SwiftPM's former target-triple directories, and its test
+runner is built per test target. CI caches compiler intermediates, module and
+compilation caches, index records, and planner metadata from that layout, but
+not final products. Tooling must ask `swift build --show-bin-path` for product
+locations instead of constructing a path from the scratch directory. The
+`--build-system native` fallback is not enabled.
+
+## Swift Testing 6.4
+
+`ByteSlice` and `TopicView` provide `CustomTestReflectable` mirrors in test
+targets. A failed expectation shows the byte-slice length, up to 64 bytes of
+hex, and up to 96 bytes of decoded text. A topic mirror shows its level count,
+full text, namespace, and source ID. Truncated fields include an ellipsis.
+
+Use `make test-one` to repeat one test through the canonical tooling path:
+
+```sh
+make test-one FILTER='flakyTest' REPEAT=20 REPEAT_UNTIL=fail
+```
+
+`REPEAT` must be a positive integer. `REPEAT_UNTIL` accepts `pass` or `fail`
+and requires `REPEAT`. Omit it to repeat the selected test unconditionally up
+to the maximum. The `test-one` command maps these options to SwiftPM's
+`--maximum-repetitions` and `--repeat-until` flags. Use `REPEAT_UNTIL=fail` to
+reproduce intermittent failures such as #827.
+
+Wire-compatibility tests do not attach captured frames to individual Swift
+Testing issues. The wire gate already preserves `capture.jsonl`, verifier logs,
+and replay commands in its failure artifact bundle. Attaching the same frames
+would duplicate that data.
+
 ## Timeouts
 
 The tier timeout is a hard upper bound for the complete tier. Individual
@@ -365,14 +407,14 @@ cross the wire. CoatyJS-only scenarios remain useful reference-wire evidence.
 
 ## G5 optional products
 
-The `g5-optional-products` tier proves the host-only SensorThings product
-boundary and its source, fixed-Sensor, and Thing-driven registry workflows
-without a broker or hardware:
+The `ci` category proves the host-only SensorThings product boundary and its
+source, fixed-Sensor, and Thing-driven registry workflows without a broker or
+hardware:
 
 ```sh
-make test-tier TIER=g5-optional-products
+make test-tier TIER=ci
 ```
 
-This tier is also a checkpoint release gate. Its boundary checker and paired
+This category is also a checkpoint release gate. Its boundary checker and paired
 negative self-test verify the single atomic SensorThings module API and
 retired API removal.

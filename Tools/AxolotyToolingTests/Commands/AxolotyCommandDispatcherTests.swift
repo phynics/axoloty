@@ -23,15 +23,6 @@ private struct StubRunner: AxolotyCheckCommandRunning {
     func run(_ command: AxolotyCommandPlan) -> AxolotyCheckCommandResult { result }
 }
 
-private final class StubDeviceLease: AxolotyDeviceLease, @unchecked Sendable {}
-
-private struct StubDeviceLeaseManager: AxolotyDeviceLeasing {
-    let available: Bool
-    func acquire(device: String) -> (any AxolotyDeviceLease)? {
-        available ? StubDeviceLease() : nil
-    }
-}
-
 private final class RecordingRunner: AxolotyCheckCommandRunning, @unchecked Sendable {
     var command: AxolotyCommandPlan?
     func run(_ command: AxolotyCommandPlan) -> AxolotyCheckCommandResult {
@@ -46,15 +37,6 @@ private final class RecordingFileSystem: AxolotyFileSystem, @unchecked Sendable 
     func exists(atPath path: String) -> Bool {
         checkedPaths.append(path)
         return true
-    }
-}
-
-private final class RecordingDeviceLeaseManager: AxolotyDeviceLeasing, @unchecked Sendable {
-    private(set) var acquiredDevices: [String] = []
-
-    func acquire(device: String) -> (any AxolotyDeviceLease)? {
-        acquiredDevices.append(device)
-        return StubDeviceLease()
     }
 }
 
@@ -101,11 +83,32 @@ private func checkpointManifestFixture() throws -> URL {
 func typedInvocationParserClassifiesReleaseCommandsAndEnvironmentFallbacks() {
     let parser = AxolotyCommandParser(environment: ["FILTER": "FallbackSuite", "TIER": "unit"])
 
-    #expect(parser.parse(["release", "checkpoint"]) == .release(.checkpoint(hardware: false)))
-    #expect(parser.parse(["release", "checkpoint-hardware"]) == .release(.checkpoint(hardware: true)))
-    #expect(parser.parse(["test-one"]) == .testOne(filter: "FallbackSuite"))
+    #expect(parser.parse(["release", "checkpoint"]) == .release(.checkpoint))
+    #expect(parser.parse(["test-one"]) == .testOne(filter: "FallbackSuite", repetition: nil))
     #expect(parser.parse(["test-tier"]) == .testTier(name: "unit", ci: false))
     #expect(parser.parse(["explain"]) == .explain(tier: "unit", ci: false))
+    #expect(parser.parse([
+        "test-one", "--filter", "flakyTest",
+        "--maximum-repetitions", "12", "--repeat-until", "fail",
+    ]) == .testOne(
+        filter: "flakyTest",
+        repetition: AxolotyTestRepetition(maximumRepetitions: 12, repeatUntil: .fail)
+    ))
+    #expect(parser.parse([
+        "test-one", "--filter", "flakyTest", "--maximum-repetitions", "3",
+    ]) == .testOne(
+        filter: "flakyTest",
+        repetition: AxolotyTestRepetition(maximumRepetitions: 3, repeatUntil: nil)
+    ))
+    #expect(parser.parse([
+        "test-one", "--filter", "flakyTest", "--maximum-repetitions", "0",
+    ]) == .unsupported)
+    #expect(parser.parse([
+        "test-one", "--filter", "flakyTest", "--maximum-repetitions", "2", "--repeat-until", "sometimes",
+    ]) == .unsupported)
+    #expect(parser.parse([
+        "test-one", "--filter", "flakyTest", "--repeat-until", "fail",
+    ]) == .unsupported)
 }
 
 @Test
@@ -116,6 +119,26 @@ func typedInvocationParserPreservesSemanticCommandOwnership() {
     #expect(parser.parse(["test", "offline"]) == .testOffline)
     #expect(parser.parse(["test", "tooling"]) == .testTooling)
     #expect(parser.parse(["wire", "verify"]) == .wireVerify)
+}
+
+@Test
+func typedInvocationParserClassifiesEmbeddedConsumerPreparation() {
+    let parser = AxolotyCommandParser(environment: [:])
+
+    #expect(parser.parse([
+        "embedded", "consumer", "prepare", "--scratch", "/tmp/tools", "--output", "/tmp/report.json",
+    ]) == .embeddedConsumerPrepare(arguments: ["--scratch", "/tmp/tools", "--output", "/tmp/report.json"]))
+}
+
+@Test
+func embeddedConsumerPreparationHelpIsContextual() {
+    let result = AxolotyCommandDispatcher(environment: [:], installSignalHandler: false).run(
+        arguments: ["embedded", "consumer", "prepare", "--help"]
+    )
+
+    #expect(result.exitCode == 0)
+    #expect(result.standardOutput.contains("--scratch <absolute-path>"))
+    #expect(result.standardError.isEmpty)
 }
 
 @Test
@@ -146,7 +169,7 @@ func versionCommandPrintsVersion() {
     let result = AxolotyCommandDispatcher().run(arguments: ["--version"])
 
     #expect(result.exitCode == 0)
-    #expect(result.standardOutput == "axoloty-tool 0.7.0")
+    #expect(result.standardOutput == "axoloty-tool 0.8.2")
     #expect(result.standardError.isEmpty)
 }
 
@@ -192,7 +215,7 @@ func checkPlanPrintsStableJSON() throws {
         "test", "-Xswiftc", "-warnings-as-errors", "--package-path", "Tools",
         "--scratch-path", ".build/tooling", "--cache-path", ".swiftpm-cache",
         "--disable-automatic-resolution", "--filter",
-        "AxolotyCommandDispatcherTests|AxolotyTimingTests|AxolotyDeviceLeaseTests|AxolotyResourceLeaseTests|AxolotyDevelopmentServiceTests|AxolotyMQTTServiceTests|AxolotyServeParserTests|RepositoryAuthorityTests",
+        "typedInvocationParserClassifiesReleaseCommandsAndEnvironmentFallbacks|typedInvocationParserPreservesSemanticCommandOwnership|helpCommandPrintsUsage|invalidCommandUsesConfiguredExecutableNameInErrorAndUsage|versionCommandPrintsVersion|checkPlanPrintsStableJSON|ciCategorySelectsTheFullObjectModelAggregate|canonicalManifestDefinesVerifyRootsAndBoundedTestOne|canonicalSwiftBuildsTreatWarningsAsErrors|canonicalManifestErrorsHaveStableLocalizedDiagnostics|canonicalManifestUsesOverrideBeforeBundledOrRepositoryManifest|checkpointPlanningAndCertificationUseOneManifestSnapshot|verifyPlanIncludesStaticSupportWithoutRecursiveGates|canonicalExecutorSerializesIndependentNodes|explainIsMachineReadableAndHumanReadable|humanCheckOutputUsesAReadableSummaryWithoutMachineManifest|checkPlanDisablesSwiftLintCache|checkpointContextMismatchPrecedesPlanAndMetadataCommands|checkpointPlanIncludesRequiredCompatibilityNodes|checkpointFailsWhenRequiredReleaseGateHasNoEvidence|checkpointFailsWhenReleaseCheckoutIsDirty|checkpointRejectsLegacyGenericExternallyAttestedReleaseGate|checkpointRejectsInvalidExternallyAttestedReleaseGate|checkpointManifestRecordsAllRequiredReleaseGatesInOrder|releaseCheckpointUsesTheInjectedExecutorEventSink|releaseCheckpointHumanOutputIsExactlyTheCheckSummary|releaseCheckpointRendersCompleteDeterministicJSONBytes|wireVerifyRunsOnlyItsDependencyClosure|wireCaptureRunsEveryNodeThroughSupportedBridge|wireTierPointsTheManifestNodeAtTheConfiguredOutputDirectory|wireTierKeepsTheDefaultOutputDirectoryWhenUnset|wireCaptureForwardsInvocationScopedOutputToEveryNode|wireCaptureRejectsHostNodesWithoutBridgeBeforeStartingCommands|testOfflineUsesTheCheckPlan|testToolingUsesOnlyItsCheckPlanDependencyClosure|integrationCommandReportsRetirementWithoutRunningAProcess|retiredIntegrationCommandDoesNotRunTheInjectedRunner|timingArgumentParserAcceptsFilterScratchRootAndKeep|timingArgumentParserRejectsUnknownAndMissingValues|timingParsersReportBuildStepsAndCacheStatsWithoutGuessing|timingRunnerBuildsFourSerialHardwareFreePlansWithIsolatedScratch|timingRunnerCleansScratchWhenKeepIsDisabledAndBoundsFailureDiagnostics|timingRunnerRejectsUnsupportedPlatformsBeforeLaunchingCommands|dispatcherExposesTimingAsSortedJSONAndRejectsInvalidCLIOptions|namedResourceLeaseReportsOwnerAndBoundsContention|deadResourceLeaseOwnerIsRecoverableByAnotherProcess|independentNamedResourceLeasesCoexist|executorLeasesOnlyCollisionProneDeclaredResources|executorAccountsForResourceLeaseWaitSeparately|devServiceStartsBothAndExitsWhenMCPExitsCleanly|devServiceWritesJSONReadinessToStandardOutputOnly|devServiceFailsWhenMosquittoMissing|devServiceWritesJSONFailureDiagnosticsToStandardErrorOnly|devServiceFailsWhenMCPExecutableMissing|devServiceFailsWhenMQTTNotReady|devServiceTerminatesMQTTWhenMCPNotReady|devServiceTerminatesMCPWhenMQTTExits|devServiceReturnsMCPExitStatusWhenMCPExits|managedProcessSupervisorEscalatesAfterGracePeriod|managedProcessSupervisorReportsUnreapedRunnerWithoutBlocking|devServiceCleansUpChildWhenInterruptedDuringStartup|dispatcherServeDevWithFakeDepsReturnsExitCode|foundationServiceProbeConnectsToIPv4Loopback|foundationServiceProbeConnectsToLocalhost|foundationServiceProbeConnectsToIPv6Loopback|foundationServiceProbeReportsOccupiedIPv4PortUnavailable|foundationServiceProbeReportsOccupiedIPv6PortUnavailable|urlAuthorityHostBracketsIPv6Literals|devServiceEndToEndWithDynamicPorts|mosquittoConfigContainsListenerAndAnonymous|mosquittoConfigDebugIncludesConnectionMessages|mosquittoConfigErrorOnlyIncludesErrorLogType|mosquittoConfigWarningKeepsBrokerDiagnosticsOnStandardError|mosquittoConfigSupportsZeroPointZeroForContainer|mqttServiceFailsWhenMosquittoMissing|mqttServiceFailsWhenPortInUse|mqttServiceStartsAndExitsCleanly|mqttServiceWritesJSONReadinessToStandardOutputOnly|mqttServiceWritesJSONFailureDiagnosticsToStandardErrorOnly|mqttServiceKeepsJSONReadinessParseableWhenBrokerEmitsWarning|serviceDiagnosticLoggerParsesWarningRecordOnStandardError|mqttServiceFailsWhenNotReady|mqttServiceReturns1OnChildCrash|mcpServiceFailsWhenExecutableMissing|mcpServiceStdioStartsAndExitsCleanly|mcpServiceForwardsConfiguredConnectTimeout|mcpServiceHTTPFailsWhenNotReady|mcpServiceHTTPStartsAndExitsCleanly|mcpServiceWritesJSONReadinessToStandardOutputOnly|mcpServiceWritesJSONFailureDiagnosticsToStandardErrorOnly|mcpServiceReturns1OnChildCrash|dispatcherServeMcpWithFakeDepsReturnsExitCode|dispatcherServeMqttWithFakeDepsReturnsExitCode|serveSubcommandHelpIsParsedWithoutStartingService|serveMqttDefaultsToLoopback1883|serveMqttAcceptsPortOverride|serveMqttAcceptsListenHostZeroForContainer|serveMqttRejectsPortZero|serveMqttRejectsNonNumericPort|serveMqttRejectsOutOfRangePort|serveMqttRejectsInvalidOutputMode|serveMqttAcceptsLogLevelDebug|serveMqttRejectsInvalidLogLevel|serveMqttRejectsUnknownOption|serveMqttRejectsDuplicatePort|serveMqttAcceptsEqualsSyntax|serveMqttRejectsMissingValue|serveMcpStdioDefaults|serveMcpRequiresTransport|serveMcpRejectsInvalidConnectTimeout|serveMcpAcceptsBoundedConnectTimeout|serveMcpRejectsInvalidTransport|serveMcpStdioRejectsHTTPOutput|serveMcpStdioRejectsListenHost|serveMcpHTTPDefaults|serveMcpHTTPRejectsNonLoopback|serveMcpHTTPAcceptsLocalhost|serveMcpHTTPRejectsInvalidPath|serveMcpHTTPAcceptsCustomPath|serveDevDefaults|serveDevAcceptsNamespaceAndPorts|serveDevRejectsUnknownOption|serveWithNoSubcommandFails|serveUnknownSubcommandFails|serveMqttUsesEnvPort|serveMcpUsesEnvBrokerHost|serveMcpUsesEnvNamespace|serveMcpUsesEnvMCPHostAndPort|serveDevUsesEnvNamespace|serveMqttCLIOverridesEnvPort|dispatcherServeSubcommandHelpPrintsContextualUsage|dispatcherServesMqttReturns69WhenMosquittoMissing|dispatcherServesMcpStdioReturns69WhenMCPMissing|dispatcherServesMcpMissingTransportReturnsError|dispatcherServesDevReturns69WhenExecutablesMissing|dispatcherServeUnknownSubcommandReturnsError|dispatcherVersionUsesExecutableName|dispatcherDefaultVersionIsAxolotyTool|dispatcherHelpIncludesServeCommands|repositoryAuthorityPassesForCheckout|repositoryAuthorityCommandSupportsHumanAndJSONOutput|repositoryAuthorityRejectsVersionDriftAndNonWaivableExceptions|repositoryAuthorityIgnoresHistoricalVersionClaims|repositoryAuthorityIgnoresGeneratedDependencyDocumentation|repositoryAuthorityCountsOnlyInvariantDeclarations|repositoryAuthorityAcceptsFullSemanticVersions|repositoryAuthorityRejectsMalformedExceptionValuesAndMissingTargets|repositoryAuthorityRejectsWrongLedgerCollectionTypes|repositoryAuthorityChecksDocCVersionArticlesAndMarkdownAnchors|repositoryAuthorityRejectsVolatileRootGuidance|repositoryAuthorityChecksEveryCurrentVersionClaim|repositoryAuthorityRequiresFilesTestsAndKnownOwnerIssues|repositoryAuthorityAcceptsWellFormedException|repositoryAuthorityRejectsSiblingPrefixLinkEscape|modulePolicyRejectsAForbiddenImport|modulePolicyRejectsAnUndeclaredImport|modulePolicyRejectsAnUnusedAllowedImport|modulePolicySeesAttributedImports|modulePolicyScansNestedSources|modulePolicyRejectsContradictoryDeclarations|modulePolicyMustBePresent|modulePolicyRejectsAMissingTargetDirectory|quarantineLedgerMatchesAnUnexpiredPrefixInItsOwningNode|quarantineLedgerIgnoresAMatchingPrefixInAnotherNode|quarantineLedgerIgnoresANonMatchingName|quarantineLedgerTreatsAnExpiredEntryAsNonSuppressing|quarantineLedgerTreatsAMalformedDeadlineAsExpired|allQuarantinedRequiresEveryNameCovered|allQuarantinedRejectsAnEmptySet|allQuarantinedRejectsAMissingNodeID",
     ])
     // The application tests are a separate node against the Apps package, so
     // neither run resolves the other's dependency graph.
@@ -233,9 +256,11 @@ func ciCategorySelectsTheFullObjectModelAggregate() throws {
     #expect(names.contains("g3-object-model-evidence-host"))
     #expect(names.contains("g3-object-model-evidence-sanitized"))
     #if os(Linux)
-    #expect(names.contains("g3-object-model-evidence-embedded"))
+    #expect(names.contains("embedded-core-consumer"))
+    #expect(!names.contains("g3-object-model-evidence-portable"))
     #else
-    #expect(!names.contains("g3-object-model-evidence-embedded"))
+    #expect(!names.contains("embedded-core-consumer"))
+    #expect(!names.contains("g3-object-model-evidence-portable"))
     #endif
 }
 
@@ -250,9 +275,18 @@ func canonicalManifestDefinesVerifyRootsAndBoundedTestOne() throws {
     #expect(Set(manifest.requiredGates).isSubset(of: Set(manifest.tiers.first { $0.id == "ci" }?.nodes ?? [])))
     #expect(manifest.releaseGates == ["ci", "wire", "embedded"])
     #expect(manifest.toolContainerEnv?.allowlist(for: "release-checkpoint")?.contains("AXOLOTY_GIT_TREE") == true)
-    #expect(manifest.toolContainerEnv?.allowlist(for: "release-checkpoint-hardware")?.contains("AXOLOTY_DEVICE") == true)
     #expect(manifest.toolContainerEnv?.allowlist(for: "release-unknown") == nil)
-    #expect(try resolver.command(.testOne(filter: "suite;touch /tmp/injected")).arguments.last == "suite;touch /tmp/injected")
+    #expect(try resolver.command(.testOne(
+        filter: "suite;touch /tmp/injected",
+        repetition: nil
+    )).arguments.last == "suite;touch /tmp/injected")
+    let repeated = try resolver.command(.testOne(
+        filter: "flakyTest",
+        repetition: AxolotyTestRepetition(maximumRepetitions: 4, repeatUntil: .fail)
+    ))
+    #expect(repeated.arguments.suffix(4).elementsEqual([
+        "--maximum-repetitions", "4", "--repeat-until", "fail",
+    ]))
     #expect(manifest.testOne.timeoutSeconds > 0)
     #expect(try resolver.resolve(.tier(
         name: CanonicalTier.wire.rawValue,
@@ -366,7 +400,7 @@ func checkpointPlanningAndCertificationUseOneManifestSnapshot() throws {
     )
 
     #expect(!certificate.results.isEmpty)
-    #expect(certificate.releaseGates.map(\.id) == ["smoke"])
+    #expect(certificate.releaseGates.map(\.id) == ["smoke", "swiftpm-sbom"])
 }
 
 @Test
@@ -424,121 +458,12 @@ func humanCheckOutputUsesAReadableSummaryWithoutMachineManifest() {
 }
 
 @Test
-func embeddedDoctorRunsDeviceIndependentEnvironmentCheck() {
-    let runner = RecordingRunner()
-    let dispatcher = AxolotyCommandDispatcher(commandRunner: runner, environment: projectEnvironment)
-
-    let result = dispatcher.run(arguments: ["embedded", "doctor"])
-
-    #expect(result.exitCode == 0)
-    #expect(runner.command?.executable == "Tests/Support/checks/check-embedded-environment.sh")
-}
-
-@Test
 func checkPlanDisablesSwiftLintCache() throws {
     let resolver = try AxolotyCanonicalTestPlanResolver(environment: ProcessInfo.processInfo.environment)
     let plan = try resolver.resolve(.tier(name: CanonicalTier.ci.rawValue, ci: false, platform: .linux, requested: nil))
     let lint = try #require(plan.nodes.first { $0.name == "lint" })
 
     #expect(lint.command.arguments == ["lint", "--no-cache", "--config", ".swiftlint.yml"])
-}
-
-@Test
-func optionalHardwareCheckSkipsAbsentDevice() throws {
-    let dispatcher = AxolotyCommandDispatcher(
-        commandRunner: StubRunner(result: AxolotyCheckCommandResult(exitCode: 0)),
-        fileSystem: StubFileSystem(paths: []),
-        environment: projectEnvironment
-    )
-    let result = dispatcher.run(arguments: ["hardware", "check"])
-    let outcome = try JSONDecoder().decode(AxolotyHardwareOutcome.self, from: Data(result.standardOutput.utf8))
-    #expect(result.exitCode == 0)
-    #expect(outcome == AxolotyHardwareOutcome(status: .skipped, device: "/dev/ttyACM0", reason: "device is not present"))
-}
-
-@Test
-func requiredHardwareCheckFailsAbsentDevice() throws {
-    let dispatcher = AxolotyCommandDispatcher(fileSystem: StubFileSystem(paths: []), environment: projectEnvironment)
-    let result = dispatcher.run(arguments: ["hardware", "require"])
-    let outcome = try JSONDecoder().decode(AxolotyHardwareOutcome.self, from: Data(result.standardOutput.utf8))
-    #expect(result.exitCode != 0)
-    #expect(outcome.status == .failed)
-}
-
-@Test
-func presentHardwareRunsSmokeCommand() throws {
-    let runner = RecordingRunner()
-    let dispatcher = AxolotyCommandDispatcher(
-        commandRunner: runner,
-        fileSystem: StubFileSystem(paths: ["/dev/test"]),
-        environment: projectEnvironment
-    )
-    let result = dispatcher.run(arguments: ["hardware", "check", "--device", "/dev/test"])
-    let outcome = try JSONDecoder().decode(AxolotyHardwareOutcome.self, from: Data(result.standardOutput.utf8))
-    #expect(result.exitCode == 0)
-    #expect(outcome.status == .passed)
-    #expect(runner.command?.executable == "Tests/Support/embedded/embedded-swift-test.sh")
-    #expect(runner.command?.environment["EMBEDDED_DEVICE"] == "/dev/test")
-}
-
-@Test
-func optionalHardwareSkipsWhenDeviceLeaseIsContended() throws {
-    let dispatcher = AxolotyCommandDispatcher(
-        commandRunner: StubRunner(result: AxolotyCheckCommandResult(exitCode: 0)),
-        deviceLeaseManager: StubDeviceLeaseManager(available: false),
-        fileSystem: StubFileSystem(paths: ["/dev/test"]),
-        environment: projectEnvironment
-    )
-
-    let result = dispatcher.run(arguments: ["hardware", "check", "--device", "/dev/test"])
-    let outcome = try JSONDecoder().decode(AxolotyHardwareOutcome.self, from: Data(result.standardOutput.utf8))
-
-    #expect(result.exitCode == 0)
-    #expect(outcome.status == .skipped)
-    #expect(outcome.reason == "device lease is unavailable")
-}
-
-@Test
-func hardwareContextMismatchPrecedesFilesystemAndDeviceLeaseEffects() throws {
-    let fileSystem = RecordingFileSystem()
-    let leases = RecordingDeviceLeaseManager()
-    let dispatcher = AxolotyCommandDispatcher(
-        commandRunner: StubRunner(result: AxolotyCheckCommandResult(exitCode: 0)),
-        deviceLeaseManager: leases,
-        fileSystem: fileSystem,
-        environment: [:]
-    )
-
-    let result = dispatcher.run(arguments: ["hardware", "require", "--device", "/dev/test"])
-
-    #expect(result.exitCode == 64)
-    #expect(fileSystem.checkedPaths.isEmpty)
-    #expect(leases.acquiredDevices.isEmpty)
-    #expect(try decodeDiagnostic(result) == AxolotyExecutionContextDiagnostic(
-        executable: "Tests/Support/embedded/embedded-swift-test.sh",
-        declaredContext: .project,
-        detectedContext: .host
-    ))
-}
-
-@Test
-func checkpointHardwareContextMismatchPrecedesFilesystemEffects() throws {
-    let fileSystem = RecordingFileSystem()
-    let dispatcher = AxolotyCommandDispatcher(
-        commandRunner: StubRunner(result: AxolotyCheckCommandResult(exitCode: 0)),
-        fileSystem: fileSystem,
-        environment: [:]
-    )
-
-    let result = dispatcher.run(arguments: ["release", "checkpoint-hardware"])
-
-    #expect(result.exitCode == 64)
-    #expect(fileSystem.checkedPaths.isEmpty)
-    #expect(try decodeDiagnostic(result) == AxolotyExecutionContextDiagnostic(
-        executable: "swift",
-        declaredContext: .project,
-        detectedContext: .host
-    ))
 }
 
 @Test
@@ -565,7 +490,6 @@ func checkpointContextMismatchPrecedesPlanAndMetadataCommands() throws {
 func checkpointPlanIncludesRequiredCompatibilityNodes() throws {
     let resolver = try AxolotyCanonicalTestPlanResolver(environment: ProcessInfo.processInfo.environment)
     let plan = try resolver.resolve(.checkpoint(
-        hardwareDevice: nil,
         consumerEnvironment: [:],
         platform: AxolotyCheckPlan.currentPlatform
     ))
@@ -574,18 +498,8 @@ func checkpointPlanIncludesRequiredCompatibilityNodes() throws {
     #expect(!plan.nodes.contains { $0.name == "logging-global" })
     #expect(plan.nodes.contains { $0.name == "g3-object-model-evidence-host" })
     #expect(plan.nodes.contains { $0.name == "g3-object-model-evidence-sanitized" })
-    #expect(plan.nodes.contains { $0.name == "g3-object-model-evidence-embedded" })
-
-    let hardwarePlan = try resolver.resolve(.checkpoint(
-        hardwareDevice: "/dev/ttyACM0",
-        consumerEnvironment: [:],
-        platform: AxolotyCheckPlan.currentPlatform
-    ))
-    #expect(!hardwarePlan.nodes.contains { $0.name == "integration-tests" })
-    #expect(!hardwarePlan.nodes.contains { $0.name == "logging-global" })
-    #expect(hardwarePlan.nodes.contains { $0.name == "g3-object-model-evidence-host" })
-    #expect(hardwarePlan.nodes.contains { $0.name == "g3-object-model-evidence-sanitized" })
-    #expect(hardwarePlan.nodes.contains { $0.name == "g3-object-model-evidence-embedded" })
+    #expect(plan.nodes.contains { $0.name == "embedded-core-consumer" })
+    #expect(!plan.nodes.contains { $0.name == "g3-object-model-evidence-portable" })
 }
 
 @Test
@@ -687,7 +601,7 @@ func checkpointManifestRecordsAllRequiredReleaseGatesInOrder() throws {
     let manifest = try JSONDecoder().decode(AxolotyCheckpointManifest.self, from: Data(result.standardOutput.utf8))
 
     #expect(manifest.schemaVersion == 3)
-    #expect(manifest.releaseGates.map(\.id) == ["ci", "wire", "embedded"])
+    #expect(manifest.releaseGates.map(\.id) == ["ci", "wire", "embedded", "swiftpm-sbom"])
     #expect(manifest.releaseGates.first { $0.id == "integration" } == nil)
 }
 
@@ -733,6 +647,7 @@ func releaseCheckpointHumanOutputIsExactlyTheCheckSummary() throws {
         fileSystem: StubFileSystem(paths: []),
         environment: environment,
         timestampProvider: { "2026-09-01T00:00:00Z" },
+        suppliedSwiftPMSBOM: successfulSwiftPMSBOMEvidence(),
         clock: CheckTestClock(),
         overrunScheduler: ManualOverrunScheduler()
     ).run(arguments: ["release", "checkpoint"])
@@ -752,62 +667,34 @@ func releaseCheckpointRendersCompleteDeterministicJSONBytes() throws {
         "AXOLOTY_GIT_TREE": String(repeating: "b", count: 40),
         "AXOLOTY_REPOSITORY": "github.com/phynics/axoloty",
     ]) { _, value in value }
-    let result = AxolotyCommandDispatcher(
-        commandRunner: StubRunner(result: AxolotyCheckCommandResult(exitCode: 0)),
-        fileSystem: StubFileSystem(
-            paths: [],
-            fileContents: [:]
-        ),
-        environment: environment,
-        timestampProvider: { "2026-09-01T00:00:00Z" },
-        clock: CheckTestClock(),
-        overrunScheduler: ManualOverrunScheduler()
-    ).run(arguments: ["release", "checkpoint"])
-    #if os(Linux)
-    let platform = "linux"
-    #else
-    let platform = "macOS"
-    #endif
-    let expectedLines = [
-        "{",
-        "  \"gitBranch\" : \"\",",
-        "  \"gitClean\" : true,",
-        "  \"gitCommit\" : \"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",",
-        "  \"gitTree\" : \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\",",
-        "  \"hardwareIncluded\" : false,",
-        "  \"platform\" : \"\(platform)\",",
-        "  \"releaseGates\" : [",
-        "",
-        "  ],",
-        "  \"releaseVersion\" : \"unavailable\",",
-        "  \"repository\" : \"github.com\\/phynics\\/axoloty\",",
-        "  \"results\" : [",
-        "    {",
-        "      \"command\" : {",
-        "        \"exitCode\" : 0,",
-        "        \"standardError\" : \"\",",
-        "        \"standardOutput\" : \"\"",
-        "      },",
-        "      \"name\" : \"resolve\",",
-        "      \"status\" : \"passed\",",
-        "      \"timing\" : {",
-        "        \"elapsedSeconds\" : 0,",
-        "        \"exceededExpectation\" : false,",
-        "        \"expectedDurationSeconds\" : 60,",
-        "        \"resourceLeaseWaitSeconds\" : 0",
-        "      }",
-        "    }",
-        "  ],",
-        "  \"schemaVersion\" : 3,",
-        "  \"swiftVersion\" : \"\",",
-        "  \"timestamp\" : \"2026-09-01T00:00:00Z\"",
-        "}"
-    ]
-    let expectedBytes = Data(expectedLines.joined(separator: "\n").utf8)
+    let runCheckpoint = {
+        AxolotyCommandDispatcher(
+            commandRunner: StubRunner(result: AxolotyCheckCommandResult(exitCode: 0)),
+            fileSystem: StubFileSystem(paths: [], fileContents: [:]),
+            environment: environment,
+            timestampProvider: { "2026-09-01T00:00:00Z" },
+            suppliedSwiftPMSBOM: successfulSwiftPMSBOMEvidence(),
+            clock: CheckTestClock(),
+            overrunScheduler: ManualOverrunScheduler()
+        ).run(arguments: ["release", "checkpoint"])
+    }
+    let result = runCheckpoint()
+    let repeated = runCheckpoint()
+    let certificate = try JSONDecoder().decode(AxolotyCheckpointManifest.self, from: Data(result.standardOutput.utf8))
 
     #expect(result.exitCode == 0)
-    #expect(Data(result.standardOutput.utf8) == expectedBytes)
+    #expect(result.standardOutput == repeated.standardOutput)
+    #expect(certificate.releaseGates.map(\.id) == ["swiftpm-sbom"])
+    #expect(certificate.releaseGates.first?.evidenceDigest == String(repeating: "a", count: 64))
     #expect(result.standardError.isEmpty)
+}
+
+private func successfulSwiftPMSBOMEvidence() -> SwiftPMSBOMEvidence {
+    SwiftPMSBOMEvidence(
+        artifactPath: ".testing/release-evidence/swiftpm-sbom/cyclonedx.json",
+        digest: String(repeating: "a", count: 64),
+        failure: nil
+    )
 }
 
 @Test
@@ -992,7 +879,7 @@ func testToolingUsesOnlyItsCheckPlanDependencyClosure() throws {
         "test", "-Xswiftc", "-warnings-as-errors", "--package-path", "Tools",
         "--scratch-path", ".build/tooling", "--cache-path", ".swiftpm-cache",
         "--disable-automatic-resolution", "--filter",
-        "AxolotyCommandDispatcherTests|AxolotyTimingTests|AxolotyDeviceLeaseTests|AxolotyResourceLeaseTests|AxolotyDevelopmentServiceTests|AxolotyMQTTServiceTests|AxolotyServeParserTests|RepositoryAuthorityTests",
+        "typedInvocationParserClassifiesReleaseCommandsAndEnvironmentFallbacks|typedInvocationParserPreservesSemanticCommandOwnership|helpCommandPrintsUsage|invalidCommandUsesConfiguredExecutableNameInErrorAndUsage|versionCommandPrintsVersion|checkPlanPrintsStableJSON|ciCategorySelectsTheFullObjectModelAggregate|canonicalManifestDefinesVerifyRootsAndBoundedTestOne|canonicalSwiftBuildsTreatWarningsAsErrors|canonicalManifestErrorsHaveStableLocalizedDiagnostics|canonicalManifestUsesOverrideBeforeBundledOrRepositoryManifest|checkpointPlanningAndCertificationUseOneManifestSnapshot|verifyPlanIncludesStaticSupportWithoutRecursiveGates|canonicalExecutorSerializesIndependentNodes|explainIsMachineReadableAndHumanReadable|humanCheckOutputUsesAReadableSummaryWithoutMachineManifest|checkPlanDisablesSwiftLintCache|checkpointContextMismatchPrecedesPlanAndMetadataCommands|checkpointPlanIncludesRequiredCompatibilityNodes|checkpointFailsWhenRequiredReleaseGateHasNoEvidence|checkpointFailsWhenReleaseCheckoutIsDirty|checkpointRejectsLegacyGenericExternallyAttestedReleaseGate|checkpointRejectsInvalidExternallyAttestedReleaseGate|checkpointManifestRecordsAllRequiredReleaseGatesInOrder|releaseCheckpointUsesTheInjectedExecutorEventSink|releaseCheckpointHumanOutputIsExactlyTheCheckSummary|releaseCheckpointRendersCompleteDeterministicJSONBytes|wireVerifyRunsOnlyItsDependencyClosure|wireCaptureRunsEveryNodeThroughSupportedBridge|wireTierPointsTheManifestNodeAtTheConfiguredOutputDirectory|wireTierKeepsTheDefaultOutputDirectoryWhenUnset|wireCaptureForwardsInvocationScopedOutputToEveryNode|wireCaptureRejectsHostNodesWithoutBridgeBeforeStartingCommands|testOfflineUsesTheCheckPlan|testToolingUsesOnlyItsCheckPlanDependencyClosure|integrationCommandReportsRetirementWithoutRunningAProcess|retiredIntegrationCommandDoesNotRunTheInjectedRunner|timingArgumentParserAcceptsFilterScratchRootAndKeep|timingArgumentParserRejectsUnknownAndMissingValues|timingParsersReportBuildStepsAndCacheStatsWithoutGuessing|timingRunnerBuildsFourSerialHardwareFreePlansWithIsolatedScratch|timingRunnerCleansScratchWhenKeepIsDisabledAndBoundsFailureDiagnostics|timingRunnerRejectsUnsupportedPlatformsBeforeLaunchingCommands|dispatcherExposesTimingAsSortedJSONAndRejectsInvalidCLIOptions|namedResourceLeaseReportsOwnerAndBoundsContention|deadResourceLeaseOwnerIsRecoverableByAnotherProcess|independentNamedResourceLeasesCoexist|executorLeasesOnlyCollisionProneDeclaredResources|executorAccountsForResourceLeaseWaitSeparately|devServiceStartsBothAndExitsWhenMCPExitsCleanly|devServiceWritesJSONReadinessToStandardOutputOnly|devServiceFailsWhenMosquittoMissing|devServiceWritesJSONFailureDiagnosticsToStandardErrorOnly|devServiceFailsWhenMCPExecutableMissing|devServiceFailsWhenMQTTNotReady|devServiceTerminatesMQTTWhenMCPNotReady|devServiceTerminatesMCPWhenMQTTExits|devServiceReturnsMCPExitStatusWhenMCPExits|managedProcessSupervisorEscalatesAfterGracePeriod|managedProcessSupervisorReportsUnreapedRunnerWithoutBlocking|devServiceCleansUpChildWhenInterruptedDuringStartup|dispatcherServeDevWithFakeDepsReturnsExitCode|foundationServiceProbeConnectsToIPv4Loopback|foundationServiceProbeConnectsToLocalhost|foundationServiceProbeConnectsToIPv6Loopback|foundationServiceProbeReportsOccupiedIPv4PortUnavailable|foundationServiceProbeReportsOccupiedIPv6PortUnavailable|urlAuthorityHostBracketsIPv6Literals|devServiceEndToEndWithDynamicPorts|mosquittoConfigContainsListenerAndAnonymous|mosquittoConfigDebugIncludesConnectionMessages|mosquittoConfigErrorOnlyIncludesErrorLogType|mosquittoConfigWarningKeepsBrokerDiagnosticsOnStandardError|mosquittoConfigSupportsZeroPointZeroForContainer|mqttServiceFailsWhenMosquittoMissing|mqttServiceFailsWhenPortInUse|mqttServiceStartsAndExitsCleanly|mqttServiceWritesJSONReadinessToStandardOutputOnly|mqttServiceWritesJSONFailureDiagnosticsToStandardErrorOnly|mqttServiceKeepsJSONReadinessParseableWhenBrokerEmitsWarning|serviceDiagnosticLoggerParsesWarningRecordOnStandardError|mqttServiceFailsWhenNotReady|mqttServiceReturns1OnChildCrash|mcpServiceFailsWhenExecutableMissing|mcpServiceStdioStartsAndExitsCleanly|mcpServiceForwardsConfiguredConnectTimeout|mcpServiceHTTPFailsWhenNotReady|mcpServiceHTTPStartsAndExitsCleanly|mcpServiceWritesJSONReadinessToStandardOutputOnly|mcpServiceWritesJSONFailureDiagnosticsToStandardErrorOnly|mcpServiceReturns1OnChildCrash|dispatcherServeMcpWithFakeDepsReturnsExitCode|dispatcherServeMqttWithFakeDepsReturnsExitCode|serveSubcommandHelpIsParsedWithoutStartingService|serveMqttDefaultsToLoopback1883|serveMqttAcceptsPortOverride|serveMqttAcceptsListenHostZeroForContainer|serveMqttRejectsPortZero|serveMqttRejectsNonNumericPort|serveMqttRejectsOutOfRangePort|serveMqttRejectsInvalidOutputMode|serveMqttAcceptsLogLevelDebug|serveMqttRejectsInvalidLogLevel|serveMqttRejectsUnknownOption|serveMqttRejectsDuplicatePort|serveMqttAcceptsEqualsSyntax|serveMqttRejectsMissingValue|serveMcpStdioDefaults|serveMcpRequiresTransport|serveMcpRejectsInvalidConnectTimeout|serveMcpAcceptsBoundedConnectTimeout|serveMcpRejectsInvalidTransport|serveMcpStdioRejectsHTTPOutput|serveMcpStdioRejectsListenHost|serveMcpHTTPDefaults|serveMcpHTTPRejectsNonLoopback|serveMcpHTTPAcceptsLocalhost|serveMcpHTTPRejectsInvalidPath|serveMcpHTTPAcceptsCustomPath|serveDevDefaults|serveDevAcceptsNamespaceAndPorts|serveDevRejectsUnknownOption|serveWithNoSubcommandFails|serveUnknownSubcommandFails|serveMqttUsesEnvPort|serveMcpUsesEnvBrokerHost|serveMcpUsesEnvNamespace|serveMcpUsesEnvMCPHostAndPort|serveDevUsesEnvNamespace|serveMqttCLIOverridesEnvPort|dispatcherServeSubcommandHelpPrintsContextualUsage|dispatcherServesMqttReturns69WhenMosquittoMissing|dispatcherServesMcpStdioReturns69WhenMCPMissing|dispatcherServesMcpMissingTransportReturnsError|dispatcherServesDevReturns69WhenExecutablesMissing|dispatcherServeUnknownSubcommandReturnsError|dispatcherVersionUsesExecutableName|dispatcherDefaultVersionIsAxolotyTool|dispatcherHelpIncludesServeCommands|repositoryAuthorityPassesForCheckout|repositoryAuthorityCommandSupportsHumanAndJSONOutput|repositoryAuthorityRejectsVersionDriftAndNonWaivableExceptions|repositoryAuthorityIgnoresHistoricalVersionClaims|repositoryAuthorityIgnoresGeneratedDependencyDocumentation|repositoryAuthorityCountsOnlyInvariantDeclarations|repositoryAuthorityAcceptsFullSemanticVersions|repositoryAuthorityRejectsMalformedExceptionValuesAndMissingTargets|repositoryAuthorityRejectsWrongLedgerCollectionTypes|repositoryAuthorityChecksDocCVersionArticlesAndMarkdownAnchors|repositoryAuthorityRejectsVolatileRootGuidance|repositoryAuthorityChecksEveryCurrentVersionClaim|repositoryAuthorityRequiresFilesTestsAndKnownOwnerIssues|repositoryAuthorityAcceptsWellFormedException|repositoryAuthorityRejectsSiblingPrefixLinkEscape|modulePolicyRejectsAForbiddenImport|modulePolicyRejectsAnUndeclaredImport|modulePolicyRejectsAnUnusedAllowedImport|modulePolicySeesAttributedImports|modulePolicyScansNestedSources|modulePolicyRejectsContradictoryDeclarations|modulePolicyMustBePresent|modulePolicyRejectsAMissingTargetDirectory|quarantineLedgerMatchesAnUnexpiredPrefixInItsOwningNode|quarantineLedgerIgnoresAMatchingPrefixInAnotherNode|quarantineLedgerIgnoresANonMatchingName|quarantineLedgerTreatsAnExpiredEntryAsNonSuppressing|quarantineLedgerTreatsAMalformedDeadlineAsExpired|allQuarantinedRequiresEveryNameCovered|allQuarantinedRejectsAnEmptySet|allQuarantinedRejectsAMissingNodeID",
     ])
 }
 

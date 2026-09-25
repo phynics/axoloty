@@ -189,7 +189,7 @@ private final class HostTraceTransport: AxolotyRuntimeTransport, @unchecked Send
     private var effects: [RuntimeTransportEffect] = []
 
     func start(receive: @escaping @Sendable (RuntimeInboundFrame) -> Void) async throws {}
-    func setFailureHandler(_ handler: @escaping @Sendable (Error) -> Void) async {}
+    func setFailureHandler(_ handler: @escaping @Sendable (RuntimeTransportFailure) -> Void) async {}
     func installSubscriptions(namespace: String) async throws {}
     func removeSubscriptions(namespace: String) async throws {}
     func stop() async {}
@@ -851,7 +851,7 @@ fileprivate struct StaticTraceVerifier<let traceCapacity: Int>: ~Copyable {
         let capabilities = try SharedProtocolTraceReplay<traceCapacity>.capabilities(
             firstStep?.capabilities.supportedFamilies ?? TraceEventFamily.allCases
         )
-        runtime = StaticRuntimeESP32C6(
+        runtime = try StaticRuntimeESP32C6(
             registryID: ObjectID(uuid: Self.identity("trace-static-registry")),
             capabilities: capabilities,
             maximumObjects: firstStep?.limits.maximumObjects ?? 16,
@@ -994,7 +994,7 @@ fileprivate struct StaticTraceVerifier<let traceCapacity: Int>: ~Copyable {
 
     private mutating func drainOwned() -> [OwnedProtocolAction] {
         var actions: [OwnedProtocolAction] = []
-        runtime.drainActions { action in actions.append(action.owned()) }
+        runtime.drain { action in actions.append(action.owned()) }
         return actions
     }
 

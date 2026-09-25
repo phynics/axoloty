@@ -81,33 +81,38 @@ public final class AxolotyRuntime: Sendable {
         }
     }
 
-    /// Runs the runtime until a caller invokes ``stop()``. The transport
-    /// remains owned by the runtime for the duration of this call.
+    /// Runs the runtime until a caller invokes ``stop()``. Task cancellation
+    /// requests the same graceful stop and is consumed after cleanup. The
+    /// transport remains owned by the runtime for the duration of this call.
     public func run() async throws {
-        try await start()
+        var stopOnExit = false
+        defer {
+            if stopOnExit {
+                await stop()
+            }
+        }
         do {
-            while true {
-                switch await lifecycleState() {
-                case .running, .starting, .reconnecting, .stopping:
-                    try await Task.sleep(for: .milliseconds(25))
-                case .failed:
-                    let failure = await executor.terminalFailure()
-                    await stop()
-                    if let failure {
-                        throw AxolotyError.runtime(code: failure.0, reason: failure.1)
-                    }
-                    return
-                case .stopped, .closed:
-                    if let failure = await executor.terminalFailure() {
-                        throw AxolotyError.runtime(code: failure.0, reason: failure.1)
-                    }
-                    return
-                }
+            try await withTaskCancellationHandler(operation: {
+                try await start()
+            }, onCancel: {
+                Task { await self.stop() }
+            })
+            stopOnExit = true
+            _ = await executor.waitForTermination()
+            try Task.checkCancellation()
+            if let failure = await executor.terminalFailure() {
+                throw AxolotyError.runtime(code: failure.0, reason: failure.1)
             }
         } catch is CancellationError {
-            await stop()
+            stopOnExit = true
         } catch {
-            await stop()
+            if Task.isCancelled {
+                stopOnExit = true
+                return
+            }
+            if await lifecycleState() == .failed {
+                stopOnExit = true
+            }
             throw error
         }
     }

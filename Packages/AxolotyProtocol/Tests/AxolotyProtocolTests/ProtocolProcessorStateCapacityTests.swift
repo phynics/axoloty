@@ -30,7 +30,7 @@ extension ProtocolProcessorTests {
             return processor.processOutbound(operation, sink: &sink)
         }
         #expect(outcome == .rejected(.capacityExceeded))
-        #expect(processor.state.activeRecords == 0)
+        #expect(processor.state.activeAssociations == 0)
         #expect(sink.count == 1)
     }
     @Test("subscription tokens reject stale generations and inactive entries")

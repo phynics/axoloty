@@ -12,7 +12,7 @@
 /// - Important: When constructed from ``BorrowedMessage``, use this view and
 ///   its returned ``ByteSlice`` levels only in the message's synchronous
 ///   borrow scope. Copy data before an `await` or another isolation-domain hop.
-public struct TopicView {
+public struct TopicView: ~Sendable {
     /// The raw pointer to the topic byte buffer.
     @usableFromInline let bytes: UnsafeRawPointer
     /// The number of valid bytes pointed to by ``bytes``.
@@ -55,9 +55,14 @@ public struct TopicView {
     }
 
     private mutating func parseLevels() {
+        // The pointer-to-span conversion is localized to parsing. The
+        // initializer's borrow contract keeps the topic bytes valid here.
+        let rawSpan = unsafe RawSpan(
+            _unsafeBytes: UnsafeRawBufferPointer(start: bytes, count: byteCount)
+        )
         var start = 0
         var count = 0
-        for i in 0..<byteCount where bytes.load(fromByteOffset: i, as: UInt8.self) == 0x2F {
+        for i in 0..<byteCount where rawSpan[i] == 0x2F {
             if count < WireBufferConfig.maxTopicLevels {
                 levelOffsets[count] = start
                 levelLengths[count] = i - start
@@ -111,7 +116,10 @@ public struct TopicView {
     /// The event-type filter (the part after ':' in level 3), if present.
     public var eventTypeFilter: ByteSlice? {
         guard let eventLevel = level(3) else { return nil }
-        return eventLevel.findByte(0x3A) // ':'
+        guard let colon = eventLevel.findByteIndex(0x3A), colon == 3 else { return nil }
+        let markerLength = eventLevel.byte(at: colon + 1) == 0x3A ? 1 : 0
+        let start = colon + 1 + markerLength
+        return eventLevel.subSlice(from: start, length: eventLevel.length - start)
     }
 
     /// The namespace level (topic level 2), or nil if absent.
@@ -396,15 +404,3 @@ extension WireEventType: RawRepresentable {
     }
 }
 #endif
-
-extension ByteSlice {
-    /// Finds a byte value and returns the sub-slice after it, or nil.
-    func findByte(_ target: UInt8) -> ByteSlice? {
-        for i in 0..<length where pointer.load(fromByteOffset: i, as: UInt8.self) == target {
-            let remaining = length - i - 1
-            guard remaining > 0 else { return ByteSlice(pointer: pointer.advanced(by: i + 1), length: 0) }
-            return ByteSlice(pointer: pointer.advanced(by: i + 1), length: remaining)
-        }
-        return nil
-    }
-}

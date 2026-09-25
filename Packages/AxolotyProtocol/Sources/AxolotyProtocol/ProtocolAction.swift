@@ -3,7 +3,7 @@
 import AxolotyWire
 
 /// A delivery selector borrowed from the frame that produced an action.
-public enum BorrowedProtocolDeliveryKey {
+public enum BorrowedProtocolDeliveryKey: ~Sendable {
     /// Match every action in a capability family.
     case capability(ProtocolCapability)
     /// Match an Advertise filter.
@@ -39,7 +39,7 @@ public enum ProtocolEventTypeFilterKind: UInt8, Sendable, Equatable {
 }
 
 /// The target of a borrowed publication.
-public enum BorrowedProtocolPublishTarget {
+public enum BorrowedProtocolPublishTarget: ~Sendable {
     /// A publication on the Coaty profile route.
     case profile(eventTypeFilter: ByteSlice?, filterKind: ProtocolEventTypeFilterKind)
     /// A publication on an exact external route.
@@ -64,7 +64,7 @@ public enum OwnedProtocolPublishTarget: Sendable, Equatable {
 }
 
 /// The complete delivery context borrowed from a protocol frame.
-public struct BorrowedProtocolDelivery {
+public struct BorrowedProtocolDelivery: ~Sendable {
     /// The normalized routing key.
     public let routingKey: ProtocolRoutingKey
     /// The typed subscription selector.
@@ -133,7 +133,7 @@ public struct OwnedProtocolDelivery: Sendable, Equatable {
 }
 
 /// A borrowed outbound publication.
-public struct BorrowedProtocolPublication {
+public struct BorrowedProtocolPublication: ~Sendable {
     /// The normalized routing key.
     public let routingKey: ProtocolRoutingKey
     /// The publication target and route information.
@@ -242,7 +242,7 @@ public enum ProtocolIoAssociationChange: Sendable, Equatable {
 }
 
 /// A borrowed association transition with its complete delivery context.
-public struct BorrowedIoAssociationTransition {
+public struct BorrowedIoAssociationTransition: ~Sendable {
     /// The delivery context for the Associate frame.
     public let delivery: BorrowedProtocolDelivery
     /// The source endpoint identity.
@@ -369,7 +369,7 @@ public struct OwnedExternalRouteTransition: Sendable, Equatable {
 }
 
 /// A normalized protocol action produced by the portable processor.
-public enum BorrowedProtocolAction {
+public enum BorrowedProtocolAction: ~Sendable {
     /// Deliver an inbound frame to a protocol consumer.
     case deliver(BorrowedProtocolDelivery)
     /// Publish an outbound frame through a binding.
@@ -424,17 +424,6 @@ private extension BorrowedProtocolPublishTarget {
         switch self {
         case .profile(let filter, let kind): return .profile(eventTypeFilter: filter?.ownedBytes(), filterKind: kind)
         case .associationRoute(let route, let kind): return .associationRoute(route: route.owned(), kind: kind)
-        }
-    }
-}
-
-private extension ByteSlice {
-    borrowing func ownedBytes() -> [UInt8] {
-        withBytes { pointer, length in
-            Array(UnsafeBufferPointer(
-                start: pointer.assumingMemoryBound(to: UInt8.self),
-                count: length
-            ))
         }
     }
 }

@@ -17,7 +17,8 @@ public enum AxolotyTimingOutputParser {
                let slash = text[open...].firstIndex(of: "/"),
                let close = text[slash...].firstIndex(of: "]") {
                 let totalText = text[text.index(after: slash)..<close]
-                if let total = Int(totalText), total > explicitTotal {
+                let normalizedTotal = String(totalText.filter { !$0.isWhitespace })
+                if let total = Int(normalizedTotal), total > explicitTotal {
                     explicitTotal = total
                 }
             }

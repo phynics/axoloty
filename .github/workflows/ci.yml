@@ -38,19 +38,16 @@ jobs:
       # export it for later steps.
       - name: Compute cache key
         run: |
-          echo "SWIFT_CACHE_KEY=swiftpm-v2-6.3-linux-${{ hashFiles('Package.resolved', '.devcontainer/Dockerfile', '.devcontainer/image-lock.json') }}" >> "$GITHUB_ENV"
+          echo "SWIFT_CACHE_KEY=swiftpm-v2-6.4-linux-${{ hashFiles('Package.resolved', '.devcontainer/Dockerfile', '.devcontainer/image-lock.json') }}" >> "$GITHUB_ENV"
           # Compiler intermediates and planner metadata are specific to the
           # development container toolchain. Key them by the reviewed image
           # identity too, so an image-lock refresh never reuses a cache built
           # with a different container (SwiftPM emits a fatal incremental
           # build error when incremental state is incompatible).
           image_identity=$(jq -er '.buildInputsSha256' .devcontainer/image-lock.json)
-          SWIFT_BUILD_CACHE_PREFIX="swift-build-v3-compiler-6.3-linux-${image_identity}-${{ hashFiles('Package.resolved', '**/Package.swift', '.devcontainer/Dockerfile') }}-"
+          SWIFT_BUILD_CACHE_PREFIX="swift-build-v3-compiler-6.4-linux-${image_identity}-${{ hashFiles('Package.resolved', '**/Package.swift', '.devcontainer/Dockerfile') }}-"
           echo "SWIFT_BUILD_CACHE_PREFIX=${SWIFT_BUILD_CACHE_PREFIX}" >> "$GITHUB_ENV"
           echo "SWIFT_BUILD_CACHE_KEY=${SWIFT_BUILD_CACHE_PREFIX}${GITHUB_SHA}" >> "$GITHUB_ENV"
-          ESP_IDF_CCACHE_PREFIX="esp-idf-ccache-v1-${image_identity}-"
-          echo "ESP_IDF_CCACHE_PREFIX=${ESP_IDF_CCACHE_PREFIX}" >> "$GITHUB_ENV"
-          echo "ESP_IDF_CCACHE_KEY=${ESP_IDF_CCACHE_PREFIX}${GITHUB_SHA}" >> "$GITHUB_ENV"
 
       - name: Prepare verification diagnostics
         shell: bash
@@ -70,8 +67,8 @@ jobs:
           # cannot observe its live publication state. The setup action still
           # supports publisher-in-progress for callers with concrete evidence;
           # CI uses the no-wait bounded fallback here.
-          content-tag-prefix: swift-6.3
-          candidate-tag-prefix: ${{ github.event_name == 'pull_request' && format('swift-6.3-pr-{0}', github.event.pull_request.number) || 'swift-6.3' }}
+          content-tag-prefix: swift-6.4
+          candidate-tag-prefix: ${{ github.event_name == 'pull_request' && format('swift-6.4-pr-{0}', github.event.pull_request.number) || 'swift-6.4' }}
 
       - name: Restore SwiftPM dependency cache
         id: swiftpm_cache
@@ -80,62 +77,74 @@ jobs:
           path: .swiftpm-cache
           key: ${{ env.SWIFT_CACHE_KEY }}
 
-      # Keep this separate from the download cache. Cache compiler intermediates
-      # and planner metadata: final binaries, fuzz output, tooling, and ESP-IDF
-      # trees made the old archive 2.69 GB and could exhaust a runner before
-      # Podman started the test container.
-      #
-      # The index store must be cached too. SwiftPM incremental builds open the
-      # prior index-store unit for a file when it is recompiled; restoring
-      # build.db/*.build/Modules/ModuleCache without index/store leaves those
-      # incremental records referencing unit files that do not exist, which
-      # fails with `Failed opening .../index/store/v5/units/...: No such file`.
+      # Keep this separate from the download cache. Cache Swift Build's
+      # intermediates, module/compilation caches, index records, and planner
+      # metadata, but not final products. The .buildSystem_debug marker keeps
+      # SwiftPM from treating a Swift Build cache as a native-build cache.
       - name: Restore Swift compiler cache
         id: swift_build_cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
-            .build/ci/build.db
+            .build/ci/.buildSystem_debug
+            .build/ci/artifacts
             .build/ci/checkouts
-            .build/ci/debug.yaml
-            .build/ci/plugin-tools.yaml
-            .build/ci/workspace-state.json
+            .build/ci/manifest.pif
             .build/ci/plugins
+            .build/ci/prebuilts
             .build/ci/repositories
-            .build/ci/x86_64-unknown-linux-gnu/debug/*.build
-            .build/ci/x86_64-unknown-linux-gnu/debug/description.json
-            .build/ci/x86_64-unknown-linux-gnu/debug/index/store
-            .build/ci/x86_64-unknown-linux-gnu/debug/Modules
-            .build/ci/x86_64-unknown-linux-gnu/debug/ModuleCache
-            .build/ci/tooling/build.db
-            .build/ci/tooling/debug.yaml
+            .build/ci/workspace-state.json
+            .build/ci/out/CompilationCache.noindex
+            .build/ci/out/Intermediates.noindex
+            .build/ci/out/ModuleCache.noindex
+            .build/ci/out/PCH
+            .build/ci/out/SDKExplicitPrecompiledModules
+            .build/ci/out/v5
+            .build/ci/tooling/.buildSystem_debug
+            .build/ci/tooling/artifacts
+            .build/ci/tooling/checkouts
+            .build/ci/tooling/manifest.pif
+            .build/ci/tooling/plugins
+            .build/ci/tooling/prebuilts
+            .build/ci/tooling/repositories
             .build/ci/tooling/workspace-state.json
-            .build/ci/tooling/x86_64-unknown-linux-gnu/debug/*.build
-            .build/ci/tooling/x86_64-unknown-linux-gnu/debug/description.json
-            .build/ci/tooling/x86_64-unknown-linux-gnu/debug/index/store
-            .build/ci/tooling/x86_64-unknown-linux-gnu/debug/Modules
-            .build/ci/packages/*/build.db
-            .build/ci/packages/*/debug.yaml
-            .build/ci/packages/*/plugin-tools.yaml
-            .build/ci/packages/*/workspace-state.json
+            .build/ci/tooling/out/CompilationCache.noindex
+            .build/ci/tooling/out/Intermediates.noindex
+            .build/ci/tooling/out/ModuleCache.noindex
+            .build/ci/tooling/out/PCH
+            .build/ci/tooling/out/SDKExplicitPrecompiledModules
+            .build/ci/tooling/out/v5
+            .build/ci/packages/*/.buildSystem_debug
+            .build/ci/packages/*/artifacts
+            .build/ci/packages/*/checkouts
+            .build/ci/packages/*/manifest.pif
             .build/ci/packages/*/plugins
-            .build/ci/packages/*/x86_64-unknown-linux-gnu/debug/*.build
-            .build/ci/packages/*/x86_64-unknown-linux-gnu/debug/description.json
-            .build/ci/packages/*/x86_64-unknown-linux-gnu/debug/index/store
-            .build/ci/packages/*/x86_64-unknown-linux-gnu/debug/Modules
-            .build/ci/packages/*/x86_64-unknown-linux-gnu/debug/ModuleCache
+            .build/ci/packages/*/prebuilts
+            .build/ci/packages/*/repositories
+            .build/ci/packages/*/workspace-state.json
+            .build/ci/packages/*/out/CompilationCache.noindex
+            .build/ci/packages/*/out/Intermediates.noindex
+            .build/ci/packages/*/out/ModuleCache.noindex
+            .build/ci/packages/*/out/PCH
+            .build/ci/packages/*/out/SDKExplicitPrecompiledModules
+            .build/ci/packages/*/out/v5
+            .build/ci/apps/.buildSystem_debug
+            .build/ci/apps/artifacts
+            .build/ci/apps/checkouts
+            .build/ci/apps/manifest.pif
+            .build/ci/apps/plugins
+            .build/ci/apps/prebuilts
+            .build/ci/apps/repositories
+            .build/ci/apps/workspace-state.json
+            .build/ci/apps/out/CompilationCache.noindex
+            .build/ci/apps/out/Intermediates.noindex
+            .build/ci/apps/out/ModuleCache.noindex
+            .build/ci/apps/out/PCH
+            .build/ci/apps/out/SDKExplicitPrecompiledModules
+            .build/ci/apps/out/v5
           key: ${{ env.SWIFT_BUILD_CACHE_KEY }}
           restore-keys: |
             ${{ env.SWIFT_BUILD_CACHE_PREFIX }}
-
-      - name: Restore ESP-IDF compiler cache
-        id: esp_idf_ccache
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.cache/axoloty/esp-idf-ccache
-          key: ${{ env.ESP_IDF_CCACHE_KEY }}
-          restore-keys: |
-            ${{ env.ESP_IDF_CCACHE_PREFIX }}
 
       - name: Run canonical CI verification plan
         env:
@@ -169,8 +178,6 @@ jobs:
           SWIFTPM_EXACT_HIT: ${{ steps.swiftpm_cache.outputs.cache-hit || 'false' }}
           SWIFT_COMPILER_EXACT_HIT: ${{ steps.swift_build_cache.outputs.cache-hit || 'false' }}
           SWIFT_COMPILER_MATCHED_KEY: ${{ steps.swift_build_cache.outputs.cache-matched-key || 'none' }}
-          ESP_IDF_EXACT_HIT: ${{ steps.esp_idf_ccache.outputs.cache-hit || 'false' }}
-          ESP_IDF_MATCHED_KEY: ${{ steps.esp_idf_ccache.outputs.cache-matched-key || 'none' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -195,9 +202,7 @@ jobs:
             echo "- SwiftPM exact hit: \`${SWIFTPM_EXACT_HIT}\`"
             echo "- Swift compiler exact hit: \`${SWIFT_COMPILER_EXACT_HIT}\`"
             echo "- Swift compiler restored key: \`${SWIFT_COMPILER_MATCHED_KEY}\`"
-            echo "- ESP-IDF exact hit: \`${ESP_IDF_EXACT_HIT}\`"
-            echo "- ESP-IDF restored key: \`${ESP_IDF_MATCHED_KEY}\`"
-            du -sh .swiftpm-cache .build/ci "$HOME/.cache/axoloty/esp-idf-ccache" 2>/dev/null || true
+            du -sh .swiftpm-cache .build/ci 2>/dev/null || true
           } >> "$GITHUB_STEP_SUMMARY"
           if [ "${#primary_reports[@]}" -ne 1 ]; then
             echo "::error::Expected exactly one primary verify-ci report, found ${#primary_reports[@]}."
@@ -240,43 +245,63 @@ jobs:
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
-            .build/ci/build.db
+            .build/ci/.buildSystem_debug
+            .build/ci/artifacts
             .build/ci/checkouts
-            .build/ci/debug.yaml
-            .build/ci/plugin-tools.yaml
-            .build/ci/workspace-state.json
+            .build/ci/manifest.pif
             .build/ci/plugins
+            .build/ci/prebuilts
             .build/ci/repositories
-            .build/ci/x86_64-unknown-linux-gnu/debug/*.build
-            .build/ci/x86_64-unknown-linux-gnu/debug/description.json
-            .build/ci/x86_64-unknown-linux-gnu/debug/index/store
-            .build/ci/x86_64-unknown-linux-gnu/debug/Modules
-            .build/ci/x86_64-unknown-linux-gnu/debug/ModuleCache
-            .build/ci/tooling/build.db
-            .build/ci/tooling/debug.yaml
+            .build/ci/workspace-state.json
+            .build/ci/out/CompilationCache.noindex
+            .build/ci/out/Intermediates.noindex
+            .build/ci/out/ModuleCache.noindex
+            .build/ci/out/PCH
+            .build/ci/out/SDKExplicitPrecompiledModules
+            .build/ci/out/v5
+            .build/ci/tooling/.buildSystem_debug
+            .build/ci/tooling/artifacts
+            .build/ci/tooling/checkouts
+            .build/ci/tooling/manifest.pif
+            .build/ci/tooling/plugins
+            .build/ci/tooling/prebuilts
+            .build/ci/tooling/repositories
             .build/ci/tooling/workspace-state.json
-            .build/ci/tooling/x86_64-unknown-linux-gnu/debug/*.build
-            .build/ci/tooling/x86_64-unknown-linux-gnu/debug/description.json
-            .build/ci/tooling/x86_64-unknown-linux-gnu/debug/index/store
-            .build/ci/tooling/x86_64-unknown-linux-gnu/debug/Modules
-            .build/ci/packages/*/build.db
-            .build/ci/packages/*/debug.yaml
-            .build/ci/packages/*/plugin-tools.yaml
-            .build/ci/packages/*/workspace-state.json
+            .build/ci/tooling/out/CompilationCache.noindex
+            .build/ci/tooling/out/Intermediates.noindex
+            .build/ci/tooling/out/ModuleCache.noindex
+            .build/ci/tooling/out/PCH
+            .build/ci/tooling/out/SDKExplicitPrecompiledModules
+            .build/ci/tooling/out/v5
+            .build/ci/packages/*/.buildSystem_debug
+            .build/ci/packages/*/artifacts
+            .build/ci/packages/*/checkouts
+            .build/ci/packages/*/manifest.pif
             .build/ci/packages/*/plugins
-            .build/ci/packages/*/x86_64-unknown-linux-gnu/debug/*.build
-            .build/ci/packages/*/x86_64-unknown-linux-gnu/debug/description.json
-            .build/ci/packages/*/x86_64-unknown-linux-gnu/debug/index/store
-            .build/ci/packages/*/x86_64-unknown-linux-gnu/debug/Modules
-            .build/ci/packages/*/x86_64-unknown-linux-gnu/debug/ModuleCache
+            .build/ci/packages/*/prebuilts
+            .build/ci/packages/*/repositories
+            .build/ci/packages/*/workspace-state.json
+            .build/ci/packages/*/out/CompilationCache.noindex
+            .build/ci/packages/*/out/Intermediates.noindex
+            .build/ci/packages/*/out/ModuleCache.noindex
+            .build/ci/packages/*/out/PCH
+            .build/ci/packages/*/out/SDKExplicitPrecompiledModules
+            .build/ci/packages/*/out/v5
+            .build/ci/apps/.buildSystem_debug
+            .build/ci/apps/artifacts
+            .build/ci/apps/checkouts
+            .build/ci/apps/manifest.pif
+            .build/ci/apps/plugins
+            .build/ci/apps/prebuilts
+            .build/ci/apps/repositories
+            .build/ci/apps/workspace-state.json
+            .build/ci/apps/out/CompilationCache.noindex
+            .build/ci/apps/out/Intermediates.noindex
+            .build/ci/apps/out/ModuleCache.noindex
+            .build/ci/apps/out/PCH
+            .build/ci/apps/out/SDKExplicitPrecompiledModules
+            .build/ci/apps/out/v5
           key: ${{ env.SWIFT_BUILD_CACHE_KEY }}
-
-      - name: Save ESP-IDF compiler cache
-        if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.esp_idf_ccache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.cache/axoloty/esp-idf-ccache
-          key: ${{ env.ESP_IDF_CCACHE_KEY }}
 
       - name: Upload verification run diagnostics
         if: always()
@@ -304,11 +329,15 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: |
           cache_ids="$RUNNER_TEMP/swift-build-cache-ids"
-          gh cache list --ref refs/heads/main --key "swift-build-v3-compiler-6.3-linux-" \
+          gh cache list --ref refs/heads/main --key "swift-build-v3-compiler-6.4-linux-" \
             --sort created_at --order desc --limit 100 --json id --jq '.[2:][].id' > "$cache_ids"
-          gh cache list --ref refs/heads/main --key "swift-build-v2-coverage-6.3-linux-" \
+          # ESP-IDF ccache keys are per-commit too; unpruned copies (~370 MB
+          # each) filled the repository quota and evicted the Swift caches.
+          gh cache list --ref refs/heads/main --key "esp-idf-ccache-v1-" \
+            --sort created_at --order desc --limit 100 --json id --jq '.[2:][].id' >> "$cache_ids"
+          gh cache list --ref refs/heads/main --key "swift-build-v2-coverage-6.4-linux-" \
             --limit 100 --json id --jq '.[].id' >> "$cache_ids"
-          gh cache list --ref refs/heads/main --key "swift-build-coverage-6.3-linux-" \
+          gh cache list --ref refs/heads/main --key "swift-build-coverage-6.4-linux-" \
             --limit 100 --json id --jq '.[].id' >> "$cache_ids"
           while IFS= read -r cache_id; do
             [ -n "$cache_id" ] || continue

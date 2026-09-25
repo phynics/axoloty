@@ -50,7 +50,7 @@ package struct RuntimeModuleContext: Sendable {
 ///
 /// Optional products use this seam to attach tasks to the existing runtime
 /// lifecycle. It is intentionally SPI-only and is not a general plugin API.
-package struct RuntimeModuleRegistration: @unchecked Sendable {
+package struct RuntimeModuleRegistration: Sendable {
     let start: @Sendable (RuntimeModuleContext) async -> Void
     let run: @Sendable (RuntimeModuleContext) async -> Void
     let stop: @Sendable (RuntimeModuleContext) async -> Void

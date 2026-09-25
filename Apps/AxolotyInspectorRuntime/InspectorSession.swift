@@ -7,7 +7,7 @@ import Foundation
 
 /// The injectable session boundary for the inspector application.
 @MainActor
-public protocol InspectorSession {
+public protocol InspectorSession: InspectorDiscovering {
     /// Starts the modern host runtime and waits for broker readiness.
     func connect() async throws
     /// Returns the current runtime transport state.
@@ -19,7 +19,7 @@ public protocol InspectorSession {
     /// Publishes one typed Discover operation and returns matching Resolve events.
     func discover(_ request: InspectorDiscoverRequest) async -> AsyncStream<InspectorResponseEvent>
     /// Requests runtime shutdown.
-    func stop()
+    func stop() async
 }
 
 /// Inspector adapter over the structured host runtime and a supplied transport.
@@ -98,7 +98,7 @@ public final class AxolotyInspectorSession: InspectorSession {
     public func transportState() async -> InspectorTransportState {
         switch await runtime.state() {
         case .running, .starting, .reconnecting: return .online
-        case .initialized, .stopping, .stopped, .failed: return .offline
+        case .initialized, .stopping, .stopped, .failed, .closed: return .offline
         }
     }
 
@@ -178,9 +178,13 @@ public final class AxolotyInspectorSession: InspectorSession {
         return stream
     }
 
-    public func stop() {
+    /// Requests runtime shutdown and waits for cleanup to finish.
+    ///
+    /// Cleanup is shielded from task cancellation so the runtime still
+    /// deadvertises and closes its transport when the caller is cancelled.
+    public func stop() async {
         cancelDiscovery()
-        Task { await runtime.stop() }
+        await runtime.stop()
     }
 
     private func cancelDiscovery() {
@@ -216,7 +220,7 @@ public final class AxolotyInspectorSession: InspectorSession {
         guard let root = jsonObject(event.value),
               let object = objectPayload(root["object"] as? [String: Any]) else { return nil }
         return InspectorAdvertiseEvent(
-            sourceId: uuidString(event.context.sourceID),
+            sourceId: CoatyRoute.uuidString(event.context.sourceID),
             eventTypeFilter: nil,
             object: object,
             privateData: jsonString(root["privateData"])
@@ -225,14 +229,14 @@ public final class AxolotyInspectorSession: InspectorSession {
 
     private static func deadvertise(from event: RuntimeEventValue) -> InspectorDeadvertiseEvent? {
         guard let values = try? JSONSerialization.jsonObject(with: Data(event.value)) as? [String] else { return nil }
-        return InspectorDeadvertiseEvent(sourceId: uuidString(event.context.sourceID), objectIds: values)
+        return InspectorDeadvertiseEvent(sourceId: CoatyRoute.uuidString(event.context.sourceID), objectIds: values)
     }
 
     nonisolated private static func response(from event: RuntimeEventValue) -> InspectorResponseEvent {
         InspectorResponseEvent(
             eventType: eventFamilyName(event.family),
-            sourceId: uuidString(event.context.sourceID),
-            correlationId: event.context.correlationID.map(uuidString),
+            sourceId: CoatyRoute.uuidString(event.context.sourceID),
+            correlationId: event.context.correlationID.map(CoatyRoute.uuidString),
             payload: String(decoding: event.value, as: UTF8.self)
         )
     }
@@ -290,13 +294,6 @@ public final class AxolotyInspectorSession: InspectorSession {
                 bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15]
             ))
         }
-    }
-
-    nonisolated private static func uuidString(_ value: UUID16) -> String {
-        let b = value.bytes
-        let bytes = [b.0,b.1,b.2,b.3,b.4,b.5,b.6,b.7,b.8,b.9,b.10,b.11,b.12,b.13,b.14,b.15]
-        let hex = bytes.map { String(format: "%02x", $0) }
-        return "\(hex[0])\(hex[1])\(hex[2])\(hex[3])\(hex[4])\(hex[5])\(hex[6])\(hex[7])-\(hex[8])\(hex[9])-\(hex[10])\(hex[11])-\(hex[12])\(hex[13])-\(hex[14])\(hex[15])\(hex[16])\(hex[17])\(hex[18])\(hex[19])\(hex[20])\(hex[21])\(hex[22])\(hex[23])\(hex[24])\(hex[25])\(hex[26])\(hex[27])\(hex[28])\(hex[29])\(hex[30])\(hex[31])"
     }
 }
 

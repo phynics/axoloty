@@ -16,7 +16,7 @@ else
     run_swift() {
         CONTAINER_RUNTIME=${CONTAINER_RUNTIME:-podman} IMAGE=${IMAGE:-axoloty-dev} \
         BUILD_DIR="$build" \
-        SPM_CACHE_DIR="${SPM_CACHE_DIR:-$HOME/.cache/coaty-swift/swiftpm/swift-6.3-linux}" \
+        SPM_CACHE_DIR="${SPM_CACHE_DIR:-$HOME/.cache/coaty-swift/swiftpm/swift-6.4-linux}" \
         CONTAINER_ENV_VARS=ASAN_OPTIONS ASAN_OPTIONS="${ASAN_OPTIONS:-detect_leaks=0}" \
         "$root/.devcontainer/run.sh" "$@"
     }
@@ -24,7 +24,7 @@ fi
 
 CONTAINER_RUNTIME=${CONTAINER_RUNTIME:-podman} IMAGE=${IMAGE:-axoloty-dev} \
 BUILD_DIR="$build" \
-SPM_CACHE_DIR="${SPM_CACHE_DIR:-$HOME/.cache/coaty-swift/swiftpm/swift-6.3-linux}" \
+SPM_CACHE_DIR="${SPM_CACHE_DIR:-$HOME/.cache/coaty-swift/swiftpm/swift-6.4-linux}" \
 CONTAINER_ENV_VARS=ASAN_OPTIONS \
 ASAN_OPTIONS="${ASAN_OPTIONS:-detect_leaks=0}" \
 run_swift swift test -Xswiftc -warnings-as-errors -Xswiftc -sanitize=address \

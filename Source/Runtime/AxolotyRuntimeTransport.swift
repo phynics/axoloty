@@ -4,6 +4,50 @@
 
 import AxolotyWire
 
+/// An owned, sendable failure reported by a runtime transport.
+///
+/// Transport adapters convert foreign errors into this value before invoking
+/// the runtime failure callback. The code is stable for programmatic handling;
+/// the detail is a human-readable description of the observed failure.
+public struct RuntimeTransportFailure: Error, Equatable, Sendable {
+    /// The stable runtime category for this failure.
+    public let code: AxolotyError.RuntimeErrorCode
+    /// A human-readable description of the observed failure.
+    public let detail: String
+
+    /// Creates an owned transport failure.
+    ///
+    /// - Parameters:
+    ///   - code: Stable runtime category for this failure.
+    ///   - detail: Human-readable description of the observed failure.
+    public init(code: AxolotyError.RuntimeErrorCode, detail: String) {
+        self.code = code
+        self.detail = detail
+    }
+}
+
+/// An owned MQTT-compatible last-will publication supplied at transport start.
+///
+/// The runtime builds this message from its lifecycle identity. A transport
+/// may install it on its connection, or ignore it when its carrier has no
+/// last-will feature.
+public struct RuntimeTransportLastWill: Sendable, Equatable {
+    /// The exact route on which the broker publishes the will.
+    public let topic: String
+    /// The copied payload published by the broker.
+    public let payload: [UInt8]
+
+    /// Creates a transport last-will publication.
+    ///
+    /// - Parameters:
+    ///   - topic: Exact destination route.
+    ///   - payload: Owned payload bytes.
+    public init(topic: String, payload: [UInt8]) {
+        self.topic = topic
+        self.payload = payload
+    }
+}
+
 /// A transport boundary for the host runtime.
 ///
 /// Implementations own networking and invoke `receive` only with copied data.
@@ -11,12 +55,18 @@ import AxolotyWire
 public protocol AxolotyRuntimeTransport: AnyObject, Sendable {
     /// Starts the transport and installs the owned-frame receive callback.
     func start(receive: @escaping @Sendable (RuntimeInboundFrame) -> Void) async throws
+    /// Starts the transport and optionally installs a lifecycle last will.
+    func start(
+        receive: @escaping @Sendable (RuntimeInboundFrame) -> Void,
+        lastWill: RuntimeTransportLastWill?
+    ) async throws
     /// Installs a callback for failures after startup has completed.
     ///
-    /// The callback is invoked with an owned error value and may be called
-    /// from a transport event-loop thread. Implementations must not retain
-    /// borrowed protocol data in this callback.
-    func setFailureHandler(_ handler: @escaping @Sendable (Error) -> Void) async
+    /// The callback is invoked with an owned ``RuntimeTransportFailure`` and
+    /// may be called from a transport event-loop thread.
+    /// Implementations must wrap foreign failures before invoking it and must not
+    /// retain borrowed protocol data in this callback.
+    func setFailureHandler(_ handler: @escaping @Sendable (RuntimeTransportFailure) -> Void) async
     /// Applies one owned transport effect in protocol action order.
     ///
     /// - Parameter effect: A finished publication, or an exact external-route
@@ -46,7 +96,24 @@ public protocol AxolotyRuntimeTransport: AnyObject, Sendable {
 }
 
 public extension AxolotyRuntimeTransport {
-    func setFailureHandler(_ handler: @escaping @Sendable (Error) -> Void) async { _ = handler }
+    /// Starts the transport with an optional lifecycle last will.
+    ///
+    /// Existing adapters that do not support a broker last will can continue
+    /// implementing ``start(receive:)``; the default implementation ignores
+    /// this message and preserves that behavior.
+    ///
+    /// - Parameters:
+    ///   - receive: Callback for copied inbound frames.
+    ///   - lastWill: Optional publication for an unclean disconnect.
+    /// - Throws: The transport's startup error.
+    func start(
+        receive: @escaping @Sendable (RuntimeInboundFrame) -> Void,
+        lastWill: RuntimeTransportLastWill?
+    ) async throws {
+        try await start(receive: receive)
+    }
+
+    func setFailureHandler(_ handler: @escaping @Sendable (RuntimeTransportFailure) -> Void) async { _ = handler }
     func installSubscriptions(namespace: String) async throws {}
     func removeSubscriptions(namespace: String) async throws {}
     func classifyRoute(_ route: ByteSlice) -> ProtocolRouteClassification {

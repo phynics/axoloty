@@ -34,9 +34,11 @@ enum SetupFailureStage: String, CaseIterable, Sendable {
 
 actor TestTransport: AxolotyRuntimeTransport {
     private var receive: (@Sendable (RuntimeInboundFrame) -> Void)?
-    private var failure: (@Sendable (Error) -> Void)?
+    private var failure: (@Sendable (RuntimeTransportFailure) -> Void)?
     private var sent: [RuntimeOutboundMessage] = []
     private(set) var lifecycle: [String] = []
+    private(set) var lastWills: [RuntimeTransportLastWill?] = []
+    private(set) var stopObservedCancellation = false
     private let failureStage: SetupFailureStage?
 
     init(failing failureStage: SetupFailureStage? = nil) {
@@ -49,7 +51,15 @@ actor TestTransport: AxolotyRuntimeTransport {
         if failureStage == .start { throw TestTransportFailure() }
     }
 
-    func setFailureHandler(_ handler: @escaping @Sendable (Error) -> Void) {
+    func start(
+        receive: @escaping @Sendable (RuntimeInboundFrame) -> Void,
+        lastWill: RuntimeTransportLastWill?
+    ) async throws {
+        lastWills.append(lastWill)
+        try await start(receive: receive)
+    }
+
+    func setFailureHandler(_ handler: @escaping @Sendable (RuntimeTransportFailure) -> Void) async {
         failure = handler
     }
 
@@ -66,6 +76,7 @@ actor TestTransport: AxolotyRuntimeTransport {
     }
 
     func stop() async {
+        stopObservedCancellation = Task.isCancelled
         receive = nil
         lifecycle.append("stop")
     }
@@ -86,10 +97,44 @@ actor TestTransport: AxolotyRuntimeTransport {
         receive?(frame)
     }
 
-    func fail(_ error: Error) { failure?(error) }
+    func fail(_ error: Error) {
+        let wrapped = error as? AxolotyError ?? AxolotyError.caught(error)
+        let code: AxolotyError.RuntimeErrorCode
+        if case let .runtime(runtimeCode, _) = wrapped {
+            code = runtimeCode
+        } else {
+            code = .brokerUnavailable
+        }
+        failure?(RuntimeTransportFailure(code: code, detail: wrapped.userFriendlyMessage))
+    }
 }
 
 struct TestTransportFailure: Error, Sendable {}
+
+actor BlockingStartTransport: AxolotyRuntimeTransport {
+    private(set) var didStart = false
+    private var didStop = false
+    private var startWaiter: CheckedContinuation<Void, Never>?
+
+    func start(receive: @escaping @Sendable (RuntimeInboundFrame) -> Void) async throws {
+        didStart = true
+        await withCheckedContinuation { continuation in
+            if didStop {
+                continuation.resume()
+            } else {
+                startWaiter = continuation
+            }
+        }
+    }
+
+    func perform(_ effect: RuntimeTransportEffect) async throws {}
+
+    func stop() async {
+        didStop = true
+        startWaiter?.resume()
+        startWaiter = nil
+    }
+}
 
 actor DrainingTransport: AxolotyRuntimeTransport {
     private(set) var sendStarted = false
@@ -98,7 +143,7 @@ actor DrainingTransport: AxolotyRuntimeTransport {
     private var sendWaiter: CheckedContinuation<Void, Never>?
 
     func start(receive: @escaping @Sendable (RuntimeInboundFrame) -> Void) async throws {}
-    func setFailureHandler(_ handler: @escaping @Sendable (Error) -> Void) {}
+    func setFailureHandler(_ handler: @escaping @Sendable (RuntimeTransportFailure) -> Void) async {}
 
     func perform(_ effect: RuntimeTransportEffect) async throws {
         switch effect {

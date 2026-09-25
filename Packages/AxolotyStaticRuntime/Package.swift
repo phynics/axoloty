@@ -1,4 +1,4 @@
-// swift-tools-version:6.3
+// swift-tools-version:6.4
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
 import CompilerPluginSupport
@@ -7,6 +7,13 @@ import PackageDescription
 /// Foundation-free synchronous runtime for the Embedded Swift profile.
 let package = Package(
     name: "AxolotyStaticRuntime",
+    // Apple platforms only: the portable sources use InlineArray and other
+    // Swift 6 features available from the 26.0 SDKs, matching the root
+    // package's floor. Linux and Embedded targets are unaffected.
+    platforms: [
+        .macOS("26.0"),
+        .iOS("26.0"),
+    ],
     products: [
         .library(name: "AxolotyStaticRuntime", targets: ["AxolotyStaticRuntime"]),
     ],
@@ -14,7 +21,7 @@ let package = Package(
         .package(path: "../AxolotyProtocol"),
         .package(path: "../AxolotyObjectModel"),
         .package(path: "../AxolotyWire"),
-        .package(url: "https://github.com/swiftlang/swift-syntax.git", exact: "603.0.0"),
+        .package(url: "https://github.com/swiftlang/swift-syntax.git", exact: "604.0.0"),
     ],
     targets: [
         .macro(
@@ -36,7 +43,9 @@ let package = Package(
                 .product(name: "AxolotyWire", package: "AxolotyWire"),
                 "AxolotyStaticRuntimeMacrosImplementation",
             ],
-            path: "Sources/AxolotyStaticRuntime"
+            path: "Sources/AxolotyStaticRuntime",
+            // The embedded-core-consumer gate remains the enforcing portability check.
+            swiftSettings: [.treatWarning("EmbeddedRestrictions", as: .warning)]
         ),
         .testTarget(
             name: "AxolotyStaticRuntimeTests",

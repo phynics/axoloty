@@ -14,14 +14,18 @@ private func staticRegistryID(_ literal: StaticString = "00000000-0000-4000-8000
     ObjectID(bytes: staticPayload(literal))!
 }
 
+private func staticUUID(_ literal: StaticString) -> UUID16 {
+    UUID16(parsing: staticPayload(literal))!
+}
+
 @Suite("Axoloty static runtime")
 struct StaticRuntimeTests {
     @Test("selected payload capacity is enforced before sink mutation")
-    func selectedPayloadCapacity() {
+    func selectedPayloadCapacity() throws {
         let topicBytes = Array("coaty/3/ns/IOV/00000000-0000-4000-8000-000000000001".utf8)
         let acceptedPayload = [UInt8](repeating: 0x01, count: 64)
         let rejectedPayload = [UInt8](repeating: 0x01, count: 65)
-        var runtime = StaticRuntime<1, 64>(registryID: staticRegistryID())
+        var runtime = try StaticRuntime<1, 64>(registryID: staticRegistryID())
 
         topicBytes.withUnsafeBufferPointer { topic in
             acceptedPayload.withUnsafeBufferPointer { payload in
@@ -46,6 +50,109 @@ struct StaticRuntimeTests {
                 #expect(outcome == .rejected(.capacityExceeded))
                 #expect(runtime.actionCount == 0)
             }
+        }
+    }
+
+    @Test("owning sink rolls back a partially appended action batch")
+    func owningSinkRollsBackPartialBatch() throws {
+        let source = UUID16(parsing: "00000000-0000-4000-8000-000000000001")!
+        let actors = [
+            "00000000-0000-4000-8000-000000000002",
+            "00000000-0000-4000-8000-000000000003",
+            "00000000-0000-4000-8000-000000000004",
+            "00000000-0000-4000-8000-000000000005",
+            "00000000-0000-4000-8000-000000000006",
+            "00000000-0000-4000-8000-000000000007",
+            "00000000-0000-4000-8000-000000000008",
+            "00000000-0000-4000-8000-000000000009",
+            "00000000-0000-4000-8000-00000000000a"
+        ]
+        var runtime = try StaticRuntime<16, 2048>(registryID: staticRegistryID())
+
+        for (index, actorLiteral) in actors.enumerated() {
+            let route = "coaty/" + String(repeating: "r", count: 240) + String(index)
+            let payload = Array("{\"ioSourceId\":\"00000000-0000-4000-8000-000000000001\",\"ioActorId\":\"\(actorLiteral)\",\"associatingRoute\":\"\(route)\"}".utf8)
+            let result = payload.withUnsafeBufferPointer { buffer in
+                let operation = try! ProtocolLocalOperation(
+                    capability: .associate,
+                    sourceID: source,
+                    payload: ByteSlice(bytes: buffer.baseAddress!, length: buffer.count)
+                )
+                return runtime.send(operation)
+            }
+            #expect(result == .accepted)
+            _ = runtime.drain { _ in }
+        }
+
+        let operation = try ProtocolLocalOperation(
+            capability: .ioValue,
+            sourceID: source,
+            payload: staticPayload()
+        )
+        let stateBeforeRejection = runtime.state
+        #expect(runtime.send(operation) == .rejected(.capacityExceeded))
+        #expect(runtime.actionCount == 0)
+        #expect(runtime.state == stateBeforeRejection)
+        #expect(runtime.send(operation) == .rejected(.capacityExceeded))
+        #expect(runtime.actionCount == 0)
+        #expect(runtime.state == stateBeforeRejection)
+    }
+
+    @Test("invalid caller capacities return typed errors")
+    func invalidCallerCapacities() {
+        do {
+            _ = try StaticRuntime<16, 2048>(
+                registryID: staticRegistryID(),
+                maximumObjects: -1
+            )
+            Issue.record("negative maximumObjects was accepted")
+        } catch {
+            #expect(error.reason == .negativeCapacity)
+            #expect(error.parameter.description == "maximumObjects")
+        }
+
+        do {
+            _ = try StaticRuntime<16, 2048>(
+                registryID: staticRegistryID(),
+                maximumObjects: 17
+            )
+            Issue.record("maximumObjects above storage capacity was accepted")
+        } catch {
+            #expect(error.reason == .exceedsMaximum)
+            #expect(error.parameter.description == "maximumObjects")
+        }
+
+        do {
+            _ = try StaticRuntime<16, 2048>(
+                registryID: staticRegistryID(),
+                maximumPendingCorrelations: -1
+            )
+            Issue.record("negative maximumPendingCorrelations was accepted")
+        } catch {
+            #expect(error.reason == .negativeCapacity)
+            #expect(error.parameter.description == "maximumPendingCorrelations")
+        }
+
+        do {
+            _ = try StaticRuntime<16, 2048>(
+                registryID: staticRegistryID(),
+                maximumPendingCorrelations: 17
+            )
+            Issue.record("maximumPendingCorrelations above storage capacity was accepted")
+        } catch {
+            #expect(error.reason == .exceedsMaximum)
+            #expect(error.parameter.description == "maximumPendingCorrelations")
+        }
+    }
+
+    @Test("invalid definition payload capacity returns a typed error")
+    func invalidDefinitionPayloadCapacity() {
+        do {
+            _ = try StaticRuntimeDefinition<2049>(registryID: staticRegistryID())
+            Issue.record("payload capacity above the wire maximum was accepted")
+        } catch {
+            #expect(error.reason == .exceedsMaximum)
+            #expect(error.parameter.description == "payloadCapacity")
         }
     }
 
@@ -79,6 +186,81 @@ struct StaticRuntimeTests {
         #expect(MemoryLayout<StaticRuntime<16, 512>>.size < MemoryLayout<StaticRuntime<16, 2048>>.size)
     }
 
+    @Test("definition defaults follow consuming runtime capacity")
+    func definitionDefaultsFollowRuntimeCapacity() throws {
+        let definition = try StaticRuntimeDefinition<2048>(registryID: staticRegistryID())
+        #expect(definition.maximumObjects == nil)
+        #expect(definition.maximumPendingCorrelations == nil)
+        var runtime = StaticRuntime<1, 2048>(
+            definition: definition,
+            routeClassifier: ExactProtocolRouteClassifier(externalRoute: "external/wire-compat-v1/io-external-1")
+        )
+        let first = try ProtocolLocalOperation(
+            capability: .discover,
+            sourceID: .zero,
+            correlationID: staticUUID("00000000-0000-4000-8000-000000000011"),
+            payload: staticPayload(),
+            requestTimeoutMS: 100
+        )
+        let second = try ProtocolLocalOperation(
+            capability: .discover,
+            sourceID: .zero,
+            correlationID: staticUUID("00000000-0000-4000-8000-000000000012"),
+            payload: staticPayload(),
+            requestTimeoutMS: 100
+        )
+        #expect(runtime.send(first, nowMS: 1) == .accepted)
+        #expect(runtime.drain { _ in } == 1)
+        #expect(runtime.send(second, nowMS: 2) == .rejected(.capacityExceeded))
+        #expect(runtime.state.pendingCorrelations == 1)
+    }
+
+    @Test("definition preserves reduced protocol limits")
+    func definitionPreservesReducedProtocolLimits() throws {
+        let definition = try StaticRuntimeDefinition<2048>(
+            registryID: staticRegistryID(),
+            maximumObjects: 1,
+            maximumPendingCorrelations: 1
+        )
+        var runtime = StaticRuntime<4, 2048>(
+            definition: definition,
+            routeClassifier: ExactProtocolRouteClassifier(externalRoute: "external/wire-compat-v1/io-external-1")
+        )
+        let firstRequest = try ProtocolLocalOperation(
+            capability: .discover,
+            sourceID: .zero,
+            correlationID: staticUUID("00000000-0000-4000-8000-000000000021"),
+            payload: staticPayload(),
+            requestTimeoutMS: 100
+        )
+        let secondRequest = try ProtocolLocalOperation(
+            capability: .discover,
+            sourceID: .zero,
+            correlationID: staticUUID("00000000-0000-4000-8000-000000000022"),
+            payload: staticPayload(),
+            requestTimeoutMS: 100
+        )
+        #expect(runtime.send(firstRequest, nowMS: 1) == .accepted)
+        #expect(runtime.drain { _ in } == 1)
+        #expect(runtime.send(secondRequest, nowMS: 2) == .rejected(.capacityExceeded))
+        #expect(runtime.state.pendingCorrelations == 1)
+
+        let firstPayload: StaticString = #"{"object":{"objectId":"11111111-1111-4111-8111-111111111111","coreType":"CoatyObject","objectType":"test.Object","name":"first"}}"#
+        let secondPayload: StaticString = #"{"object":{"objectId":"22222222-2222-4222-8222-222222222222","coreType":"CoatyObject","objectType":"test.Object","name":"second"}}"#
+        #expect(runtime.receive(
+            topic: staticPayload("coaty/3/ns/ADV/11111111-1111-4111-8111-111111111111"),
+            payload: staticPayload(firstPayload),
+            nowMS: 3
+        ) == .accepted)
+        #expect(runtime.drain { _ in } == 1)
+        #expect(runtime.receive(
+            topic: staticPayload("coaty/3/ns/ADV/22222222-2222-4222-8222-222222222222"),
+            payload: staticPayload(secondPayload),
+            nowMS: 4
+        ) == .rejected(.capacityExceeded))
+        #expect(runtime.state.activeObjects == 1)
+    }
+
     @Test("one shared fixed processor sends and drains synchronously")
     func sendAndDrain() throws {
         let source = UUID16.zero
@@ -89,7 +271,7 @@ struct StaticRuntimeTests {
             payload: staticPayload(),
             requestTimeoutMS: 100
         )
-        var runtime = AxolotyStaticRuntime(registryID: staticRegistryID())
+        var runtime = try AxolotyStaticRuntime(registryID: staticRegistryID())
         #expect(runtime.send(operation, nowMS: 10) == .accepted)
         #expect(runtime.actionCount == 1)
         var drained = 0
@@ -110,7 +292,7 @@ struct StaticRuntimeTests {
             sourceID: .zero,
             payload: staticPayload(payload)
         )
-        var runtime = AxolotyStaticRuntime(registryID: staticRegistryID())
+        var runtime = try AxolotyStaticRuntime(registryID: staticRegistryID())
         #expect(runtime.send(operation) == .accepted)
         #expect(runtime.actionCount == 2)
         var publications = 0
@@ -145,7 +327,7 @@ struct StaticRuntimeTests {
             payload: staticPayload(#"{"privateData":{"sequence":7}}"#),
             operationName: identifierSlice
         )
-        var runtime = AxolotyStaticRuntime(registryID: staticRegistryID())
+        var runtime = try AxolotyStaticRuntime(registryID: staticRegistryID())
         #expect(runtime.send(operation) == .accepted)
         var copiedFilter: [UInt8]?
         var copiedKind: ProtocolEventTypeFilterKind?
@@ -200,7 +382,7 @@ struct StaticRuntimeTests {
             requestTimeoutMS: 100,
             operationName: invalidSlice
         )
-        var runtime = AxolotyStaticRuntime(registryID: staticRegistryID())
+        var runtime = try AxolotyStaticRuntime(registryID: staticRegistryID())
         #expect(runtime.send(direct) == .rejected(.malformedFrame))
         #expect(runtime.actionCount == 0)
         #expect(runtime.state.pendingCorrelations == 0)
@@ -216,13 +398,13 @@ struct StaticRuntimeTests {
             payload: staticPayload(),
             requestTimeoutMS: 100
         )
-        var runtime = AxolotyStaticRuntime(registryID: staticRegistryID())
+        var runtime = try AxolotyStaticRuntime(registryID: staticRegistryID())
         #expect(runtime.send(operation, nowMS: 10) == .accepted)
         let cancelled = runtime.cancel(correlationID: source)
         #expect(cancelled)
         #expect(runtime.state.pendingCorrelations == 0)
         runtime.resetTransport()
-        #expect(runtime.state.activeRecords == 0)
+        #expect(runtime.state.activeAssociations == 0)
         #expect(runtime.state.pendingCorrelations == 0)
     }
 }

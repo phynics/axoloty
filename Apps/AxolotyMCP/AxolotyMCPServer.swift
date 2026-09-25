@@ -25,7 +25,7 @@ public final class AxolotyMCPServer {
     private static let logger = Logger(label: "axoloty.mcp")
     private let server: Server
     private let catalogueService: InspectorCatalogueService
-    private let session: InspectorSession
+    private let session: InspectorDiscovering
     private let responseEncoder: ResponseEncoder
     private let encodingFailureLogger: EncodingFailureLogger
     private var httpServer: MCPHTTPServer?
@@ -252,7 +252,7 @@ public final class AxolotyMCPServer {
         catalogueStartTask = nil
         await httpServer?.stop()
         await server.stop()
-        catalogueService.stop()
+        await catalogueService.stop()
     }
 
     // MARK: - Handler registration
@@ -354,7 +354,7 @@ public final class AxolotyMCPServer {
     }
 
     static func discoveryResponseStream(
-        session: InspectorSession,
+        session: InspectorDiscovering,
         event: InspectorDiscoverRequest
     ) async -> AsyncThrowingStream<InspectorResponseEvent, Error> {
         let responseStream = await session.discover(event)
@@ -545,7 +545,7 @@ public final class AxolotyMCPServer {
     func collectStatus() async -> ServerStatus {
         let count = await catalogueService.store.count
         let snapshot = await catalogueService.store.snapshot(filter: ObjectCatalogueFilter())
-        let transportState = await catalogueService.transportState()
+        let transportState = await session.transportState()
         return ServerStatus(
             mqttConnected: transportState == .online,
             namespace: snapshot.namespace,

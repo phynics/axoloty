@@ -1,8 +1,8 @@
 # Dev/CI container for Axoloty.
 #
 # Based on the official Swift Docker image (Ubuntu Jammy variant). As of writing
-# (2026-07-12) the latest released Swift toolchain is 6.3 (confirmed on Docker
-# Hub - 6.4 has not been released yet). Verified: `podman pull swift:6.3-jammy`
+# (2026-09-24) the latest released Swift toolchain is 6.4 (confirmed on Docker
+# Hub - `swift:6.4-jammy` is published). Verified: `podman pull swift:6.4-jammy`
 # and `podman build` with this file succeed against docker.io/library/swift.
 #
 # This image intentionally does NOT COPY any project source in - the Axoloty
@@ -11,22 +11,16 @@
 # rebuilding the image. Mounted-worktree launchers build products into the
 # mounted SwiftPM and worktree-specific build caches.
 #
-# The image includes both the host development tools (Swift, SwiftLint,
-# mosquitto, heaptrack) and the ESP32-C6 embedded toolchain (ESP-IDF,
-# RISC-V GCC, espflash). There is one image for all targets.
-ARG SWIFT_VERSION=6.3
-ARG ESP_IDF_VERSION=v5.4
-ARG ESPFLASH_VERSION=3.3.0
+# The image carries the host development tools (Swift, SwiftLint, mosquitto,
+# heaptrack). Firmware and the ESP32-C6 toolchain live in the dedicated
+# `axoloty-embedded` repository.
+ARG SWIFT_VERSION=6.4
 ARG SWIFTLINT_VERSION=0.65.0
 ARG NODE_VERSION=22.17.1
 ARG CMAKE_VERSION=3.29.6
-ARG CCACHE_VERSION=4.5.1-1
 
 FROM swift:${SWIFT_VERSION}-jammy
 
-ARG ESP_IDF_VERSION
-ENV ESP_IDF_VERSION=${ESP_IDF_VERSION}
-ARG ESPFLASH_VERSION
 ARG SWIFTLINT_VERSION
 ARG NODE_VERSION
 ARG CMAKE_VERSION
@@ -34,10 +28,7 @@ ARG CMAKE_VERSION
 # Build essentials commonly required by Swift Package Manager on Linux,
 # in particular for Foundation's networking stack (URLSession/curl backend)
 # and for packages that build/link against system libraries via pkg-config.
-# Also includes ESP-IDF build prerequisites (ninja-build, python3, libusb).
-# CMake is installed via pip (not apt) because the espressif/idf_swift
-# component requires CMake >= 3.29, and the apt version on Ubuntu 22.04
-# is 3.22.
+# CMake is installed via pip because the Ubuntu 22.04 apt version is 3.22.
 # Some rootless Podman storage backends preserve a non-writable /tmp mode from
 # the base image. apt needs it for its signed-repository configuration files.
 RUN chmod 1777 /tmp \
@@ -56,8 +47,6 @@ RUN chmod 1777 /tmp \
         python3 \
         python3-pip \
         python3-venv \
-        libusb-1.0-0-dev \
-        libudev-dev \
     && rm -rf /var/lib/apt/lists/* \
      && pip3 install --no-cache-dir "cmake==${CMAKE_VERSION}"
 
@@ -85,57 +74,6 @@ RUN curl -fsSL -o /tmp/swiftlint.zip \
 # credentials. The Makefile starts Mosquitto for each test invocation.
 RUN printf 'listener 1883\nallow_anonymous true\n' \
     > /etc/mosquitto/conf.d/coatyswift.conf
-
-# Clone ESP-IDF at the pinned tag and materialize every submodule in the image.
-# This keeps offline embedded checks from mutating the toolchain or downloading
-# dependencies at first use. `install.sh esp32c6` downloads only the RISC-V
-# GCC toolchain, OpenOCD, and Python deps needed for that target. Keep the
-# recursive checkout shallow and parallel: ESP-IDF v5.4 has 23 top-level
-# submodules plus nested test dependencies, and serial full-history clones can
-# leave cold image builds silent for several minutes.
-ENV IDF_TOOLS_PATH=/opt/esp/tools
-RUN git clone --depth 1 --filter=blob:none --branch ${ESP_IDF_VERSION} \
-        https://github.com/espressif/esp-idf.git /opt/esp/idf \
-    && cd /opt/esp/idf \
-    && git submodule update --init --recursive --depth 1 --jobs 8 --recommend-shallow \
-    && ./install.sh esp32c6 \
-    && git config --system --add safe.directory /opt/esp/idf \
-    && git config --system --add safe.directory /opt/esp/idf/components/openthread/openthread
-
-# Install the ESP-IDF-supported compiler cache after the much larger pinned
-# toolchain layer. Cache-policy changes must not invalidate and redownload the
-# SDK, submodules, compilers, and Python environment.
-ARG CCACHE_VERSION
-RUN apt-get update && apt-get install -y --no-install-recommends "ccache=${CCACHE_VERSION}" \
-    && rm -rf /var/lib/apt/lists/*
-
-# espflash (Rust) for board-info / flashing without the full IDF monitor.
-# Downloaded as a prebuilt static binary from GitHub releases so the image
-# needs no Rust toolchain. The asset is a zip containing the `espflash`
-# binary at the archive root.
-RUN curl -fsSL -o /tmp/espflash.zip \
-        https://github.com/esp-rs/espflash/releases/download/v${ESPFLASH_VERSION}/espflash-x86_64-unknown-linux-gnu.zip \
-    && unzip -q -o /tmp/espflash.zip -d /tmp/espflash-extract \
-    && install -m 0755 /tmp/espflash-extract/espflash /usr/local/bin/espflash \
-    && rm -rf /tmp/espflash.zip /tmp/espflash-extract \
-    && espflash --version
-
-# Non-root user for direct device access when the container is run as a
-# regular user. The dialout group owns /dev/ttyACM* on most Linux distros.
-RUN useradd --home-dir /tmp --no-create-home --shell /usr/sbin/nologin esp \
-    && usermod -a -G dialout esp \
-    && chown -R root:root "${IDF_TOOLS_PATH}" \
-    && chmod -R a+rX "${IDF_TOOLS_PATH}"
-
-ENV IDF_PATH=/opt/esp/idf
-ENV PATH="${IDF_PATH}/tools:${PATH}"
-
-# Exercise the installed SDK as the same non-root, no-home user model used by
-# the development runner. This catches HOME-dependent ESP-IDF installations
-# while the image is being built instead of at the first firmware build.
-USER esp
-RUN HOME=/tmp sh -c '. "${IDF_PATH}/export.sh" >/dev/null && idf.py --version'
-USER root
 
 # These are mounted-worktree launchers, not compiled project products. Stable
 # paths preserve the Make/control-plane contract without putting root-package

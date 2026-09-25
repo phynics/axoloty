@@ -12,7 +12,6 @@ fail() {
     exit 1
 }
 
-[ -f "$package/AGENTS.md" ] || fail "SensorThings package policy is missing"
 [ -f "$runtime" ] || fail "SensorThings runtime source is missing"
 [ -f "$package/Tests/AxolotySensorThingsTests/SensorThingsSourceWorkflowTests.swift" ] || fail "source workflow tests are missing"
 [ -f "$package/Tests/AxolotySensorThingsTests/SensorThingsDirectObservationTests.swift" ] || fail "direct observation tests are missing"
@@ -27,6 +26,6 @@ fi
 if grep -Eq 'axoloty\.sensor-things\.(source|observer)|Task\.detached|RuntimeComponent' "$runtime"; then
     fail "SensorThings runtime has more than one module or an unowned task path"
 fi
-grep -q 'SensorThingsRegistryTests' "$root/Tests/Support/test-tiers.json" || fail "registry tests are not in the G5 tier"
+grep -q 'registryStartsCombinedWorkflow' "$root/Tests/Support/test-tiers.json" || fail "registry tests are not in the G5 tier"
 
 echo "G5 optional-products boundary passed"

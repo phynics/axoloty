@@ -135,7 +135,6 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
             if case .active = pending[index].state { pendingCount += 1 }
         }
         return ProtocolStateSnapshot(
-            activeRecords: associationCount,
             activeAssociations: associationCount,
             generation: generation,
             activeObjects: objectCount,
@@ -702,9 +701,9 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
             if let objectType = Self.advertisedObjectType(frame.payload) {
                 return .advertiseFilter(objectType)
             }
-            if let filter = frame.topicView.eventTypeFilter { return .advertiseFilter(filter) }
+            if let filter = frame.eventTypeFilter { return .advertiseFilter(filter) }
         case .channel:
-            if let channel = frame.topicView.eventTypeFilter { return .channel(channel) }
+            if let channel = frame.eventTypeFilter { return .channel(channel) }
         case .associate:
             let reader = frame.payload.withBytes { pointer, length in
                 WireReader(bytes: pointer.assumingMemoryBound(to: UInt8.self), length: length)
@@ -775,7 +774,7 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
     private static func advertisedObjectField(_ field: StaticString, payload: ByteSlice) -> ByteSlice? {
         payload.withBytes { pointer, length in
             let reader = WireReader(bytes: pointer.assumingMemoryBound(to: UInt8.self), length: length)
-            guard let object = reader.readRaw("object") else { return nil }
+            guard let object = reader.readField("object") else { return nil }
             return object.withBytes { objectPointer, objectLength in
                 let objectReader = WireReader(
                     bytes: objectPointer.assumingMemoryBound(to: UInt8.self),
@@ -978,7 +977,7 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
     private static func advertisedObjectID(_ payload: ByteSlice) -> UUID16? {
         payload.withBytes { pointer, length in
             let reader = WireReader(bytes: pointer.assumingMemoryBound(to: UInt8.self), length: length)
-            guard let object = reader.readRaw("object") else { return nil }
+            guard let object = reader.readField("object") else { return nil }
             return object.withBytes { objectPointer, objectLength in
                 let objectReader = WireReader(
                     bytes: objectPointer.assumingMemoryBound(to: UInt8.self),
@@ -1068,7 +1067,7 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
         var matched = 0
         payload.withBytes { pointer, length in
             let reader = WireReader(bytes: pointer.assumingMemoryBound(to: UInt8.self), length: length)
-            guard let rawIDs = reader.readRaw("objectIds") else {
+            guard let rawIDs = reader.readField("objectIds") else {
                 valid = false
                 return
             }

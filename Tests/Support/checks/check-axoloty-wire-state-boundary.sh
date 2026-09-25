@@ -25,7 +25,7 @@ grep -Fq 'processOutbound' "$protocol/Sources/AxolotyProtocol/ProtocolProcessor.
 grep -Fq 'expire(nowMS:' "$protocol/Sources/AxolotyProtocol/ProtocolProcessor.swift"
 grep -Fq '@convention(thin)' "$protocol/Sources/AxolotyProtocol/ProtocolHandlerTable.swift"
 
-if grep -Eq 'import[[:space:]]+AxolotyProtocol|ProtocolPendingRequest|ProtocolBufferConfig|ProtocolProcessor|ProtocolActionSink|ProtocolHandlerEntry|ProtocolRouteClassifier|EmbeddedMessageRouter|StaticDispatchTable|StaticFamilyTable|StaticIoEndpoints|MessageRouter|WireCapacityError' \
+if grep -Eq 'import[[:space:]]+AxolotyProtocol|ProtocolPendingRequest|ProtocolBufferConfig|ProtocolProcessor|ProtocolActionSink|ProtocolHandlerEntry|ProtocolRouteClassifier|EmbeddedMessageRouter|StaticDispatchTable|StaticFamilyTable|StaticIoEndpoints|MessageRouter|WireCapacityError|maxSubscribers|maxFamilyEntries|maxFamilySubscribers' \
     "$wire/Package.swift" "$wire"/Sources/AxolotyWire/*.swift; then
     echo "error: AxolotyWire imports or defines G2 protocol state" >&2
     exit 1

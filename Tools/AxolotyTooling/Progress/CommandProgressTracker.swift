@@ -147,6 +147,19 @@ public final class AxolotyCommandProgressTracker: @unchecked Sendable {
         completed = true
     }
 
+    /// Every Swift Testing test name reported failed or as having recorded an
+    /// issue during this command, across the whole run. Empty when the
+    /// command carried no Swift Testing parser (it did not run tests) or none
+    /// failed.
+    public func failedTestNames() -> Set<String> {
+        lock.lock()
+        defer { lock.unlock() }
+        for parser in parsers {
+            if let testing = parser as? SwiftTestingProgressParser { return testing.failedTestNames }
+        }
+        return []
+    }
+
     private func considerEmitting(_ progress: AxolotyCommandProgress) {
         let timestamp = now()
         let sinceLast = timestamp - lastEmittedAt

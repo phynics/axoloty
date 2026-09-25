@@ -98,7 +98,9 @@ public struct SwiftBuildProgressParser: AxolotyCommandProgressParsing {
               let close = text[slash...].firstIndex(of: "]") else { return nil }
         let completedText = text[text.index(after: open)..<slash]
         let totalText = text[text.index(after: slash)..<close]
-        guard let completed = Int(completedText), let total = Int(totalText),
+        let normalizedCompleted = String(completedText.filter { !$0.isWhitespace })
+        let normalizedTotal = String(totalText.filter { !$0.isWhitespace })
+        guard let completed = Int(normalizedCompleted), let total = Int(normalizedTotal),
               completed >= 0, total > 0, completed <= total else { return nil }
         let actionStart = text.index(after: close)
         let action = text[actionStart...].trimmingCharacters(in: .whitespaces)

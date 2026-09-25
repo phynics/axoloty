@@ -83,20 +83,13 @@ public final class InspectorCatalogueService {
     }
 
     /// Stops the service and disconnects.
-    public func stop() {
+    public func stop() async {
         startGeneration += 1
         startTask?.cancel()
         startTask = nil
         streamTask?.cancel()
-        session.stop()
+        await session.stop()
         started = false
-    }
-
-    /// Returns the session's current communication state.
-    ///
-    /// - Returns: The latest broker communication state.
-    public func transportState() async -> InspectorTransportState {
-        await session.transportState()
     }
 
     private func consumeStreams(

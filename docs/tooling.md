@@ -1,7 +1,7 @@
 # Build and test tooling
 
 `axoloty-tool` is Axoloty's typed command-line control plane. Its plans, process results,
-hardware outcomes, and JSON manifests are defined in Swift and tested with
+and JSON manifests are defined in Swift and tested with
 Swift Testing. The root Make targets forward to `axoloty-tool`; the Makefile
 also retains focused recipes for specialized evidence workflows that do not
 belong to the canonical verification plan.
@@ -21,7 +21,6 @@ Linux product and ESP-IDF work is containerized:
 ```sh
 make verify
 make axoloty-tool AXOLOTY_TOOL_ARGS='wire verify'
-make hardware-check
 ```
 
 The container image carries a stable `axoloty-tool` launcher at
@@ -37,8 +36,10 @@ macOS uses its pinned native Swift toolchain:
 swift run --package-path Tools axoloty-tool check
 ```
 
-The root package also publishes `ax` and `axoloty-mcp`. Linux images provide
-mounted-worktree launchers for all three products under `/opt/axoloty/bin`.
+The `Tools` package publishes `ax` and `axoloty-tool`; the `Apps` package
+publishes `axoloty-inspect` and `axoloty-mcp`. Linux images provide
+mounted-worktree launchers for the tooling and service products under
+`/opt/axoloty/bin`.
 Use `make serve-mqtt`, `make serve-mcp`, or `make serve-dev` for thin container
 entry points. Service policy remains in `AxolotyTooling`, not Make or shell.
 The Linux `ax` and `axoloty-tool` launchers build the mounted-worktree
@@ -46,8 +47,8 @@ The Linux `ax` and `axoloty-tool` launchers build the mounted-worktree
 `AXOLOTY_MCP_EXECUTABLE` supplies an executable path.
 
 The macOS plan runs host build, lint, tooling tests, and offline wire fixtures.
-The Linux plan adds ESP32-C6 cross-compilation and linker verification. Neither
-plan starts MQTT or accesses hardware.
+The Linux plan adds the hardware-free Core Embedded Swift gate. Neither plan
+starts MQTT or accesses hardware.
 
 ## Command tiers
 
@@ -56,13 +57,10 @@ plan starts MQTT or accesses hardware.
 | `axoloty-tool check` / `axoloty-tool test offline` | no | no | Deterministic platform plan |
 | `axoloty-tool wire verify` | no | no | Direct fixture and snapshot verification |
 | `axoloty-tool wire capture` | local | no | Live reference-agent capture (host-side orchestration) |
-| `axoloty-tool embedded build` | no | no | ESP32-C6 cross-compilation on Linux |
-| `axoloty-tool embedded verify` | no | no | Build plus linker contract verification |
+| `axoloty-tool embedded consumer prepare` | no | no | Prepare a supported external consumer from `AXOLOTY_SOURCE_DIR` |
 | `axoloty-tool measure timing` | no | no | Linux-only cold/warm build evidence |
-| `axoloty-tool hardware check` | no | optional | Run when attached; otherwise structured skip |
-| `axoloty-tool hardware require` | no | required | Explicit device/release gate |
 
-The canonical `g5-optional-products` tier is a hardware-free release gate
+The `ci` category includes the required optional-product boundary and tests
 for the bounded host SensorThings source and direct-observation workflows.
 
 Live CoatyJS capture retains focused Make
@@ -89,23 +87,12 @@ stable node names, statuses, exit codes, and captured streams. Failed
 prerequisites cause dependent nodes to be reported as skipped while independent
 nodes continue, so a single invocation describes the complete planned pass.
 
-Hardware results record `passed`, `skipped`, or `failed`, the selected device
-path, and a reason. `hardware check` returns success for an absent device;
-`hardware require` returns failure. Set `AXOLOTY_DEVICE` or pass `--device` to
-select a path other than `/dev/ttyACM0`.
-
-Hardware leases are stored below the host-mounted `AXOLOTY_DEVICE_LEASE_ROOT`
-when that variable is configured. Make defaults it to the shared repository
-build cache at `.../device-leases`, so concurrent containers contend on the
-same canonical device path. Without the variable, the tooling manager retains
-its temporary-directory default.
-
 ## Container image and caches
 
-The development image contains Swift, SwiftLint, Mosquitto, ESP-IDF, initialized
-ESP-IDF submodules, the ESP32-C6 toolchain, and flashing tools. Once the image
-and SwiftPM dependencies are acquired, offline checks do not initialize ESP-IDF
-submodules on demand.
+The development image contains Swift, SwiftLint, Mosquitto, heaptrack, and the
+repository's Node-based validation tools. Firmware and the ESP32-C6 toolchain
+live in `phynics/axoloty-embedded`; the hardware-free Core Embedded Swift gate
+uses only the Swift toolchain already in the image.
 
 SwiftPM downloads use `SPM_CACHE_DIR`. Mutable build artifacts default to a
 per-worktree `BUILD_DIR` and are guarded by a process-aware `flock` unless isolated CI sets
@@ -119,11 +106,6 @@ such as `fixed-port-1883` and `wire-containers` use process-aware leases rooted
 at the container-visible `AXOLOTY_RESOURCE_LEASE_ROOT` (by default,
 `.swiftpm-cache/.axoloty-resource-leases`). This directory contains only named
 resource locks and does not serialize SwiftPM operations.
-
-ESP-IDF C/C++ compilation uses the separately mounted
-`AXOLOTY_ESP_IDF_CCACHE_DIR`. Cache entries are namespaced by the pinned IDF
-revision, compiler identity, target, and build purpose, so worktrees reuse
-immutable outputs without sharing their mutable build directories.
 
 Required CI checks restore separate SwiftPM download and compiler-metadata
 caches. The dependency cache key includes the lockfile, development image
@@ -156,7 +138,7 @@ live in `Tests/Support/wire/classify-wire-change.mjs` and
 ### Fresh wire evidence (live capture)
 
 Fresh evidence of current wire behavior is produced only by the live
-reference-agent capture path (`axoloty-tool wire capture`, tier `wire-live`).
+reference-agent capture path (`axoloty-tool wire capture`, `wire` category).
 It runs pinned reference agents against a real MQTT broker and records raw
 captures, a manifest carrying provenance, reference version, scenario, and
 normalization profiles, plus Swift-side semantic verification. The fixture
@@ -167,10 +149,10 @@ bundle is never presented as this evidence.
 `make checkpoint` (or `axoloty-tool release checkpoint`) is the release
 certification gate. It runs every ordinary offline check, binary-size
 benchmarks, and release snapshot verification.
-The canonical release-gate list (`releaseGates` in the test-tier manifest)
-names every mandatory release tier — `smoke`, `unit`, `module`, `property`,
-`wire-offline`, `wire-live`, `g3-object-model`, `g4-runtime`, and
-`g6-non-divergence`. The checkpoint manifest records
+The tooling derives its `releaseGates` from the `tiers` array in the test-tier
+manifest. The current gates are `ci`, `wire`, and `embedded`; the `release`
+category adds the Apple-host oracle and release consumer checks. The checkpoint
+manifest records
 a disposition for each gate:
 
 - **executed** — a covering node ran and passed inside the checkpoint;
@@ -181,8 +163,8 @@ a disposition for each gate:
 
 The command fails if any required gate is skipped or has invalid evidence, so a
 release cannot be certified with missing mandatory-tier proof. Tiers that are
-not normally run inside the checkpoint (for example the live `wire-live`
-capture and the hardware resource tier) must supply typed evidence bundles.
+not normally run inside the checkpoint (for example the live `wire` capture)
+must supply typed evidence bundles.
 Point the checkpoint at one evidence root with `AXOLOTY_EVIDENCE_DIR`; each
 gate is loaded from `<root>/<gate>/evidence.json` and its declared artifacts
 are rehashed. Every bundle must identify the repository, full commit SHA, Git
@@ -190,11 +172,13 @@ tree, semantic version, clean checkout, producer, and schema version. Imported
 CI or device evidence must also carry external provenance. A legacy
 `AXOLOTY_ATTESTATION_<GATE>_PATH` path is accepted only when it points to the
 same typed bundle format; status-only JSON is rejected. The checkpoint manifest
-records the validated bundle digest alongside executed and failed gates.
+records the validated bundle digest alongside executed and failed gates. Set
+`AXOLOTY_EVIDENCE_PRODUCER_ID` to require a specific producer identity in every
+supplied bundle; a mismatch fails the gate instead of attesting it. When the
+variable is unset or empty, any validated producer is accepted.
 
-`checkpoint-hardware` is structurally an extension of `checkpoint`, so it
-cannot omit an ordinary node when the base plan changes. Hardware remains
-forbidden in `make verify` and ordinary offline tiers.
+Hardware remains forbidden in `make verify` and every ordinary tier; device
+qualification runs in `phynics/axoloty-embedded`.
 
 ### G6 evidence producers
 
@@ -212,16 +196,17 @@ and builds every expected library and executable in both configurations before
 running side-effect-free `--help` smoke commands. The wire matrix validator
 requires exact set equality with `g6-scenario-matrix.json`, normalized capture
 artifacts, broker/Axoloty/CoatyJS logs, and exact commit, executable,
-CoatyJS-lockfile, broker, and matrix identities. Resource evidence requires
-approved policy, two independent host runs, two physical ESP32-C6 power-cycle
-runs, production Embedded Swift, and the sustained workload thresholds; a C
-surrogate can never satisfy the gate.
+CoatyJS-lockfile, broker, and matrix identities. Resource evidence is bound to
+the exact bytes of `Tests/Support/evidence/g6-resource-policy.json`. The policy
+requires two independent host runs, two physical ESP32-C6 power-cycle runs,
+production Embedded Swift, the sustained workload limits, and each required
+device metric. A C surrogate can never satisfy the gate.
 
 ## Timing evidence
 
-On Linux, `axoloty-tool measure timing` runs eight commands serially: cold and
-warm host build, focused test build, Embedded Swift build, and ESP-IDF linker
-validation. Each scenario owns a separate scratch directory; the warm run
+On Linux, `axoloty-tool measure timing` runs four commands serially: cold and
+warm host build and cold and warm focused test build. Each scenario owns a
+separate scratch directory; the warm run
 reuses the cold directory. Use `--scratch-root PATH` to select the root and
 `--keep-scratch` to retain the directories for inspection:
 
@@ -261,11 +246,11 @@ custom agent. It has two subcommands:
 
 ```sh
 # macOS
-swift run --package-path Tools axoloty-inspect catalog --duration 10s
-swift run --package-path Tools axoloty-inspect discover --core-type Identity
+swift run --package-path Apps axoloty-inspect catalog --duration 10s
+swift run --package-path Apps axoloty-inspect discover --core-type Identity
 
 # Linux (container)
-.devcontainer/run.sh swift run --product axoloty-inspect catalog --duration 10s
+.devcontainer/run.sh swift run --package-path /workspace/Apps axoloty-inspect catalog --duration 10s
 ```
 
 The inspector uses `AxolotyInspectorCore` (zero external dependencies, pure

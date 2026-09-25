@@ -8,6 +8,8 @@ probe="$root/Spikes/BoundedObjectModelEvidence"
 candidate=$(git -C "$root" rev-parse HEAD)
 artifact="$root/.testing/g3-object-model/$candidate"
 build="$artifact/host-build"
+evidence_name=${AXOLOTY_G3_EVIDENCE_NAME:-host-evidence.json}
+node_name=${AXOLOTY_G3_EVIDENCE_NODE:-g3-object-model-evidence-host}
 mkdir -p "$artifact"
 
 run_swift() {
@@ -18,7 +20,7 @@ run_swift() {
     CONTAINER_RUNTIME=${CONTAINER_RUNTIME:-podman} \
     IMAGE=${IMAGE:-axoloty-dev} \
     BUILD_DIR="$build" \
-    SPM_CACHE_DIR="${SPM_CACHE_DIR:-$HOME/.cache/coaty-swift/swiftpm/swift-6.3-linux}" \
+    SPM_CACHE_DIR="${SPM_CACHE_DIR:-$HOME/.cache/coaty-swift/swiftpm/swift-6.4-linux}" \
     "$root/.devcontainer/run.sh" "$@"
 }
 
@@ -49,15 +51,19 @@ run_swift bash /workspace/Spikes/BoundedPortableRuntime/measure-allocations.sh \
     bounded-object-model-probe 1 1000 \
     >"$artifact/allocation-measurements.log" 2>&1
 
-release_binary=$(find "$build" "$probe/.build" -type f -path '*/release/bounded-object-model-probe' -perm -111 -print -quit 2>/dev/null || true)
+release_bin_dir=$(run_swift swift build --configuration release \
+    --package-path /workspace/Spikes/BoundedObjectModelEvidence \
+    --cache-path /workspace/.swiftpm-cache --disable-automatic-resolution --show-bin-path)
+release_binary="$release_bin_dir/bounded-object-model-probe"
 [ -n "$release_binary" ] || { echo "release probe binary not found" >&2; exit 1; }
+[ -x "$release_binary" ] || { echo "release probe binary not executable: $release_binary" >&2; exit 1; }
 release_bytes=$(stat -c '%s' "$release_binary")
 size -A "$release_binary" | awk '$2 ~ /^[0-9]+$/ { print $1 "\t" $2 }' >"$artifact/release-sections.tsv"
 
 node "$probe/Evidence/assemble-host-evidence.mjs" \
     "$artifact/probe.json" "$artifact/allocation-measurements.tsv" "$artifact/release-sections.tsv" \
-    "$candidate" "$compile_seconds" "$release_bytes" "$toolchain" "$artifact/host-evidence.json"
+    "$candidate" "$compile_seconds" "$release_bytes" "$toolchain" "$artifact/$evidence_name"
 
 node "$probe/Evidence/validate-evidence.mjs" \
-    "$probe/Evidence/evidence.schema.json" "$artifact/host-evidence.json"
-echo "PASS g3-object-model-evidence-host candidate=$candidate artifact=$artifact/host-evidence.json"
+    "$probe/Evidence/evidence.schema.json" "$artifact/$evidence_name"
+echo "PASS $node_name candidate=$candidate artifact=$artifact/$evidence_name"

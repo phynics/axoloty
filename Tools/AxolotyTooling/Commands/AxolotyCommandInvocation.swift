@@ -12,8 +12,7 @@ enum AxolotyCommandInvocation: Equatable, Sendable {
     case serve(arguments: [String])
     case timing(arguments: [String])
     case repositoryValidation(arguments: [String])
-    case hardware(required: Bool, device: String?)
-    case testOne(filter: String)
+    case testOne(filter: String, repetition: AxolotyTestRepetition?)
     case testTier(name: String, ci: Bool)
     case explain(tier: String, ci: Bool)
     case checkPlan
@@ -25,9 +24,7 @@ enum AxolotyCommandInvocation: Equatable, Sendable {
     case integration
     case wireVerify
     case wireCapture
-    case embeddedBuild
-    case embeddedDoctor
-    case embeddedVerify
+    case embeddedConsumerPrepare(arguments: [String])
     case release(ReleaseCommand)
 }
 
@@ -45,14 +42,8 @@ struct AxolotyCommandParser: Sendable {
         if arguments.first == "repository", arguments.dropFirst().first == "validate" {
             return .repositoryValidation(arguments: Array(arguments.dropFirst(2)))
         }
-        if arguments.count == 4,
-           arguments[0] == "hardware",
-           ["check", "require"].contains(arguments[1]),
-           arguments[2] == "--device" {
-            return .hardware(required: arguments[1] == "require", device: arguments[3])
-        }
-        if arguments.count == 3, arguments[0] == "test-one", arguments[1] == "--filter" {
-            return .testOne(filter: arguments[2])
+        if arguments.first == "test-one" {
+            return testOneInvocation(arguments)
         }
         if arguments.count == 2, arguments[0] == "test-tier" {
             return .testTier(name: arguments[1], ci: false)
@@ -65,6 +56,12 @@ struct AxolotyCommandParser: Sendable {
         }
         if arguments.count == 3, arguments[0] == "explain", arguments[1] == "--ci" {
             return .explain(tier: arguments[2], ci: true)
+        }
+        if arguments.count >= 3,
+           arguments[0] == "embedded",
+           arguments[1] == "consumer",
+           arguments[2] == "prepare" {
+            return .embeddedConsumerPrepare(arguments: Array(arguments.dropFirst(3)))
         }
 
         switch arguments {
@@ -80,8 +77,6 @@ struct AxolotyCommandParser: Sendable {
             return .verify(ci: false)
         case ["verify", "--ci"]:
             return .verify(ci: true)
-        case ["test-one"]:
-            return .testOne(filter: environment["FILTER"] ?? "")
         case ["test-tier"]:
             return .testTier(name: environment["TIER"] ?? "", ci: false)
         case ["explain"]:
@@ -98,23 +93,45 @@ struct AxolotyCommandParser: Sendable {
             return .wireVerify
         case ["wire", "capture"]:
             return .wireCapture
-        case ["embedded", "build"]:
-            return .embeddedBuild
-        case ["embedded", "doctor"]:
-            return .embeddedDoctor
-        case ["embedded", "verify"]:
-            return .embeddedVerify
         case ["release", "checkpoint"]:
-            return .release(.checkpoint(hardware: false))
-        case ["release", "checkpoint-hardware"]:
-            return .release(.checkpoint(hardware: true))
-        case ["hardware", "check"]:
-            return .hardware(required: false, device: nil)
-        case ["hardware", "require"]:
-            return .hardware(required: true, device: nil)
+            return .release(.checkpoint)
         default:
             return .unsupported
         }
+    }
+
+    private func testOneInvocation(_ arguments: [String]) -> AxolotyCommandInvocation {
+        var filter = environment["FILTER"] ?? ""
+        var sawFilter = false
+        var maximumRepetitions: Int?
+        var repeatUntil: AxolotyTestRepeatCondition?
+        var index = 1
+        while index < arguments.count {
+            guard index + 1 < arguments.count else { return .unsupported }
+            let value = arguments[index + 1]
+            switch arguments[index] {
+            case "--filter":
+                guard !sawFilter else { return .unsupported }
+                filter = value
+                sawFilter = true
+            case "--maximum-repetitions":
+                guard maximumRepetitions == nil,
+                      let parsed = Int(value), parsed > 0 else { return .unsupported }
+                maximumRepetitions = parsed
+            case "--repeat-until":
+                guard repeatUntil == nil,
+                      let parsed = AxolotyTestRepeatCondition(rawValue: value) else { return .unsupported }
+                repeatUntil = parsed
+            default:
+                return .unsupported
+            }
+            index += 2
+        }
+        guard repeatUntil == nil || maximumRepetitions != nil else { return .unsupported }
+        let repetition = maximumRepetitions.map { maximum in
+            AxolotyTestRepetition(maximumRepetitions: maximum, repeatUntil: repeatUntil)
+        }
+        return .testOne(filter: filter, repetition: repetition)
     }
 }
 

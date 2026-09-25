@@ -20,7 +20,7 @@ enum AxolotyCommandHelp {
         return usage.replacingOccurrences(of: "axoloty-tool", with: executableName)
     }
 
-    static let repositoryValidationUsage = "Usage: axoloty-tool repository validate [--format human|json]\n"
+    static let repositoryValidationUsage = "Usage: axoloty-tool repository validate [--embedded-consumer-contract] [--format human|json]\n"
 
     private static let usageDocument = """
     Usage: axoloty-tool <command>
@@ -33,7 +33,8 @@ enum AxolotyCommandHelp {
       check --plan         Print the initial offline check plan as JSON.
       check                Run the initial offline check plan and print JSON.
       verify [--ci]        Run the canonical ordinary or CI verification plan.
-      test-one --filter F  Run one bounded Swift suite/test filter.
+      test-one --filter F [--maximum-repetitions N] [--repeat-until pass|fail]
+                           Run one bounded Swift test filter, optionally repeated.
       test-tier TIER       Run one canonical test tier.
       explain TIER          Print its command graph and execution policies.
       build                Build the host package and its prerequisites.
@@ -41,14 +42,8 @@ enum AxolotyCommandHelp {
       test tooling         Run offline developer-tool tests and prerequisites.
       test integration     Deprecated; no canonical broker-backed tier is declared.
       wire capture         Run live MQTT captures with pinned reference agents.
-      embedded build       Cross-compile the ESP32-C6 firmware on Linux.
-      embedded doctor      Verify the container's ESP-IDF build environment.
-      embedded verify      Build and verify the ESP32-C6 linker contract.
-      hardware check       Run or skip the sporadic hardware smoke check.
-      hardware require     Require an attached device and run its smoke check.
+      embedded consumer prepare  Prepare a standalone Embedded Swift consumer report.
       release checkpoint   Run the release checkpoint validation (no hardware).
-      release checkpoint-hardware  Run checkpoint with ESP32-C6 smoke test.
-         --device PATH      Override AXOLOTY_DEVICE (default: /dev/ttyACM0).
       measure timing        Measure cold/warm hardware-free builds (Linux only).
       repository validate    Validate version, documentation, and architecture authority.
       serve mqtt           Start a local Mosquitto broker in the foreground.

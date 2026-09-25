@@ -178,4 +178,31 @@ func artifactStoreRejectsTraversalAndUnsafeSymlinkRoots() throws {
     #expect(symlinkRunner.run(AxolotyCommandPlan(executable: "/bin/true")).exitCode == 70)
 }
 
+#if os(macOS)
+@Test
+func artifactStoreAcceptsARootUnderPrivateTmp() throws {
+    // Foundation's filesystem-resolving normalizations rewrite an existing
+    // /private/tmp path to /tmp, which is a symbolic link. An artifact root
+    // the caller named by its real path must not be rejected because of that
+    // rewrite: any consumer working under /tmp on macOS depends on it.
+    let root = URL(fileURLWithPath: "/private/tmp/axoloty-tool-private-tmp-\(UUID().uuidString)/runs")
+    defer { try? FileManager.default.removeItem(at: root.deletingLastPathComponent()) }
+    let environment = ["AXOLOTY_DEVCONTAINER": "1"]
+    let runner = FoundationCommandRunner(
+        contextValidator: AxolotyExecutionContextValidator(environment: environment, platform: .macOS),
+        environment: environment,
+        configuration: AxolotyCommandRunnerConfiguration(
+            commandTimeout: 5,
+            artifactRoot: root,
+            runID: "private-tmp",
+            installSignalHandler: false
+        )
+    )
+    // macOS ships true at /usr/bin, not /bin.
+    let result = runner.run(AxolotyCommandPlan(executable: "/usr/bin/true"))
+    #expect(result.exitCode == 0, "\(result.standardError)")
+    #expect(FileManager.default.fileExists(atPath: root.appending(path: "private-tmp").path))
+}
+#endif
+
 }

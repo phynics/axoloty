@@ -102,12 +102,13 @@ extension AxolotyRuntimeTests {
         let runtime = AxolotyRuntime(definition: definition, transport: TestTransport())
         try await runtime.start()
         let correlation = try #require(UUID16(parsing: "57575757-5757-4575-8575-575757575757"))
+        let beforeRequest = monotonicNowMS()
         #expect(await runtime.request(.discover(
             correlationID: correlation,
             payload: Array("{}".utf8),
-            timeoutMS: 1
+            timeoutMS: 60_000
         )) == .accepted)
-        #expect(await runtime.expire(nowMS: 1) == false)
+        #expect(await runtime.expire(nowMS: beforeRequest) == false)
         await runtime.stop()
     }
 
@@ -151,5 +152,19 @@ extension AxolotyRuntimeTests {
         }
         #expect(await transport.sentCount() == 0)
         await runtime.stop()
+    }
+
+    @Test("root test support reflects byte slices as hex and text")
+    func rootByteSliceTestMirrorShowsHexAndText() {
+        Array("ADV".utf8).withUnsafeBufferPointer { buffer in
+            let slice = ByteSlice(bytes: buffer.baseAddress!, length: buffer.count)
+            let fields = Dictionary(
+                uniqueKeysWithValues: Mirror(reflectingForTest: slice).children.map {
+                    ($0.label ?? "", $0.value)
+                }
+            )
+            #expect(fields["hex"] as? String == "41 44 56")
+            #expect(fields["text"] as? String == "ADV")
+        }
     }
 }

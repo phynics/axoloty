@@ -6,6 +6,8 @@ import Testing
 @testable import AxolotyObjectMacros
 @testable import AxolotyObjectMacrosImplementation
 
+private let emptyBodyIndent = "        "
+
 @Test("schema macro emits a fixed descriptor member")
 func schemaMacroExpansion() {
     assertMacroExpansion(
@@ -19,23 +21,32 @@ func schemaMacroExpansion() {
         expandedSource: """
         struct Reading {
             var temperature: Int
-            @WireName("alarmCodes") var alarms: Int?
+            var alarms: Int?
+
+            /// The fixed descriptor synthesized by `@AxolotyObject`.
             public static let schema: PortableObjectSchema<Reading> = {
                 var fields = InlineArray<24, ObjectFieldDescriptor>(repeating: .empty)
                 fields[0] = ObjectFieldDescriptor(key: ObjectFieldKey("temperature")!, index: 0, flags: .required)
                 fields[1] = ObjectFieldDescriptor(key: ObjectFieldKey("alarmCodes")!, index: 1, flags: .optional)
+
                 return PortableObjectSchema<Reading>(objectType: ObjectType("com.example.Reading")!, coreType: .coatyObject, fieldCount: 2, fields: fields)
             }()
+
+            /// Decodes the typed fields through the bounded object-field decoder.
             public init(decoding fields: borrowing ObjectFieldDecoder) throws(ObjectDecodingError) {
                 self.temperature = try fields.decode("temperature", as: Int.self)
                 self.alarms = try fields.decodeIfPresent("alarmCodes", as: Int.self)
             }
+
+            /// Encodes the typed fields through the bounded object-field encoder.
             public borrowing func encodeFields<let editorCapacity: Int>(to encoder: inout ObjectFieldEncoder<editorCapacity>) throws(ObjectEncodingError) {
-                try encoder.encode(temperature, forKey: "temperature")
-                try encoder.encode(alarms, forKey: "alarmCodes")
+                try temperature.encode(to: &encoder, forKey: "temperature")
+                try alarms.encode(to: &encoder, forKey: "alarmCodes")
             }
         }
-        extension Reading: ObjectSchema {}
+
+        extension Reading: ObjectSchema {
+        }
         """,
         macros: [
             "AxolotyObject": AxolotyObjectMacro.self,
@@ -59,27 +70,36 @@ func schemaMacroDiagnostics() {
         expandedSource: """
         struct Bad {
             var first: Int
-            @WireName("first") var second: Int
-            @WireName("objectId") var third: Int
+            var second: Int
+            var third: Int
+
+            /// The fixed descriptor synthesized by `@AxolotyObject`.
             public static let schema: PortableObjectSchema<Bad> = {
                 var fields = InlineArray<24, ObjectFieldDescriptor>(repeating: .empty)
                 fields[0] = ObjectFieldDescriptor(key: ObjectFieldKey("first")!, index: 0, flags: .required)
                 fields[1] = ObjectFieldDescriptor(key: ObjectFieldKey("first")!, index: 1, flags: .required)
                 fields[2] = ObjectFieldDescriptor(key: ObjectFieldKey("objectId")!, index: 2, flags: .required)
+
                 return PortableObjectSchema<Bad>(objectType: ObjectType("com.example.Bad")!, coreType: .coatyObject, fieldCount: 3, fields: fields)
             }()
+
+            /// Decodes the typed fields through the bounded object-field decoder.
             public init(decoding fields: borrowing ObjectFieldDecoder) throws(ObjectDecodingError) {
                 self.first = try fields.decode("first", as: Int.self)
                 self.second = try fields.decode("first", as: Int.self)
                 self.third = try fields.decode("objectId", as: Int.self)
             }
+
+            /// Encodes the typed fields through the bounded object-field encoder.
             public borrowing func encodeFields<let editorCapacity: Int>(to encoder: inout ObjectFieldEncoder<editorCapacity>) throws(ObjectEncodingError) {
-                try encoder.encode(first, forKey: "first")
-                try encoder.encode(second, forKey: "first")
-                try encoder.encode(third, forKey: "objectId")
+                try first.encode(to: &encoder, forKey: "first")
+                try second.encode(to: &encoder, forKey: "first")
+                try third.encode(to: &encoder, forKey: "objectId")
             }
         }
-        extension Bad: ObjectSchema {}
+
+        extension Bad: ObjectSchema {
+        }
         """,
         diagnostics: [
             DiagnosticSpec(message: "wire field 'first' is declared more than once", line: 4, column: 5),
@@ -104,20 +124,31 @@ func schemaMacroEmptyWireNameDiagnostics() {
         """,
         expandedSource: """
         struct BadWireName {
-            @WireName("") var value: Int
+            var value: Int
+
+            /// The fixed descriptor synthesized by `@AxolotyObject`.
             public static let schema: PortableObjectSchema<BadWireName> = {
                 var fields = InlineArray<24, ObjectFieldDescriptor>(repeating: .empty)
+
                 return PortableObjectSchema<BadWireName>(objectType: ObjectType("com.example.BadWireName")!, coreType: .coatyObject, fieldCount: 0, fields: fields)
             }()
+
+            /// Decodes the typed fields through the bounded object-field decoder.
             public init(decoding fields: borrowing ObjectFieldDecoder) throws(ObjectDecodingError) {
+        \(emptyBodyIndent)
             }
+
+            /// Encodes the typed fields through the bounded object-field encoder.
             public borrowing func encodeFields<let editorCapacity: Int>(to encoder: inout ObjectFieldEncoder<editorCapacity>) throws(ObjectEncodingError) {
+        \(emptyBodyIndent)
             }
         }
-        extension BadWireName: ObjectSchema {}
+
+        extension BadWireName: ObjectSchema {
+        }
         """,
         diagnostics: [
-            DiagnosticSpec(message: "@WireName must decode to a non-empty printable wire key", line: 4, column: 5),
+            DiagnosticSpec(message: "@WireName must decode to a non-empty printable wire key", line: 3, column: 5),
         ],
         macros: [
             "AxolotyObject": AxolotyObjectMacro.self,
@@ -138,20 +169,31 @@ func schemaMacroInvalidDecodedWireNameDiagnostics() {
         """,
         expandedSource: """
         struct BadWireName {
-            @WireName("\\u0001") var value: Int
+            var value: Int
+
+            /// The fixed descriptor synthesized by `@AxolotyObject`.
             public static let schema: PortableObjectSchema<BadWireName> = {
                 var fields = InlineArray<24, ObjectFieldDescriptor>(repeating: .empty)
+
                 return PortableObjectSchema<BadWireName>(objectType: ObjectType("com.example.BadWireName")!, coreType: .coatyObject, fieldCount: 0, fields: fields)
             }()
+
+            /// Decodes the typed fields through the bounded object-field decoder.
             public init(decoding fields: borrowing ObjectFieldDecoder) throws(ObjectDecodingError) {
+        \(emptyBodyIndent)
             }
+
+            /// Encodes the typed fields through the bounded object-field encoder.
             public borrowing func encodeFields<let editorCapacity: Int>(to encoder: inout ObjectFieldEncoder<editorCapacity>) throws(ObjectEncodingError) {
+        \(emptyBodyIndent)
             }
         }
-        extension BadWireName: ObjectSchema {}
+
+        extension BadWireName: ObjectSchema {
+        }
         """,
         diagnostics: [
-            DiagnosticSpec(message: "@WireName must decode to a non-empty printable wire key", line: 4, column: 5),
+            DiagnosticSpec(message: "@WireName must decode to a non-empty printable wire key", line: 3, column: 5),
         ],
         macros: [
             "AxolotyObject": AxolotyObjectMacro.self,
@@ -180,7 +222,7 @@ func schemaMacroShapeDiagnostics() {
         }
         """,
         diagnostics: [
-            DiagnosticSpec(message: "@AxolotyObject can only annotate a struct", line: 2, column: 1),
+            DiagnosticSpec(message: "@AxolotyObject can only annotate a struct", line: 1, column: 1),
         ],
         macros: [
             "AxolotyObject": AxolotyObjectMacro.self,
@@ -203,16 +245,27 @@ private func assertValidCoreType(_ coreType: String) {
         """,
         expandedSource: """
         struct CoreProbe {
+
+            /// The fixed descriptor synthesized by `@AxolotyObject`.
             public static let schema: PortableObjectSchema<CoreProbe> = {
                 var fields = InlineArray<24, ObjectFieldDescriptor>(repeating: .empty)
+
                 return PortableObjectSchema<CoreProbe>(objectType: ObjectType("com.example.CoreProbe")!, coreType: .\(coreTypeExpression(coreType)), fieldCount: 0, fields: fields)
             }()
+
+            /// Decodes the typed fields through the bounded object-field decoder.
             public init(decoding fields: borrowing ObjectFieldDecoder) throws(ObjectDecodingError) {
+        \(emptyBodyIndent)
             }
+
+            /// Encodes the typed fields through the bounded object-field encoder.
             public borrowing func encodeFields<let editorCapacity: Int>(to encoder: inout ObjectFieldEncoder<editorCapacity>) throws(ObjectEncodingError) {
+        \(emptyBodyIndent)
             }
         }
-        extension CoreProbe: ObjectSchema {}
+
+        extension CoreProbe: ObjectSchema {
+        }
         """,
         macros: [
             "AxolotyObject": AxolotyObjectMacro.self,
@@ -256,19 +309,30 @@ func schemaMacroRejectsInventedCoreType() {
         """,
         expandedSource: """
         struct Bad {
+
+            /// The fixed descriptor synthesized by `@AxolotyObject`.
             public static let schema: PortableObjectSchema<Bad> = {
                 var fields = InlineArray<24, ObjectFieldDescriptor>(repeating: .empty)
+
                 return PortableObjectSchema<Bad>(objectType: ObjectType("com.example.Bad")!, coreType: .coatyObject, fieldCount: 0, fields: fields)
             }()
+
+            /// Decodes the typed fields through the bounded object-field decoder.
             public init(decoding fields: borrowing ObjectFieldDecoder) throws(ObjectDecodingError) {
+        \(emptyBodyIndent)
             }
+
+            /// Encodes the typed fields through the bounded object-field encoder.
             public borrowing func encodeFields<let editorCapacity: Int>(to encoder: inout ObjectFieldEncoder<editorCapacity>) throws(ObjectEncodingError) {
+        \(emptyBodyIndent)
             }
         }
-        extension Bad: ObjectSchema {}
+
+        extension Bad: ObjectSchema {
+        }
         """,
         diagnostics: [
-            DiagnosticSpec(message: "coreType 'CoatyThing' is not a supported portable core type", line: 2, column: 1),
+            DiagnosticSpec(message: "coreType 'CoatyThing' is not a supported portable core type", line: 1, column: 1),
         ],
         macros: [
             "AxolotyObject": AxolotyObjectMacro.self,
@@ -292,10 +356,12 @@ func schemaMacroRejectsMoreThan24Fields() {
         struct TooMany {
         \(fields)
         }
-        extension TooMany: ObjectSchema {}
+
+        extension TooMany: ObjectSchema {
+        }
         """,
         diagnostics: [
-            DiagnosticSpec(message: "portable object schemas support at most 24 fields", line: 2, column: 1),
+            DiagnosticSpec(message: "portable object schemas support at most 24 fields", line: 1, column: 1),
         ],
         macros: [
             "AxolotyObject": AxolotyObjectMacro.self,
@@ -316,23 +382,32 @@ func schemaMacroRejectsTextDefault() {
         """,
         expandedSource: """
         struct BadDefault {
-            @Default("ready") var label: BoundedEncodedText<16>
+            var label: BoundedEncodedText<16>
+
+            /// The fixed descriptor synthesized by `@AxolotyObject`.
             public static let schema: PortableObjectSchema<BadDefault> = {
                 var fields = InlineArray<24, ObjectFieldDescriptor>(repeating: .empty)
                 fields[0] = ObjectFieldDescriptor(key: ObjectFieldKey("label")!, index: 0, flags: .required)
+
                 return PortableObjectSchema<BadDefault>(objectType: ObjectType("com.example.BadDefault")!, coreType: .coatyObject, fieldCount: 1, fields: fields)
             }()
+
+            /// Decodes the typed fields through the bounded object-field decoder.
             public init(decoding fields: borrowing ObjectFieldDecoder) throws(ObjectDecodingError) {
                 self.label = try fields.decode("label", as: BoundedEncodedText<16>.self)
             }
+
+            /// Encodes the typed fields through the bounded object-field encoder.
             public borrowing func encodeFields<let editorCapacity: Int>(to encoder: inout ObjectFieldEncoder<editorCapacity>) throws(ObjectEncodingError) {
-                try encoder.encode(label, forKey: "label")
+                try label.encode(to: &encoder, forKey: "label")
             }
         }
-        extension BadDefault: ObjectSchema {}
+
+        extension BadDefault: ObjectSchema {
+        }
         """,
         diagnostics: [
-            DiagnosticSpec(message: "@Default value does not match field type 'BoundedEncodedText<16>'", line: 4, column: 5),
+            DiagnosticSpec(message: "@Default value does not match field type 'BoundedEncodedText<16>'", line: 3, column: 5),
         ],
         macros: [
             "AxolotyObject": AxolotyObjectMacro.self,

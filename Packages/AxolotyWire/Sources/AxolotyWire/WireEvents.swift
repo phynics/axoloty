@@ -54,19 +54,19 @@ public enum BorrowedWireEvent {
     ///   semantic shape required by its event field.
     public func owned() throws(WireDecodeError) -> OwnedWireEvent {
         switch self {
-        case .advertise(let x): return .advertise(try OwnedAdvertiseWireData(object: copy(x.object), privateData: x.privateData.map(copy)))
-        case .deadvertise(let x): return .deadvertise(try OwnedDeadvertiseWireData(objectIds: copy(x.objectIds)))
-        case .channel(let x): return .channel(try OwnedChannelWireData(object: x.object.map(copy), objects: x.objects.map(copy), privateData: x.privateData.map(copy)))
-        case .associate(let x): return .associate(try OwnedAssociateWireData(ioSourceId: x.ioSourceId, ioActorId: x.ioActorId, associatingRoute: x.associatingRoute.map(copy), isExternalRoute: x.isExternalRoute, updateRate: x.updateRate))
-        case .ioValue(let x): return .ioValue(try OwnedIoValueWireData(payload: copy(x.payload)))
-        case .discover(let x): return .discover(try OwnedDiscoverWireData(externalId: x.externalId.map(copy), objectId: x.objectId.map(copy), objectTypes: x.objectTypes.map(copy), coreTypes: x.coreTypes.map(copy)))
-        case .resolve(let x): return .resolve(try OwnedResolveWireData(object: copy(x.object), relatedObjects: x.relatedObjects.map(copy), privateData: x.privateData.map(copy)))
-        case .query(let x): return .query(try OwnedQueryWireData(objectTypes: x.objectTypes.map(copy), coreTypes: x.coreTypes.map(copy), objectFilter: x.objectFilter.map(copy), objectJoinConditions: x.objectJoinConditions.map(copy)))
-        case .retrieve(let x): return .retrieve(try OwnedRetrieveWireData(objects: copy(x.objects), privateData: x.privateData.map(copy)))
-        case .update(let x): return .update(try OwnedUpdateWireData(object: copy(x.object)))
-        case .complete(let x): return .complete(try OwnedCompleteWireData(object: x.object.map(copy), privateData: x.privateData.map(copy)))
-        case .call(let x): return .call(try OwnedCallWireData(parameters: x.parameters.map(copy), filter: x.filter.map(copy)))
-        case .returnEvent(let x): return .returnEvent(try OwnedReturnWireData(result: x.result.map(copy), executionInfo: x.executionInfo.map(copy), error: x.error.map(copy)))
+        case .advertise(let x): return .advertise(try OwnedAdvertiseWireData(object: x.object.ownedBytes(), privateData: x.privateData.map { $0.ownedBytes() }))
+        case .deadvertise(let x): return .deadvertise(try OwnedDeadvertiseWireData(objectIds: x.objectIds.ownedBytes()))
+        case .channel(let x): return .channel(try OwnedChannelWireData(object: x.object.map { $0.ownedBytes() }, objects: x.objects.map { $0.ownedBytes() }, privateData: x.privateData.map { $0.ownedBytes() }))
+        case .associate(let x): return .associate(try OwnedAssociateWireData(ioSourceId: x.ioSourceId, ioActorId: x.ioActorId, associatingRoute: x.associatingRoute.map { $0.ownedBytes() }, isExternalRoute: x.isExternalRoute, updateRate: x.updateRate))
+        case .ioValue(let x): return .ioValue(try OwnedIoValueWireData(payload: x.payload.ownedBytes()))
+        case .discover(let x): return .discover(try OwnedDiscoverWireData(externalId: x.externalId.map { $0.ownedBytes() }, objectId: x.objectId.map { $0.ownedBytes() }, objectTypes: x.objectTypes.map { $0.ownedBytes() }, coreTypes: x.coreTypes.map { $0.ownedBytes() }))
+        case .resolve(let x): return .resolve(try OwnedResolveWireData(object: x.object.ownedBytes(), relatedObjects: x.relatedObjects.map { $0.ownedBytes() }, privateData: x.privateData.map { $0.ownedBytes() }))
+        case .query(let x): return .query(try OwnedQueryWireData(objectTypes: x.objectTypes.map { $0.ownedBytes() }, coreTypes: x.coreTypes.map { $0.ownedBytes() }, objectFilter: x.objectFilter.map { $0.ownedBytes() }, objectJoinConditions: x.objectJoinConditions.map { $0.ownedBytes() }))
+        case .retrieve(let x): return .retrieve(try OwnedRetrieveWireData(objects: x.objects.ownedBytes(), privateData: x.privateData.map { $0.ownedBytes() }))
+        case .update(let x): return .update(try OwnedUpdateWireData(object: x.object.ownedBytes()))
+        case .complete(let x): return .complete(try OwnedCompleteWireData(object: x.object.map { $0.ownedBytes() }, privateData: x.privateData.map { $0.ownedBytes() }))
+        case .call(let x): return .call(try OwnedCallWireData(parameters: x.parameters.map { $0.ownedBytes() }, filter: x.filter.map { $0.ownedBytes() }))
+        case .returnEvent(let x): return .returnEvent(try OwnedReturnWireData(result: x.result.map { $0.ownedBytes() }, executionInfo: x.executionInfo.map { $0.ownedBytes() }, error: x.error.map { $0.ownedBytes() }))
         }
     }
 
@@ -146,7 +146,4 @@ private func ownedComma(_ writer: inout WireWriter, _ first: inout Bool) throws(
     if !first { try writer.writeComma() }; first = false
 }
 
-private func copy(_ slice: ByteSlice) -> [UInt8] {
-    slice.withBytes { Array(UnsafeBufferPointer(start: $0.assumingMemoryBound(to: UInt8.self), count: $1)) }
-}
 // swiftlint:enable cyclomatic_complexity

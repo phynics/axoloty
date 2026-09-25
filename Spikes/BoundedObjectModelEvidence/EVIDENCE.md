@@ -29,7 +29,7 @@ Run the hardware-free nodes from the repository root:
 ```sh
 make test-one FILTER='g3-object-model-evidence-host'
 make test-one FILTER='g3-object-model-evidence-sanitized'
-make test-one FILTER='g3-object-model-evidence-embedded'
+Spikes/BoundedObjectModelEvidence/check-portable.sh
 ```
 
 The host node reuses G1's heaptrack small-vs-large allocation-growth method,
@@ -39,19 +39,10 @@ sanitized node runs the same randomized edit/read tests under Address
 Sanitizer. Generated reports, logs, and build products are written under
 `.testing/g3-object-model/<candidate-sha>/` and are not committed.
 
-The embedded node performs a clean ESP32-C6 cross-build of `Embedded/swift`
-through the pinned ESP-IDF toolchain and records the exact Swift version,
-compile duration, firmware/ELF/MAP sizes, and ELF section sizes. Its
-`coverage` is `foundation-schema-model-predicate-module-linkage`: it proves
-the currently integrated object foundation, schema/model sources, and their
-static consumers are compiled and linked into firmware. The static consumer
-contains and calls the predicate decode/evaluation/encode path and the
-protocol filter adapter path from `app_main`, so those symbols cannot be
-satisfied solely by dead-stripped source. The embedded node does not run that
-firmware: host probe/heaptrack is the only runtime allocation measurement, and
-the embedded build does not measure ESP runtime behavior or select product
-capacities. It is compile/link evidence, not an on-device predicate execution
-measurement. The node is build-only and hardware-forbidden.
+Firmware cross-build evidence is owned by `axoloty-embedded`.
+`check-portable.sh` runs the firmware-free portable object-model probe. The
+probe is an opt-in script, not a canonical test-tier node. No Core spike reads
+the firmware tree or invokes ESP-IDF.
 
 Schema validation is local and dependency-free:
 

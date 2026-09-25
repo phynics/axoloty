@@ -10,19 +10,44 @@ public struct StaticRuntimeDefinition<let payloadCapacity: Int>: ~Copyable {
     public let registryID: ObjectID
     /// Families enabled for this firmware image.
     public let capabilities: ProtocolCapabilities
+    /// Optional maximum number of simultaneously advertised objects.
+    ///
+    /// When `nil`, the consuming runtime's storage capacity is used.
+    public let maximumObjects: Int?
+    /// Optional maximum number of outstanding request correlations.
+    ///
+    /// When `nil`, the consuming runtime's storage capacity is used.
+    public let maximumPendingCorrelations: Int?
     /// Maximum accepted wire payload size, fixed by the type specialization.
     public var maximumPayloadBytes: Int { payloadCapacity }
     /// Maximum accepted wire payload size for this definition specialization.
     public static var maximumPayloadBytes: Int { payloadCapacity }
 
     /// Creates a bounded static definition.
+    ///
+    /// - Parameters:
+    ///   - registryID: Opaque identity used to reject handles from another runtime registry.
+    ///   - capabilities: Families accepted by this binding.
+    ///   - maximumObjects: Optional maximum number of simultaneously advertised objects.
+    ///   - maximumPendingCorrelations: Optional maximum number of outstanding request correlations.
+    /// - Throws: ``ProtocolCapacityError`` if the payload specialization is
+    ///   outside the wire payload bound.
     public init(
         registryID: ObjectID,
         capabilities: ProtocolCapabilities = .coatyCore3,
-    ) {
-        precondition(payloadCapacity >= 0 && payloadCapacity <= WireBufferConfig.maxPayloadSize)
+        maximumObjects: Int? = nil,
+        maximumPendingCorrelations: Int? = nil
+    ) throws(ProtocolCapacityError) {
+        guard payloadCapacity >= 0 else {
+            throw ProtocolCapacityError(.negativeCapacity, parameter: "payloadCapacity")
+        }
+        guard payloadCapacity <= WireBufferConfig.maxPayloadSize else {
+            throw ProtocolCapacityError(.exceedsMaximum, parameter: "payloadCapacity")
+        }
         self.registryID = registryID
         self.capabilities = capabilities
+        self.maximumObjects = maximumObjects
+        self.maximumPendingCorrelations = maximumPendingCorrelations
     }
 }
 
@@ -50,15 +75,32 @@ public struct StaticRuntime<let capacity: Int, let payloadCapacity: Int>: ~Copya
     ///   - capabilities: Families accepted by this binding.
     ///   - maximumObjects: Maximum simultaneous advertised objects.
     ///   - maximumPendingCorrelations: Maximum outstanding request correlations.
+    /// - Throws: ``ProtocolCapacityError`` if a caller-supplied limit is
+    ///   negative or exceeds the runtime's fixed storage capacity.
     public init(
         registryID: ObjectID,
         capabilities: ProtocolCapabilities = .coatyCore3,
         maximumObjects: Int = capacity,
         maximumPendingCorrelations: Int = capacity,
-    ) {
-        precondition(payloadCapacity >= 0 && payloadCapacity <= WireBufferConfig.maxPayloadSize)
-        precondition(maximumObjects >= 0 && maximumObjects <= capacity)
-        precondition(maximumPendingCorrelations >= 0 && maximumPendingCorrelations <= capacity)
+    ) throws(ProtocolCapacityError) {
+        guard payloadCapacity >= 0 else {
+            throw ProtocolCapacityError(.negativeCapacity, parameter: "payloadCapacity")
+        }
+        guard payloadCapacity <= WireBufferConfig.maxPayloadSize else {
+            throw ProtocolCapacityError(.exceedsMaximum, parameter: "payloadCapacity")
+        }
+        guard maximumObjects >= 0 else {
+            throw ProtocolCapacityError(.negativeCapacity, parameter: "maximumObjects")
+        }
+        guard maximumObjects <= capacity else {
+            throw ProtocolCapacityError(.exceedsMaximum, parameter: "maximumObjects")
+        }
+        guard maximumPendingCorrelations >= 0 else {
+            throw ProtocolCapacityError(.negativeCapacity, parameter: "maximumPendingCorrelations")
+        }
+        guard maximumPendingCorrelations <= capacity else {
+            throw ProtocolCapacityError(.exceedsMaximum, parameter: "maximumPendingCorrelations")
+        }
         self.registryID = registryID
         self.routeClassifier = ExactProtocolRouteClassifier(
             externalRoute: "external/wire-compat-v1/io-external-1"
@@ -80,11 +122,17 @@ public struct StaticRuntime<let capacity: Int, let payloadCapacity: Int>: ~Copya
         definition: consuming StaticRuntimeDefinition<payloadCapacity>,
         routeClassifier: ExactProtocolRouteClassifier
     ) {
+        let maximumObjects = definition.maximumObjects ?? capacity
+        let maximumPendingCorrelations = definition.maximumPendingCorrelations ?? capacity
+        precondition(maximumObjects >= 0 && maximumObjects <= capacity)
+        precondition(maximumPendingCorrelations >= 0 && maximumPendingCorrelations <= capacity)
         self.registryID = definition.registryID
         self.routeClassifier = routeClassifier
         self.processor = ProtocolProcessor<capacity>(
             capabilities: definition.capabilities,
-            maximumPayloadBytes: payloadCapacity
+            maximumPayloadBytes: payloadCapacity,
+            maximumObjects: maximumObjects,
+            maximumPendingCorrelations: maximumPendingCorrelations
         )
         self.subscriptions = ProtocolSubscriptionRegistry<capacity>()
         self.sink = InlineOwnedProtocolActionSink<capacity, payloadCapacity>()
@@ -129,7 +177,9 @@ public struct StaticRuntime<let capacity: Int, let payloadCapacity: Int>: ~Copya
     ) -> ProtocolProcessOutcome {
         guard sink.count == 0 else { return .rejected(.capacityExceeded) }
         sink.removeAll()
-        return processor.processOutbound(operation, nowMS: nowMS, classifier: routeClassifier, sink: &sink)
+        let outcome = processor.processOutbound(operation, nowMS: nowMS, classifier: routeClassifier, sink: &sink)
+        if case .rejected = outcome { sink.removeAll() }
+        return outcome
     }
 
     /// Processes one inbound frame and retains its action until ``drain``.
@@ -140,6 +190,7 @@ public struct StaticRuntime<let capacity: Int, let payloadCapacity: Int>: ~Copya
         guard sink.count == 0 else { return .rejected(.capacityExceeded) }
         sink.removeAll()
         let outcome = processor.processInbound(.profile(frame), nowMS: nowMS, classifier: routeClassifier, sink: &sink)
+        if case .rejected = outcome { sink.removeAll() }
         if case .accepted = outcome {
             receiveContext = StaticIoReceiveContext(
                 receivedAtMS: nowMS,
@@ -184,6 +235,7 @@ public struct StaticRuntime<let capacity: Int, let payloadCapacity: Int>: ~Copya
         guard sink.count == 0 else { return .rejected(.capacityExceeded) }
         sink.removeAll()
         let outcome = processor.processInbound(.profile(frame), nowMS: nowMS, classifier: classifier, sink: &sink)
+        if case .rejected = outcome { sink.removeAll() }
         if case .accepted = outcome {
             receiveContext = StaticIoReceiveContext(
                 receivedAtMS: nowMS,
@@ -201,7 +253,9 @@ public struct StaticRuntime<let capacity: Int, let payloadCapacity: Int>: ~Copya
     ) -> ProtocolProcessOutcome {
         guard sink.count == 0 else { return .rejected(.capacityExceeded) }
         sink.removeAll()
-        return processor.processOutbound(operation, nowMS: nowMS, classifier: classifier, sink: &sink)
+        let outcome = processor.processOutbound(operation, nowMS: nowMS, classifier: classifier, sink: &sink)
+        if case .rejected = outcome { sink.removeAll() }
+        return outcome
     }
 
     /// Expires all requests whose caller-supplied deadlines have elapsed.
@@ -277,11 +331,6 @@ public struct StaticRuntime<let capacity: Int, let payloadCapacity: Int>: ~Copya
         return count
     }
 
-    /// Drains the synchronous action sink through the transport-facing name.
-    @discardableResult
-    public mutating func drainActions(_ body: (BorrowedProtocolAction) -> Void) -> Int {
-        drain(body)
-    }
 }
 
 /// The fixed profile used by the static device agent.

@@ -1,12 +1,14 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
 import assert from "node:assert/strict";
+import crypto from "node:crypto";
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-import { collectFilterSymbols, discoverSelfTests, discoverTargetSelfTests, expandFilterAlternatives, parseMakeTargets, tierNodeCommandsFrom, validate } from "../validate-test-tiers.mjs";
+import { validate as validateResourceEvidence } from "../evidence/validate-g6-resource-evidence.mjs";
+import { collectFilterSymbols, collectFilterSymbolsByPackage, discoverSelfTests, discoverTargetSelfTests, expandFilterAlternatives, parseMakeTargets, tierNodeCommandsFrom, validate } from "../validate-test-tiers.mjs";
 
 const root = path.resolve(import.meta.dirname, "../../..");
 
@@ -17,6 +19,7 @@ test("checked-in contract covers discovered self-tests", () => {
     discoveredSelfTests: discoverSelfTests(path.join(root, "Tests")),
     invokedSelfTests: discoverTargetSelfTests(path.join(root, "Makefile"), document.selfTests.map(entry => entry.path), tierNodeCommandsFrom(document)),
     exists: relative => fs.existsSync(path.join(root, relative)),
+    filterSymbols: collectFilterSymbolsByPackage(root),
   });
   assert.deepEqual(errors, []);
 });
@@ -29,6 +32,33 @@ test("canonical contract contains no retired zero-test gates", () => {
   assert.equal(document.requiredGates.some(gate => retired.has(gate)), false);
   for (const tier of document.tiers) {
     assert.equal(tier.nodes.some(node => retired.has(node)), false, tier.id);
+  }
+});
+
+test("CI preserves the firmware-independent Embedded Core contract", () => {
+  const document = JSON.parse(fs.readFileSync(path.join(root, "Tests/Support/test-tiers.json"), "utf8"));
+  const ci = document.tiers.find(tier => tier.id === "ci");
+  const node = id => document.nodes.find(candidate => candidate.id === id);
+  const consumer = node("embedded-core-consumer");
+
+  assert.ok(ci);
+  assert.ok(consumer);
+  assert.equal(consumer.command.executable, "Tests/Support/checks/check-embedded-swift-core.sh");
+  assert.deepEqual(consumer.dependencies, []);
+  assert.equal(consumer.hardware, "forbidden");
+  assert.equal(consumer.network, "none");
+  assert.equal(consumer.broker, "none");
+  assert.deepEqual(consumer.resources, ["source-tree"]);
+  assert.equal(consumer.resources.includes("embedded-build"), false);
+  assert.equal(ci.nodes.includes(consumer.id), true);
+  assert.equal(document.requiredGates.includes(consumer.id), true);
+
+  // repository-authority enforces docs/module-policy.yml; g6-profile-trace
+  // owns the shared host/static semantic replay suite.
+  for (const required of ["repository-authority", "g6-profile-trace"]) {
+    assert.ok(node(required), required);
+    assert.equal(ci.nodes.includes(required), true, required);
+    assert.equal(document.requiredGates.includes(required), true, required);
   }
 });
 
@@ -121,11 +151,14 @@ test("validator enforces the tool container env allowlist contract", () => {
   const badShape = JSON.parse(JSON.stringify(document));
   badShape.toolContainerEnv["release-checkpoint"] = ["AXOLOTY_OK", "not an identifier"];
   badShape.toolContainerEnv["release-unknown"] = ["AXOLOTY_X"];
-  delete badShape.toolContainerEnv["release-checkpoint-hardware"];
   errors = validate(badShape, base);
   assert.ok(errors.includes('toolContainerEnv release-checkpoint: invalid env name "not an identifier"'));
   assert.ok(errors.includes("toolContainerEnv release-unknown: unknown tool command identifier"));
-  assert.ok(errors.includes("toolContainerEnv: missing allowlist for release-checkpoint-hardware"));
+
+  const missingAllowlist = JSON.parse(JSON.stringify(document));
+  delete missingAllowlist.toolContainerEnv["release-checkpoint"];
+  errors = validate(missingAllowlist, base);
+  assert.ok(errors.includes("toolContainerEnv: missing allowlist for release-checkpoint"));
 });
 
 test("retired make test alias stays removed so no stale integration tier can return", () => {
@@ -161,8 +194,8 @@ test("G4 runtime gates select whole suites and their owning Swift packages", () 
   // hand-listed set of method names, which left every test added to the suite
   // afterwards unowned. One gate now selects the suite itself.
   const host = node("g4-host-runtime");
-  assert.equal(host.filter, "AxolotyRuntimeTests");
-  assert.equal(host.command.arguments[host.command.arguments.indexOf("--filter") + 1], "AxolotyRuntimeTests");
+  assert.ok(host.filter.split("|").includes("AxolotyRuntimeTests"));
+  assert.equal(host.command.arguments[host.command.arguments.indexOf("--filter") + 1], host.filter);
   assert.equal(host.dependencies.includes("build"), true);
   for (const retired of ["g4-runtime-definition", "g4-runtime-concurrency"]) {
     assert.equal(node(retired), undefined, `${retired} must stay consolidated into g4-host-runtime`);
@@ -171,14 +204,14 @@ test("G4 runtime gates select whole suites and their owning Swift packages", () 
   assert.equal(host.filter.includes("AxolotyStaticRuntimeTests"), false);
 
   const packageAssertions = [
-    ["g4-protocol-lifecycle", "Packages/AxolotyProtocol", "ProtocolFoundationTests|ProtocolProcessorTests"],
-    ["g4-static-runtime", "Packages/AxolotyStaticRuntime", "StaticRuntimeTests|StaticTypedIoTests"],
+    ["g4-protocol-lifecycle", "Packages/AxolotyProtocol", ["ProtocolFoundationTests", "ProtocolProcessorTests"]],
+    ["g4-static-runtime", "Packages/AxolotyStaticRuntime", ["StaticRuntimeTests", "StaticTypedIoTests", "StaticIoActorMacroTests", "staticIoActorRejectsNonEnum"]],
   ];
-  for (const [id, packagePath, filter] of packageAssertions) {
+  for (const [id, packagePath, filters] of packageAssertions) {
     const candidate = node(id);
     const args = candidate.command.arguments;
     assert.equal(args[args.indexOf("--package-path") + 1], packagePath, `${id} must invoke its owning package`);
-    assert.equal(candidate.filter, filter);
+    assert.ok(filters.every(filter => candidate.filter.split("|").includes(filter)), id);
     assert.equal(args.includes("--product"), false, `${id} must run tests, not request a product`);
   }
 });
@@ -202,7 +235,7 @@ test("discovery includes shell and Node self-tests", () => {
 test("validator requires repository authority tests in the tooling filter", () => {
   const document = JSON.parse(fs.readFileSync(path.join(root, "Tests/Support/test-tiers.json"), "utf8"));
   const node = document.nodes.find(candidate => candidate.id === "test-tooling");
-  node.filter = node.filter.split("|").filter(suite => suite !== "RepositoryAuthorityTests").join("|");
+  node.filter = node.filter.split("|").filter(branch => !branch.startsWith("repositoryAuthority") && !branch.startsWith("modulePolicy")).join("|");
   node.command.arguments[node.command.arguments.indexOf("--filter") + 1] = node.filter;
   const errors = validate(document, {
     makeTargets: parseMakeTargets(path.join(root, "Makefile")),
@@ -210,6 +243,20 @@ test("validator requires repository authority tests in the tooling filter", () =
     exists: () => true,
   });
   assert.ok(errors.includes("test-tooling must select RepositoryAuthorityTests"));
+});
+
+test("filter discovery records preserve an empty root scratch path", () => {
+  const script = fs.readFileSync(path.join(root, "Tests/Support/checks/check-swift-test-filter-contract.sh"), "utf8");
+  // Bash treats adjacent tabs as one separator. ASCII unit separator keeps the
+  // empty scratch-path field in root-package records intact.
+  assert.match(script, /IFS=\$'\\x1f' read -r node_id package_path scratch_path branch/);
+  assert.match(script, /\.join\("\\x1f"\)/);
+  const result = spawnSync("bash", ["-c", "while IFS=$'\\x1f' read -r a b c d; do printf '%s|%s|%s|%s\n' \"$a\" \"$b\" \"$c\" \"$d\"; done", "--"], {
+    input: "root\x1f.\x1f\x1fProtocolTraceTests\n",
+    encoding: "utf8",
+  });
+  assert.equal(result.status, 0);
+  assert.equal(result.stdout, "root|.| |ProtocolTraceTests\n".replace("| |", "||"));
 });
 
 test("target self-test discovery recognizes shell commands and Node test globs", () => {
@@ -332,6 +379,40 @@ test("validator CLI reports stable selfTests schema errors", t => {
   }
 });
 
+test("validator CLI reports stable quarantine schema errors", t => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "axoloty-tool-quarantine-"));
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
+  const base = JSON.parse(fs.readFileSync(path.join(root, "Tests/Support/test-tiers.json"), "utf8"));
+  const entry = () => ({
+    id: "q-fixture",
+    testNamePrefixes: ["fixtureFlake"],
+    nodeIds: ["test-tooling"],
+    owner: "someone",
+    ticket: "#1",
+    evidence: "https://example.invalid/comment",
+    deadline: "2026-10-18",
+    reason: "fixture",
+  });
+  const cases = [
+    ["missing-owner", document => { const e = entry(); delete e.owner; document.quarantine = [e]; }, "owner must be a nonempty string"],
+    ["missing-ticket", document => { const e = entry(); delete e.ticket; document.quarantine = [e]; }, "ticket must be a nonempty string"],
+    ["dangling-node", document => { document.quarantine = [{ ...entry(), nodeIds: ["not-a-real-node"] }]; }, "nodeIds must be a nonempty array of declared node ids"],
+    ["empty-prefixes", document => { document.quarantine = [{ ...entry(), testNamePrefixes: [] }]; }, "testNamePrefixes must be a nonempty array"],
+    ["bad-deadline", document => { document.quarantine = [{ ...entry(), deadline: "not-a-date" }]; }, "deadline must be an ISO date"],
+    ["duplicate-id", document => { document.quarantine = [entry(), entry()]; }, "duplicate id"],
+  ];
+
+  for (const [name, mutate, expected] of cases) {
+    const document = structuredClone(base);
+    mutate(document);
+    const config = path.join(directory, `${name}.json`);
+    fs.writeFileSync(config, JSON.stringify(document));
+    const result = spawnSync(process.execPath, [path.join(root, "Tests/Support/validate-test-tiers.mjs"), config], { encoding: "utf8" });
+    assert.equal(result.status, 1, name);
+    assert.match(result.stderr, new RegExp(`test-tier configuration error: quarantine .*: ${expected}`), name);
+  }
+});
+
 test("filter alternatives expand through top-level and grouped alternation", () => {
   assert.deepEqual(expandFilterAlternatives("A|B"), ["A", "B"]);
   assert.deepEqual(expandFilterAlternatives("Suite/(a|b)"), ["Suite/a", "Suite/b"]);
@@ -377,6 +458,45 @@ test("validator rejects a node whose declared filter and --filter argument disag
   assert.ok(errors.includes("test-wire: declared filter and the --filter argument disagree"));
 });
 
+test("filter discovery contains test declarations but not production symbols", () => {
+  const symbols = collectFilterSymbols(root);
+  assert.ok(symbols.has("AxolotyMQTTTests"));
+  assert.ok(symbols.has("MQTTBindingExternalRouteTests"));
+  assert.ok(symbols.has("IoRoutingTests"));
+  assert.ok(symbols.has("StaticIoActorMacroExpansionTests"));
+  assert.ok(symbols.has("SensorThingsSmokeTests"));
+  assert.ok(symbols.has("CoatyRouteTests"));
+  assert.equal(symbols.has("AxolotyRuntime"), false);
+  assert.equal(symbols.has("RuntimeBuilder"), false);
+});
+
+test("package-scoped filter discovery rejects selectors from another package", () => {
+  const document = JSON.parse(fs.readFileSync(path.join(root, "Tests/Support/test-tiers.json"), "utf8"));
+  const base = {
+    makeTargets: parseMakeTargets(path.join(root, "Makefile")),
+    discoveredSelfTests: [],
+    exists: () => true,
+    filterSymbols: collectFilterSymbolsByPackage(root),
+  };
+  const drifted = structuredClone(document);
+  const node = drifted.nodes.find(candidate => candidate.id === "g4-static-runtime");
+  node.filter = "MQTTBindingTests";
+  node.command.arguments[node.command.arguments.indexOf("--filter") + 1] = node.filter;
+  assert.ok(validate(drifted, base).some(error => error.includes('"MQTTBindingTests"')));
+});
+
+test("validator checks Make ownership when invocation data is supplied", () => {
+  const document = JSON.parse(fs.readFileSync(path.join(root, "Tests/Support/test-tiers.json"), "utf8"));
+  const pathName = document.selfTests[0].path;
+  const errors = validate(document, {
+    makeTargets: new Set(),
+    discoveredSelfTests: [],
+    invokedSelfTests: new Map(),
+    exists: () => true,
+  });
+  assert.ok(errors.includes(`${"selfTest " + pathName}: no Make target invokes it`));
+});
+
 test("the four categories are the whole taxonomy", () => {
   const document = JSON.parse(fs.readFileSync(path.join(root, "Tests/Support/test-tiers.json"), "utf8"));
   assert.deepEqual(document.tiers.map(tier => tier.id), ["ci", "wire", "embedded", "release"]);
@@ -409,9 +529,25 @@ test("the four categories are the whole taxonomy", () => {
 test("a hardware node cannot hide in a hardware-forbidden category", () => {
   const document = JSON.parse(fs.readFileSync(path.join(root, "Tests/Support/test-tiers.json"), "utf8"));
   const smuggled = JSON.parse(JSON.stringify(document));
-  const hardwareNode = smuggled.nodes.find(node => node.hardware !== "forbidden").id;
-  smuggled.tiers.find(tier => tier.id === "ci").nodes.push(hardwareNode);
-  smuggled.requiredGates.push(hardwareNode);
+  smuggled.nodes.push({
+    id: "smuggled-hardware",
+    dependencies: [],
+    command: { executable: "sh", arguments: [], environment: {}, executionContext: "project" },
+    filter: null,
+    timeoutSeconds: 60,
+    expectedDurationSeconds: 60,
+    cadence: "hardware-checkpoint",
+    required: false,
+    local: true,
+    ci: false,
+    network: "none",
+    broker: "none",
+    hardware: "required",
+    resources: ["embedded-device"],
+    isolation: "exclusive",
+    artifacts: [],
+  });
+  smuggled.tiers.find(tier => tier.id === "ci").nodes.push("smuggled-hardware");
   const errors = validate(smuggled, {
     makeTargets: parseMakeTargets(path.join(root, "Makefile")),
     discoveredSelfTests: [],
@@ -450,4 +586,125 @@ test("an attested category is declared by release and typed as a boolean", () =>
   const malformed = JSON.parse(JSON.stringify(document));
   malformed.tiers.find(tier => tier.id === "wire").attested = "yes";
   assert.ok(validate(malformed, base).includes("wire: attested must be a boolean"));
+});
+
+function resourceEvidenceFixture(t) {
+  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "axoloty-g6-policy-"));
+  t.after(() => fs.rmSync(temporary, { recursive: true, force: true }));
+  const evidenceRoot = path.join(temporary, "evidence");
+  fs.mkdirSync(path.join(evidenceRoot, "artifacts"), { recursive: true });
+  const artifactBytes = Buffer.from("resource evidence fixture\n");
+  fs.writeFileSync(path.join(evidenceRoot, "artifacts/run.log"), artifactBytes);
+  const policyPath = path.join(root, "Tests/Support/evidence/g6-resource-policy.json");
+  const policyDigest = crypto.createHash("sha256").update(fs.readFileSync(policyPath)).digest("hex");
+  const subject = {
+    repository: "fixture/axoloty",
+    commit: "a".repeat(40),
+    tree: "b".repeat(40),
+    version: "0.5.1",
+    clean: true,
+  };
+  const artifact = {
+    path: "artifacts/run.log",
+    byteCount: artifactBytes.length,
+    sha256: crypto.createHash("sha256").update(artifactBytes).digest("hex"),
+  };
+  const makeRun = (environment, runID) => ({
+    runID,
+    sourceCommit: subject.commit,
+    compiler: environment === "host" ? "Swift 6.4" : "Embedded Swift 6.4",
+    optimization: "release",
+    policyDigest,
+    board: environment === "host" ? "linux-host" : "esp32c6",
+    container: environment === "host" ? "axoloty-build@sha256:host" : "esp-idf@sha256:device",
+    corpusDigest: `corpus-${environment}`,
+    sourceSetDigest: `sources-${environment}`,
+    measurements: environment === "host" ? { binaryBytes: 12000 } : {
+      freeHeap: 400000,
+      minFreeHeap: 400000,
+      largestFreeBlock: 16000,
+      fragmentation: 0,
+      stackHighWater: 4000,
+      data: 1200,
+      bss: 8000,
+      iram: 2000,
+      flashImage: 800000,
+      hotPathAllocations: 0,
+    },
+    artifacts: [artifact],
+  });
+  const document = {
+    schemaVersion: 1,
+    gate: "g6-resource-evidence",
+    subject,
+    approval: { status: "approved", policyDigest },
+    environments: {
+      host: { runs: [makeRun("host", "host-1"), makeRun("host", "host-2")] },
+      esp32c6: {
+        implementation: "embedded-swift",
+        powerCycleRuns: 2,
+        sustainedWorkload: {
+          durationSeconds: 600,
+          messageRatePerSecond: 100,
+          measuredCapacityPerSecond: 125,
+        },
+        runs: [makeRun("esp32c6", "device-1"), makeRun("esp32c6", "device-2")],
+      },
+    },
+  };
+  const validate = value => validateResourceEvidence(value, {
+    root: evidenceRoot,
+    repositoryRoot: root,
+    policyPath,
+    subject,
+  });
+  return { document, evidenceRoot, policyPath, temporary, validate };
+}
+
+test("G6 resource evidence binds approval and measurements to the committed policy", t => {
+  const { document, validate } = resourceEvidenceFixture(t);
+  assert.deepEqual(validate(document).errors, []);
+
+  const wrongDigest = structuredClone(document);
+  wrongDigest.approval.policyDigest = "0".repeat(64);
+  assert.ok(validate(wrongDigest).errors.some(error => error.includes("exact approved resource policy")));
+
+  const missingMetric = structuredClone(document);
+  delete missingMetric.environments.esp32c6.runs[0].measurements.flashImage;
+  assert.ok(validate(missingMetric).errors.some(error => error.includes("flashImage must be a non-negative integer")));
+
+  const belowBudget = structuredClone(document);
+  belowBudget.environments.esp32c6.runs[0].measurements.freeHeap = 399999;
+  assert.ok(validate(belowBudget).errors.some(error => error.includes("freeHeap is below its approved minimum")));
+});
+
+test("G6 resource evidence requires independent runs and the approved implementation", t => {
+  const { document, validate } = resourceEvidenceFixture(t);
+  const duplicateRun = structuredClone(document);
+  duplicateRun.environments.esp32c6.runs[1].runID = "device-1";
+  assert.ok(validate(duplicateRun).errors.some(error => error.includes("runs must use independent runIDs")));
+
+  const surrogate = structuredClone(document);
+  surrogate.environments.esp32c6.implementation = "c-surrogate";
+  assert.ok(validate(surrogate).errors.some(error => error.includes("implementation must match the approved policy")));
+});
+
+test("G6 resource policy rejects invalid threshold ranges", t => {
+  const { document, evidenceRoot, policyPath, temporary } = resourceEvidenceFixture(t);
+  const policy = JSON.parse(fs.readFileSync(policyPath, "utf8"));
+  policy.environments.esp32c6.thresholds.freeHeap = { minimum: 500000, maximum: 400000 };
+  const invalidPolicyPath = path.join(temporary, "g6-resource-policy-invalid-fixture.json");
+  fs.writeFileSync(invalidPolicyPath, `${JSON.stringify(policy, null, 2)}\n`);
+  const digest = crypto.createHash("sha256").update(fs.readFileSync(invalidPolicyPath)).digest("hex");
+  document.approval.policyDigest = digest;
+  for (const environment of Object.values(document.environments)) {
+    for (const run of environment.runs ?? []) run.policyDigest = digest;
+  }
+  const report = validateResourceEvidence(document, {
+    root: evidenceRoot,
+    repositoryRoot: root,
+    policyPath: invalidPolicyPath,
+    subject: document.subject,
+  });
+  assert.ok(report.errors.some(error => error.includes("resource policy threshold is invalid: freeHeap")));
 });
