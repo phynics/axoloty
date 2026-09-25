@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
 import Foundation
+import Synchronization
 import AxolotyProcessLauncher
 
 #if canImport(Glibc)
@@ -9,55 +10,53 @@ import Glibc
 import Darwin
 #endif
 
-final class AxolotySignalLease: @unchecked Sendable {
+final class AxolotySignalLease: Sendable {
     private let release: @Sendable () -> Void
-    private var released = false
-    private let lock = NSLock()
+    private let released = Mutex(false)
 
     init(release: @escaping @Sendable () -> Void) { self.release = release }
 
     func cancel() {
-        lock.lock()
-        guard !released else {
-            lock.unlock()
-            return
-        }
-        released = true
-        lock.unlock()
+        guard released.withLock({ released in
+            guard !released else { return false }
+            released = true
+            return true
+        }) else { return }
         release()
     }
 
     deinit { cancel() }
 }
 
+// @unchecked: signal disposition pointers and dispatch-source lifecycle use the mutex.
 final class AxolotySignalMultiplexer: @unchecked Sendable {
     static let shared = AxolotySignalMultiplexer()
-    private let lock = NSLock()
-    private var callbacks: [UUID: @Sendable () -> Void] = [:]
-    private var handler: ServiceSignalHandler?
-    private var savedSignalDispositions: (int: UnsafeMutableRawPointer?, term: UnsafeMutableRawPointer?)?
+    private struct State {
+        var callbacks: [UUID: @Sendable () -> Void] = [:]
+        var handler: ServiceSignalHandler?
+        var savedSignalDispositions: (int: UnsafeMutableRawPointer?, term: UnsafeMutableRawPointer?)?
+    }
+    private let state = Mutex(State())
 
     func acquire(callback: @escaping @Sendable () -> Void) -> AxolotySignalLease {
         let id = UUID()
-        lock.lock()
-        callbacks[id] = callback
-        if handler == nil {
-            savedSignalDispositions = (
+        state.withLock { state in
+          state.callbacks[id] = callback
+          if state.handler == nil {
+            state.savedSignalDispositions = (
                 axoloty_capture_signal_disposition(SIGINT),
                 axoloty_capture_signal_disposition(SIGTERM)
             )
             let signalHandler = ServiceSignalHandler(onInterrupt: { [weak self] in self?.notify() })
             signalHandler.install()
-            handler = signalHandler
+            state.handler = signalHandler
+          }
         }
-        lock.unlock()
         return AxolotySignalLease { [weak self] in self?.release(id: id) }
     }
 
     private func notify() {
-        lock.lock()
-        let currentCallbacks = Array(callbacks.values)
-        lock.unlock()
+        let currentCallbacks = state.withLock { Array($0.callbacks.values) }
         currentCallbacks.forEach { $0() }
     }
 
@@ -68,19 +67,19 @@ final class AxolotySignalMultiplexer: @unchecked Sendable {
     #endif
 
     private func release(id: UUID) {
-        lock.lock()
-        callbacks.removeValue(forKey: id)
-        if callbacks.isEmpty, let handler {
-            self.handler = nil
+        state.withLock { state in
+            state.callbacks.removeValue(forKey: id)
+            guard state.callbacks.isEmpty, let handler = state.handler else { return }
+            state.handler = nil
+            let saved = state.savedSignalDispositions
+            state.savedSignalDispositions = nil
             handler.uninstall()
-            if let savedSignalDispositions {
-                _ = axoloty_restore_signal_disposition(SIGINT, savedSignalDispositions.int)
-                _ = axoloty_restore_signal_disposition(SIGTERM, savedSignalDispositions.term)
-                axoloty_release_signal_disposition(savedSignalDispositions.int)
-                axoloty_release_signal_disposition(savedSignalDispositions.term)
-                self.savedSignalDispositions = nil
+            if let saved {
+                _ = axoloty_restore_signal_disposition(SIGINT, saved.int)
+                _ = axoloty_restore_signal_disposition(SIGTERM, saved.term)
+                axoloty_release_signal_disposition(saved.int)
+                axoloty_release_signal_disposition(saved.term)
             }
         }
-        lock.unlock()
     }
 }

@@ -1,8 +1,9 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
 import Foundation
+import Synchronization
 
-final class AxolotyCommandArtifactStore: @unchecked Sendable {
+final class AxolotyCommandArtifactStore: Sendable {
     struct Artifact {
         let directory: URL
         let metadata: URL
@@ -21,9 +22,11 @@ final class AxolotyCommandArtifactStore: @unchecked Sendable {
     private let environmentKeys: [String]
     private let environmentValues: [String]
     private let environment: [String: String]
-    private let lock = NSLock()
-    private var nextIndex = 0
-    private var preparedInvocation = false
+    private struct State: Sendable {
+        var nextIndex = 0
+        var preparedInvocation = false
+    }
+    private let state = Mutex(State())
 
     init(
         root: URL,
@@ -51,16 +54,15 @@ final class AxolotyCommandArtifactStore: @unchecked Sendable {
         try validateRoot()
         let runDirectory = root.appending(path: runID, directoryHint: .isDirectory)
         try validateContainedPath(runDirectory)
-        lock.lock()
-        defer { lock.unlock() }
-        if !preparedInvocation {
+        return try state.withLock { state in
+          if !state.preparedInvocation {
             try prepareInvocation(startedAt: startedAt, runDirectory: runDirectory)
-            preparedInvocation = true
-        }
-        let index = nextIndex
-        nextIndex += 1
+            state.preparedInvocation = true
+          }
+          let index = state.nextIndex
+          state.nextIndex += 1
 
-        let node = Self.sanitize(context.node ?? "command")
+          let node = Self.sanitize(context.node ?? "command")
         let directory = invocationDirectory(runDirectory: runDirectory)
             .appending(path: "commands", directoryHint: .isDirectory)
             .appending(path: String(format: "%03d-%@", index + 1, node), directoryHint: .isDirectory)
@@ -106,7 +108,8 @@ final class AxolotyCommandArtifactStore: @unchecked Sendable {
         try Data([
             "[axoloty] phase=started run-id=\(runID) invocation-id=\(invocationID) node=\(context.node ?? "command") stage=\(context.stage)\n",
         ].joined().utf8).write(to: artifact.verifierLog, options: .atomic)
-        return artifact
+          return artifact
+        }
     }
 
     private func prepareInvocation(startedAt: Date, runDirectory: URL) throws {

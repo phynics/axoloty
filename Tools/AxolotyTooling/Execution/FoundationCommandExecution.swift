@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
 import Foundation
+import Synchronization
 import AxolotyProcessLauncher
 
 #if canImport(Glibc)
@@ -20,7 +21,7 @@ private let lifecyclePollErr = Int16(Darwin.POLLERR)
 #endif
 
 // swiftlint:disable type_body_length file_length function_body_length function_parameter_count optional_data_string_conversion
-final class FoundationCommandExecution: @unchecked Sendable {
+final class FoundationCommandExecution: Sendable {
     private let environment: [String: String]
     private let configuration: AxolotyCommandRunnerConfiguration
     private let cancellation: AxolotyCommandCancellation
@@ -664,12 +665,11 @@ private struct CommandExecutionState {
     let artifact: AxolotyCommandArtifactStore.Artifact
 }
 
-private final class CommandReaders: @unchecked Sendable {
+private final class CommandReaders: Sendable {
     private let group = DispatchGroup()
     private let stdout: CommandPipeReader
     private let stderr: CommandPipeReader
-    private let lock = NSLock()
-    private var cancelled = false
+    private let cancelled = Mutex(false)
 
     init(stdout: CommandPipeReader, stderr: CommandPipeReader) {
         self.stdout = stdout
@@ -686,18 +686,17 @@ private final class CommandReaders: @unchecked Sendable {
     }
 
     func cancel() {
-        lock.lock()
-        guard !cancelled else {
-            lock.unlock()
-            return
-        }
-        cancelled = true
-        lock.unlock()
+        guard cancelled.withLock({ cancelled in
+            guard !cancelled else { return false }
+            cancelled = true
+            return true
+        }) else { return }
         stdout.cancel()
         stderr.cancel()
     }
 }
 
+// @unchecked: file handles and descriptors are coordinated by the cancellation mutex and single reader task.
 private final class CommandPipeReader: @unchecked Sendable {
     private let handle: FileHandle
     private let descriptor: Int32
@@ -706,9 +705,11 @@ private final class CommandPipeReader: @unchecked Sendable {
     private let cancellationWriteDescriptor: Int32
     private let stream: AxolotyCommandOutputStream
     private let collector: AxolotyCommandOutputCollector
-    private let lock = NSLock()
-    private var cancelled = false
-    private var finished = false
+    private struct State {
+        var cancelled = false
+        var finished = false
+    }
+    private let state = Mutex(State())
 
     init(handle: FileHandle, stream: AxolotyCommandOutputStream, collector: AxolotyCommandOutputCollector) {
         self.handle = handle
@@ -722,18 +723,16 @@ private final class CommandPipeReader: @unchecked Sendable {
 
     func read() {
         defer {
-            lock.lock()
-            finished = true
+            state.withLock { state in
+            state.finished = true
             handle.closeFile()
             cancellationPipe.fileHandleForReading.closeFile()
             cancellationPipe.fileHandleForWriting.closeFile()
-            lock.unlock()
+            }
         }
         var buffer = [UInt8](repeating: 0, count: 4096)
         while true {
-            lock.lock()
-            let shouldStop = cancelled
-            lock.unlock()
+            let shouldStop = state.withLock { $0.cancelled }
             if shouldStop { break }
 
             var pollDescriptors = [
@@ -759,36 +758,31 @@ private final class CommandPipeReader: @unchecked Sendable {
     }
 
     func cancel() {
-        lock.lock()
-        guard !finished, !cancelled else {
-            lock.unlock()
-            return
+        state.withLock { state in
+            guard !state.finished, !state.cancelled else { return }
+            state.cancelled = true
+            var byte: UInt8 = 1
+            _ = withUnsafeBytes(of: &byte) { bytes in
+                #if canImport(Glibc)
+                Glibc.write(cancellationWriteDescriptor, bytes.baseAddress, 1)
+                #else
+                Darwin.write(cancellationWriteDescriptor, bytes.baseAddress, 1)
+                #endif
+            }
         }
-        cancelled = true
-        var byte: UInt8 = 1
-        _ = withUnsafeBytes(of: &byte) { bytes in
-            #if canImport(Glibc)
-            Glibc.write(cancellationWriteDescriptor, bytes.baseAddress, 1)
-            #else
-            Darwin.write(cancellationWriteDescriptor, bytes.baseAddress, 1)
-            #endif
-        }
-        lock.unlock()
     }
 }
 
-private final class FoundationProcessHandle: @unchecked Sendable {
+private final class FoundationProcessHandle: Sendable {
     let processIdentifier: Int32
-    private let lock = NSLock()
-    private var status: Int32?
+    private let status = Mutex<Int32?>(nil)
 
     init(processIdentifier: Int32) {
         self.processIdentifier = processIdentifier
     }
 
     var isRunning: Bool {
-        lock.lock()
-        defer { lock.unlock() }
+        status.withLock { status in
         if status != nil { return false }
         var childStatus: Int32 = 0
         let result = waitpid(processIdentifier, &childStatus, WNOHANG)
@@ -797,16 +791,12 @@ private final class FoundationProcessHandle: @unchecked Sendable {
             return false
         }
         return result == 0
+        }
     }
 
     @discardableResult
     func waitUntilExit(timeoutSeconds: TimeInterval) -> Bool {
-        lock.lock()
-        if status != nil {
-            lock.unlock()
-            return true
-        }
-        lock.unlock()
+        if status.withLock({ $0 != nil }) { return true }
 
         let deadline = DispatchTime.now().uptimeNanoseconds
             + UInt64(max(0, timeoutSeconds) * 1_000_000_000)
@@ -820,9 +810,9 @@ private final class FoundationProcessHandle: @unchecked Sendable {
     }
 
     var terminationStatus: Int32 {
-        lock.lock()
-        defer { lock.unlock() }
-        guard let status else { return 70 }
-        return axoloty_process_exit_code(status)
+        status.withLock { status in
+            guard let status else { return 70 }
+            return axoloty_process_exit_code(status)
+        }
     }
 }

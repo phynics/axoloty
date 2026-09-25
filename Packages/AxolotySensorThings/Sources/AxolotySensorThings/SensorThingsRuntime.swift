@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
 import Axoloty
+import Synchronization
 import AxolotyObjectModel
 import AxolotySensorThingsModel
 import AxolotyProtocol
@@ -256,10 +257,10 @@ private actor SensorThingsDiagnosticSink {
     }
 }
 
-private final class SensorThingsTransactionToken: @unchecked Sendable {
-    private var active = true
-    func invalidate() { active = false }
-    var isActive: Bool { active }
+private final class SensorThingsTransactionToken: Sendable {
+    private let active = Mutex(true)
+    func invalidate() { active.withLock { $0 = false } }
+    var isActive: Bool { active.withLock { $0 } }
 }
 
 private struct SensorThingsSourceRegistration: Sendable {

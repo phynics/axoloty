@@ -2,18 +2,22 @@
 
 import AxolotyInspectorRuntime
 import Foundation
+import Synchronization
 
 /// A ``InspectorSignalHandling`` implementation using `DispatchSourceSignal`.
 ///
 /// Signals are intercepted via a dispatch source on the main queue, so the
 /// handler runs on the main actor without triggering process termination.
-final class InspectorSignalHandler: InspectorSignalHandling, @unchecked Sendable {
-    private let lock = NSLock()
-    private var _interrupted = false
-    private var sources: [DispatchSourceProtocol] = []
+final class InspectorSignalHandler: InspectorSignalHandling, Sendable {
+    // @unchecked: DispatchSourceProtocol is non-Sendable; this state is accessed only through its mutex.
+    private struct State: @unchecked Sendable {
+        var interrupted = false
+        var sources: [DispatchSourceProtocol] = []
+    }
+    private let state = Mutex(State())
 
     var wasInterrupted: Bool {
-        lock.withLock { _interrupted }
+        state.withLock { $0.interrupted }
     }
 
     func install() {
@@ -32,10 +36,10 @@ final class InspectorSignalHandler: InspectorSignalHandling, @unchecked Sendable
         }
         termSource.resume()
 
-        sources = [intSource, termSource]
+        state.withLock { $0.sources = [intSource, termSource] }
     }
 
     private func interrupt() {
-        lock.withLock { _interrupted = true }
+        state.withLock { $0.interrupted = true }
     }
 }

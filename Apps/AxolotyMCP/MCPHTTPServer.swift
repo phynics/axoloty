@@ -314,6 +314,7 @@ public actor MCPHTTPServer {
 /// Thin NIO adapter that converts between NIO HTTP types and the
 /// framework-agnostic `HTTPRequest`/`HTTPResponse` types, delegating all
 /// logic to ``MCPHTTPServer``.
+// @unchecked: NIO invokes handler state access on its owning channel event loop.
 private final class HTTPHandler: ChannelInboundHandler, @unchecked Sendable {
     typealias InboundIn = HTTPServerRequestPart
     typealias OutboundOut = HTTPServerResponsePart
