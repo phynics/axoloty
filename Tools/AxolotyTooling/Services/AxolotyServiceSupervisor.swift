@@ -389,7 +389,20 @@ public final class ServiceSignalHandler: ServiceSignalHandling, @unchecked Senda
             state.savedDispositions = nil
             return (currentSources, savedDispositions)
         }
-        currentSources.forEach { $0.cancel() }
+        // Cancelling a dispatch signal source releases libdispatch's own
+        // handler asynchronously. Restoring the saved dispositions before that
+        // teardown finishes lets libdispatch reinstall SIG_DFL afterwards, so
+        // the restored disposition is lost. A cancel handler runs only after
+        // cancellation has completed, so wait for every source to enter one.
+        if !currentSources.isEmpty {
+            let teardown = DispatchGroup()
+            for source in currentSources {
+                teardown.enter()
+                source.setCancelHandler { teardown.leave() }
+                source.cancel()
+            }
+            teardown.wait()
+        }
         if let savedDispositions {
             _ = axoloty_restore_signal_disposition(SIGINT, savedDispositions.int)
             _ = axoloty_restore_signal_disposition(SIGTERM, savedDispositions.term)
