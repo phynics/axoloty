@@ -144,6 +144,24 @@ struct MQTTBindingAdapterSeamTests {
         #expect(client.unsubscribeTopics().filter { $0 == "rollback" }.count == 2)
     }
 
+    @Test("MQTT retains its external-route exclusions before subscribing")
+    func mqttRejectsCarrierSpecificExternalRoutes() async throws {
+        let delegate = RuntimeMQTTDelegate()
+        let client = FakeMQTTClient(delegate: delegate, connectsImmediately: true)
+        let binding = try makeBinding(client: client, delegate: delegate)
+        try await binding.start { _ in }
+
+        for route in ["wild/+", "wild/#", "quoted/\"topic", #"backslash/\topic"#] {
+            _ = try ExternalIoRoute(route)
+            await expectInvalidRoute {
+                try await binding.perform(.externalRouteActivated(transition(route)))
+            }
+        }
+
+        #expect(client.subscribeTopics().isEmpty)
+        await binding.stop()
+    }
+
     @Test("a completion from an old transport epoch cannot resurrect an external route")
     func staleEpochDoesNotResurrectRoute() async throws {
         let delegate = RuntimeMQTTDelegate()
@@ -224,6 +242,23 @@ struct MQTTBindingAdapterSeamTests {
             }
         } catch {
             Issue.record("expected AxolotyError.network, got \(error)", sourceLocation: sourceLocation)
+        }
+    }
+
+    private func expectInvalidRoute(
+        _ operation: () async throws -> Void,
+        sourceLocation: SourceLocation = #_sourceLocation
+    ) async {
+        do {
+            try await operation()
+            Issue.record("expected route validation failure", sourceLocation: sourceLocation)
+        } catch let error as AxolotyError {
+            guard case .invalidArgument(argument: "route", reason: _) = error else {
+                Issue.record("expected route invalidArgument, got \(error)", sourceLocation: sourceLocation)
+                return
+            }
+        } catch {
+            Issue.record("expected AxolotyError.invalidArgument, got \(error)", sourceLocation: sourceLocation)
         }
     }
 }

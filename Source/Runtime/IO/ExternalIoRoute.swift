@@ -6,35 +6,31 @@ import AxolotyWire
 
 /// A validated exact route for an external IO source.
 ///
-/// The grammar is the validated transport's: bounded UTF-8, no empty segments,
-/// and none of the characters MQTT reserves for wildcards or quoting. It is
-/// deliberately no laxer than that. A route accepted here must be publishable
-/// on the transport Axoloty validates against, and a stricter-than-necessary
-/// rule stays safe if a future carrier permits more.
+/// The portable grammar is carrier-neutral: bounded UTF-8, no control scalars,
+/// and no empty slash-separated segments. Each transport applies its own
+/// additional route rules when it uses this value.
 public struct ExternalIoRoute: Sendable, Hashable {
     let route: String
     let routeBytes: BoundedEncodedText<256>
 
     /// Creates an exact external route.
     ///
-    /// - Parameter route: A non-wildcard route with non-empty segments.
-    /// - Throws: ``AxolotyError`` when the route is not a bounded exact route.
-    public init(_ route: String) throws {
+    /// - Parameter route: A bounded exact key with non-empty path segments.
+    /// - Throws: ``AxolotyError`` when the route is empty, oversized, contains
+    ///   a control scalar, or has an empty slash-separated segment.
+    public init(_ route: String) throws(AxolotyError) {
         let bytes = Array(route.utf8)
         guard !bytes.isEmpty, bytes.count <= WireBufferConfig.maxTopicLength else {
             throw AxolotyError.invalidArgument(argument: "route", reason: "must contain 1...256 UTF-8 bytes")
+        }
+        guard !route.unicodeScalars.contains(where: { $0.properties.generalCategory == .control }) else {
+            throw AxolotyError.invalidArgument(argument: "route", reason: "must not contain control characters")
         }
         guard bytes.first != 0x2F, bytes.last != 0x2F else {
             throw AxolotyError.invalidArgument(argument: "route", reason: "must not start or end with '/'")
         }
         var previousWasSeparator = false
         for byte in bytes {
-            guard byte >= 0x20, byte != 0x22, byte != 0x23, byte != 0x2B, byte != 0x5C else {
-                throw AxolotyError.invalidArgument(
-                    argument: "route",
-                    reason: "must not contain control characters, quotes, backslashes, '+' or '#'"
-                )
-            }
             if byte == 0x2F {
                 guard !previousWasSeparator else {
                     throw AxolotyError.invalidArgument(argument: "route", reason: "must not contain empty segments")

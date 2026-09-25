@@ -8,14 +8,28 @@ import AxolotyTestSupport
 import AxolotyWire
 
 extension AxolotyRuntimeTests {
-    @Test("external MQTT routes accept bounded exact topics")
+    @Test("external routes accept bounded exact carrier-neutral keys")
     func externalRouteValidationAcceptsExactTopic() throws {
         let route = try ExternalIoRoute("plant/line-7/temperature")
         let sameRoute = try ExternalIoRoute("plant/line-7/temperature")
         #expect(route == sameRoute)
     }
 
-    @Test("external MQTT routes fit three UUIDs plus application routing")
+    @Test("external routes accept characters restricted by the MQTT adapter")
+    func externalRouteValidationAcceptsCarrierSpecificCharacters() throws {
+        for key in ["wild/+", "wild/#", "quoted/\"topic", #"backslash/\topic"#] {
+            let route = try ExternalIoRoute(key)
+            route.routeBytes.withBytes { bytes in
+                let expected = Array(key.utf8)
+                #expect(bytes.length == expected.count)
+                for index in expected.indices {
+                    #expect(bytes.byte(at: index) == expected[index])
+                }
+            }
+        }
+    }
+
+    @Test("external routes fit three UUIDs plus application routing")
     func externalRouteValidationAcceptsThreeUUIDs() throws {
         let first = "11111111-1111-4111-8111-111111111111"
         let second = "22222222-2222-4222-8222-222222222222"
@@ -27,7 +41,7 @@ extension AxolotyRuntimeTests {
         _ = try ExternalIoRoute(topic)
     }
 
-    @Test("external MQTT routes retain metadata without encoded-size inflation")
+    @Test("external routes retain metadata without encoded-size inflation")
     func externalRouteMetadataUsesExactBytes() throws {
         let route = try ExternalIoRoute("plant/line-7/temperature")
         route.routeBytes.withBytes { bytes in
@@ -35,11 +49,11 @@ extension AxolotyRuntimeTests {
         }
     }
 
-    @Test("external MQTT routes reject unsafe metadata characters, invalid levels, and overflow")
+    @Test("external routes reject controls, invalid levels, and overflow")
     func externalRouteValidationRejectsInvalidTopics() {
         for topic in [
-            "", "/leading", "trailing/", "double//slash", "wild/+", "wild/#",
-            "nul\0topic", "quoted/\"topic", #"backslash/\topic"#, "control/\ntopic",
+            "", "/leading", "trailing/", "double//slash",
+            "nul\0topic", "control/\ntopic", "del/\u{7F}", "c1/\u{0085}",
         ] {
             #expect(throws: AxolotyError.self) { _ = try ExternalIoRoute(topic) }
         }

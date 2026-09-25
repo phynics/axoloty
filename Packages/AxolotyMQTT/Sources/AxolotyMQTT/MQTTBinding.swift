@@ -226,8 +226,10 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
                 throw AxolotyError.network(error: error, reason: "MQTT publication failed")
             }
         case .externalRouteActivated(let transition):
+            try Self.validateExternalRoute(transition.route)
             try await activateExternalRoute(transition.route)
         case .externalRouteDeactivated(let transition):
+            try Self.validateExternalRoute(transition.route)
             try await deactivateExternalRoute(transition.route)
         }
     }
@@ -297,6 +299,29 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
             activeNamespace: namespace,
             maximumProfileTopicLength: maximumProfileTopicBytes
         )
+    }
+
+    /// Applies MQTT's wildcard restrictions and the legacy quote/backslash
+    /// restrictions formerly applied by ``ExternalIoRoute``. The portable value
+    /// can contain these characters for carriers that allow them; Axoloty's
+    /// MQTT adapter retains its existing route policy at use time.
+    ///
+    /// - Parameter route: UTF-8 bytes for an exact external MQTT topic.
+    /// - Throws: ``AxolotyError/invalidArgument(argument:reason:)`` if the
+    ///   bytes are not a bounded, exact route admitted by this MQTT adapter.
+    private static func validateExternalRoute(_ route: [UInt8]) throws(AxolotyError) {
+        guard let string = String(bytes: route, encoding: .utf8) else {
+            throw AxolotyError.invalidArgument(argument: "route", reason: "must be valid UTF-8")
+        }
+        _ = try ExternalIoRoute(string)
+        for byte in route {
+            guard byte != 0x22, byte != 0x23, byte != 0x2B, byte != 0x5C else {
+                throw AxolotyError.invalidArgument(
+                    argument: "route",
+                    reason: "is not admissible by the MQTT external-route policy"
+                )
+            }
+        }
     }
 
     /// Determines what ``activateExternalRoute(_:)`` must do for one exact
