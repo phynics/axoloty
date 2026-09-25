@@ -7,6 +7,6 @@ let bytes = Array(payload.utf8)
 let result = bytes.withUnsafeBufferPointer { buffer -> String in
     guard let baseAddress = buffer.baseAddress else { return "empty" }
     let reader = WireReader(bytes: baseAddress, length: buffer.count)
-    return reader.readRaw("object") == nil ? "missing" : "found"
+    return reader.readField("object") == nil ? "missing" : "found"
 }
 print("Result: \(result)")
