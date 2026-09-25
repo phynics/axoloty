@@ -293,30 +293,40 @@ storage is owned.
 
 ### `@unchecked Sendable` inventory
 
-`RuntimeModuleRegistration` was the one unnecessary production annotation
-removed by this change. Its stored lifecycle callbacks are already
-`@Sendable`, so ordinary structural `Sendable` conformance is sufficient.
-Remaining annotations are retained only where the implementation relies on
-external synchronization, framework confinement, or test-only synchronization
-that the compiler cannot inspect:
+`RuntimeModuleRegistration` and the tooling state holders listed below use
+ordinary structural `Sendable` conformance. The tooling state is protected by
+`Synchronization.Mutex`; mutex state is now explicit and checked by the
+compiler. `InspectorSignalHandler` and `SensorThingsTransactionToken` also use
+checked `Sendable` state. Converted tooling declarations are
+`ManagedProcessSupervisor`, `FoundationCommandExecution`, `CommandReaders`,
+`FoundationProcessHandle`, `AxolotySignalLease`, `AxolotyCommandOutputCollector`,
+`AxolotyCommandCancellation`, `AxolotyCancellationObservation`,
+`AxolotyCommandArtifactStore`, `AxolotyCommandProgressTracker`,
+`AxolotyContinuousProgressRenderer`, `AxolotyInteractiveProgressRenderer`, and
+`FoundationResourceLease`. `FoundationProcessRunner`, `ServiceSignalHandler`,
+`CommandPipeReader`, `AxolotySignalMultiplexer`, and
+`DispatchOverrunCancellation` retain justified unchecked conformances because
+their state includes non-Sendable OS or framework handles.
+
+Remaining production annotations are retained only where a non-Sendable
+framework or OS value cannot be represented as checked state, or where a
+framework contract provides confinement that Swift cannot inspect:
 
 | Declaration(s) | Classification and justification |
 |---|---|
-| `ManagedProcessSupervisor`, `FoundationProcessRunner`, `ServiceSignalHandler` (`Tools/AxolotyTooling/Services/AxolotyServiceSupervisor.swift`) | Needed. These host service objects coordinate `Process`, signal-source, and supervisor state across callbacks; the implementations serialize mutable state with their lock/queue or dispatch-source lifecycle. |
-| `FoundationCommandExecution`, `CommandReaders`, `CommandPipeReader`, `FoundationProcessHandle` (`Tools/AxolotyTooling/Execution/FoundationCommandExecution.swift`) | Needed. Process and pipe callbacks run concurrently; shared state is guarded by locks and reader completion coordination. |
-| `AxolotySignalLease`, `AxolotySignalMultiplexer` (`Tools/AxolotyTooling/Execution/CommandSignals.swift`) | Needed. These wrap process-global signal disposition and lease state behind synchronized operations. |
-| `AxolotyCommandOutputCollector` (`Tools/AxolotyTooling/Execution/CommandOutput.swift`), `AxolotyCommandCancellation`, `AxolotyCancellationObservation` (`.../CommandCancellation.swift`), and `AxolotyCommandArtifactStore` (`.../CommandArtifacts.swift`) | Needed. Each exposes a small thread-safe reference handle whose mutable state is synchronized and shared among command execution callbacks. |
-| `AxolotyCommandProgressTracker`, `AxolotyContinuousProgressRenderer`, `AxolotyInteractiveProgressRenderer` (`Tools/AxolotyTooling/Progress/`) | Needed. These are concurrent command-progress handles; their mutable progress/render state is serialized internally. |
-| `FoundationResourceLease` (`Tools/AxolotyTooling/Leases/AxolotyResourceLease.swift`), `DispatchOverrunCancellation` (`Tools/AxolotyTooling/Check/AxolotyCheckEvents.swift`) | Needed. These bridge OS lease/dispatch cancellation handles across task boundaries and synchronize their lifecycle through the underlying OS primitive. |
-| `RuntimeMQTTClient`, `MQTTBinding`, `RuntimeMQTTDelegate` (`Packages/AxolotyMQTT/Sources/`) | Needed. MQTT callbacks and async runtime operations share transport lifecycle state. `RuntimeMQTTClient` and `MQTTBinding` guard mutable state with `NIOLock`; the delegate only forwards owned callback values through the synchronized binding seam. |
-| `SensorThingsTransactionToken` (`Packages/AxolotySensorThings/Sources/AxolotySensorThings/SensorThingsRuntime.swift`) | Needed. It is the shared invalidation flag for a configuration transaction; `SensorThingsConfiguration` checks it synchronously while the builder commits or rolls back, and runtime closures may observe invalidation from another task. |
-| `HTTPHandler` (`Apps/AxolotyMCP/MCPHTTPServer.swift`), `BrokerConnectionHandler` (`Tests/AxolotyTestBroker/BrokerConnectionHandler.swift`) | Needed for NIO's `ChannelInboundHandler` contract. Handler state is channel/event-loop confined; it does not permit arbitrary concurrent mutation. |
-| `InspectorSignalHandler` (`Apps/axoloty-inspect/InspectorSignalHandler.swift`) | Needed. The signal callback shares its one-shot signal state with the inspector shutdown path under the handler's synchronization. |
+| `FoundationProcessRunner` (`Tools/AxolotyTooling/Services/AxolotyServiceSupervisor.swift`) | Needed. Foundation `Process` is non-Sendable; its reference is published and read under `Synchronization.Mutex`. |
+| `ServiceSignalHandler` (`Tools/AxolotyTooling/Services/AxolotyServiceSupervisor.swift`) | Needed. Dispatch signal sources and saved POSIX disposition pointers are non-Sendable; their lifecycle and interruption state are stored behind `Synchronization.Mutex`. |
+| `CommandPipeReader` (`Tools/AxolotyTooling/Execution/FoundationCommandExecution.swift`) | Needed. Foundation file handles and pipe descriptors are non-Sendable; one reader owns reads while the mutex coordinates cancellation and closure. |
+| `AxolotySignalMultiplexer` (`Tools/AxolotyTooling/Execution/CommandSignals.swift`) | Needed. Process signal-disposition pointers and the dispatch-source lifecycle are stored behind `Synchronization.Mutex`; callbacks are `@Sendable`. |
+| `DispatchTimer` and `DispatchOverrunCancellation` (`Tools/AxolotyTooling/Check/AxolotyCheckEvents.swift`) | Needed. GCD does not mark dispatch sources `Sendable`; the unchecked wrapper is exclusively owned by the timer cancellation mutex. |
+| `InspectorSignalHandler.State` (`Apps/axoloty-inspect/InspectorSignalHandler.swift`) | Needed. GCD signal sources are non-Sendable; the enclosing handler accesses this state only through `Synchronization.Mutex`. |
+| `RuntimeMQTTClient`, `MQTTBinding`, `RuntimeMQTTDelegate` (`Packages/AxolotyMQTT/Sources/`) | Needed. `RuntimeMQTTClient` stores MQTTNIO client and event-loop objects with their own concurrency contracts. `MQTTBinding` serializes transport state with `NIOLock`; the delegate serializes callbacks, continuations, and timeout tasks with `NIOLock`. |
+| `HTTPHandler` (`Apps/AxolotyMCP/MCPHTTPServer.swift`), `BrokerConnectionHandler` (`Tests/AxolotyTestBroker/BrokerConnectionHandler.swift`) | Needed for NIO's `ChannelInboundHandler` contract. Handler state is confined to its channel event loop. |
 | `DeadlineResultBox`, `MCPProcessExit`, `MCPExecutableOutputDrain`, `ConfigurationBox`, `OneShotPhase`, `FakeSignalHandler`, `CompletionSignal`, `FailureBox`, `RuntimeTestIteratorBox`, `RuntimeTestDiagnosticIteratorBox`, `LargeStackResultBox`, and `HostTraceTransport` (`Apps/` and `Tests/`) | Test-only. These bridge test results, iterators, or protocol transports between the test task and a callback/task. Their state is either lock-protected, one-shot, or used under the test's explicit completion/ownership protocol; none is a shipped API. |
 | `TimingRecordingRunner`, `TimingRecordingClock`, `TimingRecordingWorkspace`, `TimingSequenceCacheReader`, `ConcurrentPipeCapture`, its nested `State`, `FakeProcessRunner`, `FakePortProbe`, `FakeTempDirProvider`, `DevFakeProcessRunner`, `DevInjectedSignalHandler`, `DevInjectedSignalSource`, `DevStartupSignalPortProbe`, `DevTempDirProvider`, `AnyRunnerSource`, `ExitCodeBox`, `EmissionRecorder`, `MutableClock`, `RecordingRunner`, `RecordingFileSystem`, `RecordingIntegrationRunner`, `RecordingSequenceRunner`, `RecordingEventSink`, `ObservedLines`, `StreamRecorder`, `OutputRecorder`, `CheckTestClock`, `ManualOverrunTask`, `ManualOverrunScheduler`, `CheckEventRecorder`, `OverrunFiringRunner`, `DeadlineRecordingRunner`, `OutputEvents`, `CommandResultBox`, `LockedCounter`, `RecordingLease`, `RecordingLeaseManager`, `AdvancingLeaseManager` (`Tools/AxolotyToolingTests/`) | Test-only. These mutable fakes/recorders are shared by concurrent tests and callbacks. Each is intentionally a synchronization fixture (typically lock-protected or test-owned until its awaited completion); replacing them with actors would make synchronous test protocols and deterministic clock/runner controls asynchronous. |
 | `FrameRecorder`, `ErrorRecorder`, `FakeMQTTClient` (`Packages/AxolotyMQTT/Tests/`), `BrokerClient`, `MessageCollector` (`Tests/AxolotyTestBrokerTests/`), `AsyncWaitResultBox`, `AsyncStreamBox` (`Tests/AxolotyTestSupport/`) | Test-only. They capture callback results/stream iteration across concurrency boundaries and provide the corresponding lock or single-consumer handoff. |
 
 The test-only fakes are intentionally not promoted into production helpers.
-The remaining production conformances describe synchronization or framework
-confinement boundaries; removing `@unchecked` from those requires changing
-the owner model, not changing only the declaration.
+Every remaining production unchecked conformance has a one-line reason beside
+its declaration. Removing one requires replacing its non-Sendable owner or
+framework boundary, not changing only the declaration.

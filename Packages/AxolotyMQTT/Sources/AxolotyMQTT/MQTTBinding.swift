@@ -117,6 +117,7 @@ public struct MQTTBindingConfiguration: Sendable, Equatable {
 ///
 /// The binding owns only transport concerns. It copies every callback payload
 /// before handing it to ``AxolotyRuntime`` and never parses protocol families.
+// @unchecked: transport state is serialized by NIOLock; the MQTT adapter and delegate are Sendable.
 public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
     private let lock = NIOLock()
     private let client: any RuntimeMQTTClientAdapter
@@ -503,6 +504,7 @@ struct ExternalRouteRecord: Sendable, Equatable {
     let epoch: UInt64
 }
 
+// @unchecked: callback state, continuations, and timeout tasks are accessed under NIOLock.
 final class RuntimeMQTTDelegate: RuntimeMQTTClientDelegate, @unchecked Sendable {
     private let lock = NIOLock()
     private var receive: (@Sendable (String, [UInt8], UInt32) -> Void)?

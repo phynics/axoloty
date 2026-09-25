@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
 import Foundation
+import Synchronization
 
 /// Decides which parsed progress transitions deserve visible output.
 ///
@@ -9,7 +10,7 @@ import Foundation
 /// the renderer: phase or target changes, test failures, sensible progress
 /// intervals, and fallback heartbeats when no parser has produced progress.
 /// Rendering frequency is intentionally lower than parser frequency.
-public final class AxolotyCommandProgressTracker: @unchecked Sendable {
+public final class AxolotyCommandProgressTracker: Sendable {
     private let node: String?
     private let stage: String
     private let commandLabel: String
@@ -21,13 +22,15 @@ public final class AxolotyCommandProgressTracker: @unchecked Sendable {
     /// Seconds before a silent command earns a fallback status.
     private let fallbackInterval: TimeInterval
 
-    private let lock = NSLock()
-    private var parsers: [any AxolotyCommandProgressParsing] = []
-    private var lastEmitted: AxolotyCommandProgress?
-    private var lastEmittedAt: TimeInterval = 0
-    private var lastActivityAt: TimeInterval = 0
-    private var started = false
-    private var completed = false
+    private struct State {
+        var parsers: [any AxolotyCommandProgressParsing] = []
+        var lastEmitted: AxolotyCommandProgress?
+        var lastEmittedAt: TimeInterval = 0
+        var lastActivityAt: TimeInterval = 0
+        var started = false
+        var completed = false
+    }
+    private let state = Mutex(State())
 
     /// Creates a progress tracker for one command.
     ///
@@ -59,18 +62,17 @@ public final class AxolotyCommandProgressTracker: @unchecked Sendable {
         self.now = now
         self.minimumUpdateInterval = minimumUpdateInterval
         self.fallbackInterval = fallbackInterval
-        parsers = [SwiftBuildProgressParser(), SwiftTestingProgressParser()]
-            .filter { $0.supports(command) }
+        state.withLock { $0.parsers = [SwiftBuildProgressParser(), SwiftTestingProgressParser()].filter { $0.supports(command) } }
     }
 
     /// Renders the permanent command-start header.
     public func start() {
-        lock.lock()
-        defer { lock.unlock() }
-        guard !started, !completed else { return }
-        started = true
-        lastEmittedAt = now()
-        emitLine(renderer.commandStarted(node: node, stage: stage, command: commandLabel))
+        state.withLock { state in
+            guard !state.started, !state.completed else { return }
+            state.started = true
+            state.lastEmittedAt = now()
+            emitLine(renderer.commandStarted(node: node, stage: stage, command: commandLabel))
+        }
     }
 
     /// Consumes one complete output line.
@@ -82,20 +84,18 @@ public final class AxolotyCommandProgressTracker: @unchecked Sendable {
     ///   - line: One complete logical line without its terminating newline.
     ///   - stream: The stream the line arrived on.
     public func consumeLine(_ line: String, stream: AxolotyCommandOutputStream) {
-        var latest: AxolotyCommandProgress?
-        for index in parsers.indices {
-            var parser = parsers[index]
-            if let progress = parser.consume(line: line, stream: stream) {
-                latest = progress
+        state.withLock { state in
+            var latest: AxolotyCommandProgress?
+            for index in state.parsers.indices {
+                var parser = state.parsers[index]
+                if let progress = parser.consume(line: line, stream: stream) { latest = progress }
+                state.parsers[index] = parser
             }
-            parsers[index] = parser
+            guard let latest else { return }
+            state.started = true
+            state.lastActivityAt = now()
+            considerEmitting(latest, state: &state)
         }
-        guard let latest else { return }
-        lock.lock()
-        defer { lock.unlock() }
-        started = true
-        lastActivityAt = now()
-        considerEmitting(latest)
     }
 
     /// Renders the fallback status when the command runs without parsed
@@ -103,15 +103,15 @@ public final class AxolotyCommandProgressTracker: @unchecked Sendable {
     ///
     /// - Parameter elapsed: Elapsed wall-clock seconds.
     public func fallback(elapsed: TimeInterval) {
-        lock.lock()
-        defer { lock.unlock() }
-        guard !completed else { return }
-        started = true
+        state.withLock { state in
+        guard !state.completed else { return }
+        state.started = true
         let timestamp = now()
-        if timestamp - max(lastEmittedAt, lastActivityAt) >= fallbackInterval {
+        if timestamp - max(state.lastEmittedAt, state.lastActivityAt) >= fallbackInterval {
             emitLine(renderer.fallback(node: node, stage: stage, command: commandLabel, elapsed: elapsed))
-            lastEmittedAt = timestamp
-            lastActivityAt = timestamp
+            state.lastEmittedAt = timestamp
+            state.lastActivityAt = timestamp
+        }
         }
     }
 
@@ -122,12 +122,12 @@ public final class AxolotyCommandProgressTracker: @unchecked Sendable {
     ///   - elapsed: Elapsed wall-clock seconds.
     ///   - reason: A short interruption reason, when applicable.
     public func complete(success: Bool, elapsed: TimeInterval, reason: String? = nil) {
-        lock.lock()
-        defer { lock.unlock() }
-        guard !completed else { return }
-        completed = true
-        started = true
-        emitLine(renderer.commandCompleted(node: node, stage: stage, success: success, elapsed: elapsed, reason: reason))
+        state.withLock { state in
+            guard !state.completed else { return }
+            state.completed = true
+            state.started = true
+            emitLine(renderer.commandCompleted(node: node, stage: stage, success: success, elapsed: elapsed, reason: reason))
+        }
     }
 
     /// Emits permanent failure text, such as a diagnostic block, without
@@ -135,16 +135,12 @@ public final class AxolotyCommandProgressTracker: @unchecked Sendable {
     ///
     /// - Parameter text: The failure text to emit.
     public func emitFailureText(_ text: String) {
-        lock.lock()
-        defer { lock.unlock() }
-        emitLine(renderer.permanent(text))
+        state.withLock { _ in emitLine(renderer.permanent(text)) }
     }
 
     /// Marks the command as finished without rendering a completion line.
     public func abandon() {
-        lock.lock()
-        defer { lock.unlock() }
-        completed = true
+        state.withLock { $0.completed = true }
     }
 
     /// Every Swift Testing test name reported failed or as having recorded an
@@ -152,23 +148,23 @@ public final class AxolotyCommandProgressTracker: @unchecked Sendable {
     /// command carried no Swift Testing parser (it did not run tests) or none
     /// failed.
     public func failedTestNames() -> Set<String> {
-        lock.lock()
-        defer { lock.unlock() }
-        for parser in parsers {
+        state.withLock { state in
+        for parser in state.parsers {
             if let testing = parser as? SwiftTestingProgressParser { return testing.failedTestNames }
         }
         return []
+        }
     }
 
-    private func considerEmitting(_ progress: AxolotyCommandProgress) {
+    private func considerEmitting(_ progress: AxolotyCommandProgress, state: inout State) {
         let timestamp = now()
-        let sinceLast = timestamp - lastEmittedAt
-        let previous = lastEmitted
-        lastEmitted = progress
+        let sinceLast = timestamp - state.lastEmittedAt
+        let previous = state.lastEmitted
+        state.lastEmitted = progress
 
         guard let previous else {
             emitLine(renderer.progress(progress, node: node, stage: stage, elapsed: 0))
-            lastEmittedAt = timestamp
+            state.lastEmittedAt = timestamp
             return
         }
         let failedIncreased = (progress.counters?.failed ?? 0) > (previous.counters?.failed ?? 0)
@@ -176,14 +172,14 @@ public final class AxolotyCommandProgressTracker: @unchecked Sendable {
         let targetChanged = progress.target != previous.target
         if phaseChanged || targetChanged || failedIncreased || progress.phase == .completed {
             emitLine(renderer.progress(progress, node: node, stage: stage, elapsed: 0))
-            lastEmittedAt = timestamp
+            state.lastEmittedAt = timestamp
             return
         }
         guard sinceLast >= minimumUpdateInterval else { return }
         if Self.crossedProgressInterval(previous: previous, current: progress)
             || progress.counters?.passed != previous.counters?.passed {
             emitLine(renderer.progress(progress, node: node, stage: stage, elapsed: 0))
-            lastEmittedAt = timestamp
+            state.lastEmittedAt = timestamp
         }
     }
 
