@@ -3,11 +3,30 @@
 import AxolotyWire
 import CAxolotyZenoh
 
+/// An opaque handle for one independently managed session subscription.
+///
+/// The value is only a token. It owns no Zenoh resource and must be treated as
+/// stale after unsubscribe or session close.
+public struct ZenohSubscription: Equatable {
+    fileprivate let handle: OpaquePointer
+}
+
+/// The result of declaring one bounded session subscription.
+public enum ZenohSubscriptionResult: Equatable {
+    /// A live subscription handle was created.
+    case subscribed(ZenohSubscription)
+    /// The façade rejected the declaration.
+    case result(ZenohResult)
+}
+
 /// A synchronous owner for one C façade session handle.
 ///
 /// Session lifecycle, subscription, and polling calls must be serialized. The
 /// façade registry is fixed and intentionally does not provide locks.
 public struct ZenohSession: ~Copyable {
+    /// The façade's fixed number of subscriber slots per session.
+    public static let maximumSubscriberCount = Int(AXOLOTY_ZENOH_MAX_SUBSCRIBERS)
+
     private var handle: OpaquePointer?
 
     /// Creates a closed session value.
@@ -92,41 +111,54 @@ public struct ZenohSession: ~Copyable {
         }
     }
 
-    /// Subscribes to one canonical key expression.
+    /// Subscribes to one canonical key expression in an independent queue slot.
     ///
     /// - Parameter key: The bounded key expression to receive.
-    /// - Returns: A structured façade result.
-    public func subscribe(key: ByteSlice) -> ZenohResult {
-        guard let handle else { return .notOpen }
-        guard key.length <= ZenohFrameStorage.keyCapacity else { return .invalidArgument }
+    /// - Returns: A handle for the subscription, or its structured failure.
+    public func subscribe(key: ByteSlice) -> ZenohSubscriptionResult {
+        guard let handle else { return .result(.notOpen) }
+        guard key.length <= ZenohFrameStorage.keyCapacity else { return .result(.invalidArgument) }
         return key.withBytes { bytes, length in
-            ZenohResult(cResult: axoloty_zenoh_subscribe(
+            var subscription: OpaquePointer?
+            let result = ZenohResult(cResult: axoloty_zenoh_subscribe(
                 handle,
                 bytes.assumingMemoryBound(to: UInt8.self),
-                UInt32(length)
+                UInt32(length),
+                &subscription
             ))
+            if result == .success, let subscription {
+                return .subscribed(ZenohSubscription(handle: subscription))
+            }
+            return .result(result)
         }
     }
 
-    /// Removes the active subscription and discards its queued frames.
+    /// Removes exactly one subscription and discards its queued frames.
     ///
+    /// - Parameter subscription: A live handle returned by ``subscribe(key:)``.
     /// - Returns: A structured façade result.
-    public func unsubscribe() -> ZenohResult {
+    public func unsubscribe(_ subscription: ZenohSubscription) -> ZenohResult {
         guard let handle else { return .notOpen }
-        return ZenohResult(cResult: axoloty_zenoh_unsubscribe(handle))
+        return ZenohResult(cResult: axoloty_zenoh_unsubscribe(handle, subscription.handle))
     }
 
-    /// Copies the oldest queued frame into caller-owned fixed-inline storage.
+    /// Copies the oldest frame from one subscription into caller-owned storage.
     ///
-    /// - Parameter storage: The reusable output storage.
+    /// - Parameters:
+    ///   - subscription: A live handle returned by ``subscribe(key:)``.
+    ///   - storage: The reusable output storage.
     /// - Returns: A frame and its lengths, or the distinct polling result.
-    public mutating func poll(into storage: inout ZenohFrameStorage) -> ZenohPollResult {
+    public mutating func poll(
+        from subscription: ZenohSubscription,
+        into storage: inout ZenohFrameStorage
+    ) -> ZenohPollResult {
         guard let handle else { return .result(.notOpen) }
         var keyLength: UInt32 = 0
         var payloadLength: UInt32 = 0
         let result = storage.withMutableBuffers { keyBuffer, payloadBuffer in
             axoloty_zenoh_poll(
                 handle,
+                subscription.handle,
                 keyBuffer.baseAddress,
                 UInt32(keyBuffer.count),
                 &keyLength,

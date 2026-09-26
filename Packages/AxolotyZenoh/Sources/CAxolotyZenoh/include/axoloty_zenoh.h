@@ -58,6 +58,13 @@ typedef enum {
 /// ``AXOLOTY_ZENOH_CAPACITY_EXCEEDED`` without partial mutation.
 #define AXOLOTY_ZENOH_MAX_SESSIONS 4
 
+/// The fixed number of independent subscriptions a session can hold.
+///
+/// Eight is a power of two, so three token bits identify a subscription slot
+/// without division. The host needs two profile-interest subscriptions and
+/// supports up to six simultaneous exact external routes.
+#define AXOLOTY_ZENOH_MAX_SUBSCRIBERS 8
+
 /// The largest connect endpoint the façade accepts, in bytes.
 ///
 /// Endpoints are configuration, not Coaty routes, so this bound is independent
@@ -70,7 +77,7 @@ typedef enum {
 /// The largest publication payload the façade accepts, in bytes.
 #define AXOLOTY_ZENOH_MAX_PAYLOAD_BYTES 2048
 
-/// The fixed number of inbound frames held per session.
+/// The fixed number of inbound frames held per subscription.
 #define AXOLOTY_ZENOH_RECEIVE_QUEUE_CAPACITY 4
 
 /// A bounded session configuration.
@@ -105,6 +112,12 @@ typedef struct axoloty_zenoh_config_t {
 /// runtime's single owner). The embedded backend has no threading machinery,
 /// so thread safety is deliberately not a façade property.
 typedef struct axoloty_zenoh_session axoloty_zenoh_session_t;
+
+/// An opaque handle for one independently managed session subscription.
+///
+/// Handles are generation-guarded and must not be reused after unsubscribe or
+/// session close. No Zenoh-owned or Zenoh-loaned type crosses this boundary.
+typedef struct axoloty_zenoh_subscription axoloty_zenoh_subscription_t;
 
 /// Opens a session from a bounded configuration.
 ///
@@ -190,7 +203,7 @@ axoloty_zenoh_result_t axoloty_zenoh_publish(const axoloty_zenoh_session_t *sess
                                              const uint8_t *payload,
                                              uint32_t payload_length);
 
-/// Declares the session's single subscriber and resets its receive queue.
+/// Declares one subscriber with its own bounded queue.
 ///
 /// Zenoh callback invocations are producers; ``axoloty_zenoh_poll`` is the
 /// sole consumer. The queue uses atomic per-slot publication and position
@@ -211,26 +224,33 @@ axoloty_zenoh_result_t axoloty_zenoh_publish(const axoloty_zenoh_session_t *sess
 ///   - key: Borrowed canonical key expression bytes.
 ///   - key_length: Number of valid key bytes, from 1 through
 ///     ``AXOLOTY_ZENOH_MAX_KEY_BYTES``.
-/// - Returns: ``AXOLOTY_ZENOH_OK`` when declared; invalid argument,
+///   - out_subscription: Receives the opaque handle; set to `NULL` on failure.
+/// - Returns: ``AXOLOTY_ZENOH_OK`` when declared;
+///   ``AXOLOTY_ZENOH_CAPACITY_EXCEEDED`` when all subscriber slots are occupied
+///   without changing an existing slot; invalid argument,
 ///   ``AXOLOTY_ZENOH_NOT_OPEN``, or transport error otherwise.
 axoloty_zenoh_result_t axoloty_zenoh_subscribe(const axoloty_zenoh_session_t *session,
                                                const uint8_t *key,
-                                               uint32_t key_length);
+                                               uint32_t key_length,
+                                               axoloty_zenoh_subscription_t **out_subscription);
 
-/// Removes the session's subscriber. Calling this twice returns
-/// ``AXOLOTY_ZENOH_NOT_OPEN``. Closing a session also removes its subscriber.
+/// Removes exactly the addressed subscription. Closing a session removes all
+/// its subscriptions.
 /// The operation disables and undeclares the callback, waits for callbacks
 /// already running, then discards queued frames and pending poll notifications.
-/// Cumulative drop counters remain readable while the session stays open and
-/// reset on the next successful subscription.
+/// A stale, foreign, or already removed subscription handle is rejected with
+/// ``AXOLOTY_ZENOH_INVALID_ARGUMENT`` and no mutation.
 ///
-/// - Parameter session: An open session.
+/// - Parameters:
+///   - session: An open session.
+///   - subscription: A live handle returned by ``axoloty_zenoh_subscribe``.
 /// - Returns: ``AXOLOTY_ZENOH_OK`` when removed,
-///   ``AXOLOTY_ZENOH_NOT_OPEN`` when closed or not subscribed, or
-///   ``AXOLOTY_ZENOH_INVALID_ARGUMENT`` for a null or foreign handle.
-axoloty_zenoh_result_t axoloty_zenoh_unsubscribe(const axoloty_zenoh_session_t *session);
+///   ``AXOLOTY_ZENOH_NOT_OPEN`` when the session is closed, or
+///   ``AXOLOTY_ZENOH_INVALID_ARGUMENT`` for a null, stale, or foreign handle.
+axoloty_zenoh_result_t axoloty_zenoh_unsubscribe(const axoloty_zenoh_session_t *session,
+                                                 axoloty_zenoh_subscription_t *subscription);
 
-/// Polls the oldest queued frame into caller-owned buffers.
+/// Polls the oldest frame from one subscription into caller-owned buffers.
 ///
 /// Both output buffers must hold the published key/payload lengths; set the
 /// lengths output pointers to valid storage. Empty payloads are valid. A too-
@@ -242,12 +262,22 @@ axoloty_zenoh_result_t axoloty_zenoh_unsubscribe(const axoloty_zenoh_session_t *
 /// are returned first when both kinds are pending; both counters remain
 /// cumulative for the lifetime of the subscription.
 ///
+/// - Parameters:
+///   - session: An open session.
+///   - subscription: A live handle returned by ``axoloty_zenoh_subscribe``.
+///   - key: Caller-owned key output buffer.
+///   - key_capacity: Available key buffer bytes.
+///   - out_key_length: Receives the copied key length.
+///   - payload: Caller-owned payload output buffer.
+///   - payload_capacity: Available payload buffer bytes.
+///   - out_payload_length: Receives the copied payload length.
 /// - Returns: ``AXOLOTY_ZENOH_OK`` with one frame,
 ///   ``AXOLOTY_ZENOH_QUEUE_EMPTY`` when no frame or drop notification is
 ///   pending, ``AXOLOTY_ZENOH_QUEUE_FULL`` or
 ///   ``AXOLOTY_ZENOH_FRAME_TOO_LARGE`` for a reported dropped frame, or an
 ///   argument or closed-session error.
 axoloty_zenoh_result_t axoloty_zenoh_poll(const axoloty_zenoh_session_t *session,
+                                          const axoloty_zenoh_subscription_t *subscription,
                                           uint8_t *key,
                                           uint32_t key_capacity,
                                           uint32_t *out_key_length,
@@ -263,6 +293,7 @@ axoloty_zenoh_result_t axoloty_zenoh_poll(const axoloty_zenoh_session_t *session
 /// - Returns: ``AXOLOTY_ZENOH_OK``, ``AXOLOTY_ZENOH_NOT_OPEN``, or
 ///   ``AXOLOTY_ZENOH_INVALID_ARGUMENT``.
 axoloty_zenoh_result_t axoloty_zenoh_queue_depth(const axoloty_zenoh_session_t *session,
+                                                 const axoloty_zenoh_subscription_t *subscription,
                                                  uint32_t *out_depth);
 
 /// Reads the total number of newest frames dropped because the queue was full.
@@ -273,6 +304,7 @@ axoloty_zenoh_result_t axoloty_zenoh_queue_depth(const axoloty_zenoh_session_t *
 /// - Returns: ``AXOLOTY_ZENOH_OK``, ``AXOLOTY_ZENOH_NOT_OPEN``, or
 ///   ``AXOLOTY_ZENOH_INVALID_ARGUMENT``.
 axoloty_zenoh_result_t axoloty_zenoh_dropped_frame_count(const axoloty_zenoh_session_t *session,
+                                                         const axoloty_zenoh_subscription_t *subscription,
                                                          uint32_t *out_count);
 
 /// Reads the total number of frames dropped because key or payload exceeded
@@ -284,6 +316,7 @@ axoloty_zenoh_result_t axoloty_zenoh_dropped_frame_count(const axoloty_zenoh_ses
 /// - Returns: ``AXOLOTY_ZENOH_OK``, ``AXOLOTY_ZENOH_NOT_OPEN``, or
 ///   ``AXOLOTY_ZENOH_INVALID_ARGUMENT``.
 axoloty_zenoh_result_t axoloty_zenoh_oversized_frame_count(const axoloty_zenoh_session_t *session,
+                                                            const axoloty_zenoh_subscription_t *subscription,
                                                             uint32_t *out_count);
 
 #ifdef __cplusplus

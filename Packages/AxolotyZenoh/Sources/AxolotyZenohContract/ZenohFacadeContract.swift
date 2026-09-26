@@ -10,7 +10,7 @@ public enum ZenohFacadeContract {
     /// - Returns: The contract version and its shared test vectors.
     /// - Throws: ``FixtureError`` if the fixture is missing or invalid.
     public static func load() throws(FixtureError) -> Document {
-        guard let url = Bundle.module.url(forResource: "axoloty-zenoh-facade-v1", withExtension: "json") else {
+        guard let url = Bundle.module.url(forResource: "axoloty-zenoh-facade-v2", withExtension: "json") else {
             throw .resourceMissing
         }
         do {
@@ -34,6 +34,8 @@ public enum ZenohFacadeContract {
         public let roundTrip: Frame
         /// A key and payload delivered independently to multiple subscribers.
         public let multipleSubscribers: Frame
+        /// The required key shapes for concurrent profile and external-route subscriptions.
+        public let multiSubscription: MultiSubscription
         /// Accepted and overflow payloads for bounded receive-queue coverage.
         public let queueOverflow: QueueOverflow
         /// Bounds and fill byte for an oversized inbound key.
@@ -42,6 +44,18 @@ public enum ZenohFacadeContract {
         public let payloadOverflow: Overflow
         /// An unreachable endpoint used to exercise session-open failure.
         public let sessionFailure: SessionFailure
+    }
+
+    /// Shared inputs for concurrent subscriptions in one session.
+    public struct MultiSubscription: Decodable {
+        /// Frame matched by `coaty/3/<namespace>/*/*`.
+        public let profileFourSegments: Frame
+        /// Frame matched by `coaty/3/<namespace>/*/*/*`.
+        public let profileFiveSegments: Frame
+        /// Frame for an independently removed exact external route.
+        public let exactExternalRoute: Frame
+        /// The fixed number of subscriber handles accepted per session.
+        public let maximumSubscribers: Int
     }
 
     /// A key and byte-exact payload used by a conformance assertion.

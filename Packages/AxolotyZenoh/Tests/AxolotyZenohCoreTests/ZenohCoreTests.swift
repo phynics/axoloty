@@ -61,8 +61,12 @@ struct AxolotyZenohCoreTests {
         var receiver = ZenohSession()
         let configuration = ZenohConfiguration(mode: .peer, multicastScoutingEnabled: true)
         #expect(receiver.open(configuration: configuration) == .success)
-        let subscription = withSlice("axoloty/core/**") { receiver.subscribe(key: $0) }
-        #expect(subscription == .success)
+        let subscriptionResult = withSlice("axoloty/core/**") { receiver.subscribe(key: $0) }
+        guard case let .subscribed(subscription) = subscriptionResult else {
+            Issue.record("Could not declare the Core test subscription")
+            #expect(receiver.close() == .success)
+            return
+        }
 
         guard let publisher = axoloty_zenoh_test_publisher_open() else {
             Issue.record("Could not open the local Zenoh test publisher")
@@ -88,10 +92,10 @@ struct AxolotyZenohCoreTests {
         #expect(putResult == 0)
 
         var storage = ZenohFrameStorage()
-        var pollResult = receiver.poll(into: &storage)
+        var pollResult = receiver.poll(from: subscription, into: &storage)
         for _ in 0..<200 where pollResult == .result(.queueEmpty) {
             try await Task.sleep(for: .milliseconds(10))
-            pollResult = receiver.poll(into: &storage)
+            pollResult = receiver.poll(from: subscription, into: &storage)
         }
 
         #expect(pollResult == .frame(ZenohFrame(keyLength: key.count, payloadLength: payload.count)))
@@ -121,15 +125,15 @@ struct AxolotyZenohCoreTests {
             }
         }
         #expect(oversizedPut == 0)
-        pollResult = receiver.poll(into: &storage)
+        pollResult = receiver.poll(from: subscription, into: &storage)
         for _ in 0..<200 where pollResult == .result(.queueEmpty) {
             try await Task.sleep(for: .milliseconds(10))
-            pollResult = receiver.poll(into: &storage)
+            pollResult = receiver.poll(from: subscription, into: &storage)
         }
         #expect(pollResult == .result(.frameTooLarge))
         #expect(storage.storedKeyLength == 0)
         #expect(storage.storedPayloadLength == 0)
-        #expect(receiver.unsubscribe() == .success)
+        #expect(receiver.unsubscribe(subscription) == .success)
         #expect(receiver.close() == .success)
     }
 
