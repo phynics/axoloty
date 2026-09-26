@@ -24,6 +24,7 @@ public enum ZenohResult: Equatable {
     /// Converts one C façade result without collapsing distinct errors.
     ///
     /// - Parameter result: A result returned by `CAxolotyZenoh`.
+    /// - Note: Unknown C values trap; adding a code requires a Swift case and a matching mapping test.
     init(cResult result: axoloty_zenoh_result_t) {
         switch result {
         case AXOLOTY_ZENOH_OK:

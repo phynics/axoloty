@@ -15,6 +15,8 @@ public struct ZenohSession: ~Copyable {
         handle = nil
     }
 
+    /// Closes an unclosed handle and discards the result.
+    /// The façade releases all state for every close outcome.
     deinit {
         if let handle {
             _ = axoloty_zenoh_close(handle)
