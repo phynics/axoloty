@@ -8,7 +8,7 @@ import AxolotyZenohCore
 @Suite("Zenoh binding configuration")
 struct ZenohBindingConfigurationTests {
     @Test("accepts the client configuration fields and supported boundaries")
-    func acceptsConfigurationAndBoundaries() throws {
+    func acceptsConfigurationAndBoundaries() throws(ZenohBindingConfigurationError) {
         let configuration = try ZenohBindingConfiguration(
             mode: .client,
             connectEndpoint: String(repeating: "x", count: 512),
@@ -44,7 +44,7 @@ struct ZenohBindingConfigurationTests {
     }
 
     @Test("defaults only to client router settings and bounded receive capacities")
-    func defaultsStayWithinMVP() throws {
+    func defaultsStayWithinMVP() throws(ZenohBindingConfigurationError) {
         let configuration = try ZenohBindingConfiguration()
 
         #expect(configuration.mode == .client)
@@ -110,7 +110,7 @@ struct ZenohBindingConfigurationTests {
     }
 
     @Test("the public configuration exposes only the MVP fields")
-    func configurationHasNoGeneralEscapeHatch() throws {
+    func configurationHasNoGeneralEscapeHatch() throws(ZenohBindingConfigurationError) {
         let configuration = try ZenohBindingConfiguration()
         let mirror = Mirror(reflecting: configuration)
         let labels = Set(mirror.children.compactMap(\.label))
