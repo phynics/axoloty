@@ -7,8 +7,6 @@
 
 #include <zenoh.h>
 
-#define AXOLOTY_ZENOH_MAX_QUEUE_CLAIM_ATTEMPTS 8
-
 // The façade owns a fixed registry of session slots. Session lifecycle is
 // serialized by its caller (the host runtime's single owner), so the registry
 // carries no locks: the embedded backend has no threading machinery, and a
@@ -55,13 +53,17 @@ _Static_assert(AXOLOTY_ZENOH_MAX_SESSIONS * AXOLOTY_ZENOH_MAX_SUBSCRIBERS <= 32,
                "callback tokens reserve five low bits for session and subscriber slots");
 
 static bool axoloty_zenoh_consume_pending_result(atomic_uint *pending) {
-    // Poll is the sole consumer. Producers only increment, so once a positive
-    // count is observed no other consumer can decrement it before this call.
-    if (atomic_load_explicit(pending, memory_order_acquire) == 0) {
-        return false;
+    unsigned count = atomic_load_explicit(pending, memory_order_acquire);
+    while (count != 0) {
+        if (atomic_compare_exchange_weak_explicit(pending,
+                                                  &count,
+                                                  count - 1,
+                                                  memory_order_acq_rel,
+                                                  memory_order_acquire)) {
+            return true;
+        }
     }
-    atomic_fetch_sub_explicit(pending, 1, memory_order_acq_rel);
-    return true;
+    return false;
 }
 
 // Five low token bits encode four session slots and eight subscriber slots.
@@ -247,6 +249,13 @@ axoloty_zenoh_result_t axoloty_zenoh_open(const axoloty_zenoh_config_t *config,
     if (axoloty_zenoh_open_zenoh_session(slot, config) != Z_OK) {
         return AXOLOTY_ZENOH_TRANSPORT_ERROR;
     }
+    for (unsigned index = 0; index < AXOLOTY_ZENOH_MAX_SUBSCRIBERS; index++) {
+        struct axoloty_zenoh_subscription *subscription = &slot->subscribers[index];
+        subscription->active = false;
+        subscription->key_length = 0;
+        axoloty_zenoh_reset_receive_queue(subscription);
+        axoloty_zenoh_reset_receive_counters(subscription);
+    }
     slot->open = true;
     *out_session = slot;
     return AXOLOTY_ZENOH_OK;
@@ -382,9 +391,8 @@ static void axoloty_zenoh_receive_sample(z_loaned_sample_t *sample, void *contex
     }
 
     unsigned position = atomic_load_explicit(&subscription->receive_enqueue_position, memory_order_relaxed);
-    struct axoloty_zenoh_receive_frame *frame = NULL;
-    bool claimed = false;
-    for (unsigned attempt = 0; attempt < AXOLOTY_ZENOH_MAX_QUEUE_CLAIM_ATTEMPTS; attempt++) {
+    struct axoloty_zenoh_receive_frame *frame;
+    for (;;) {
         frame = &subscription->receive_queue[position % AXOLOTY_ZENOH_RECEIVE_QUEUE_CAPACITY];
         unsigned sequence = atomic_load_explicit(&frame->sequence, memory_order_acquire);
         int32_t difference = (int32_t)(sequence - position);
@@ -394,21 +402,15 @@ static void axoloty_zenoh_receive_sample(z_loaned_sample_t *sample, void *contex
                                                       position + 1,
                                                       memory_order_relaxed,
                                                       memory_order_relaxed)) {
-                claimed = true;
                 break;
             }
         } else if (difference < 0) {
-            break;
+            atomic_fetch_add_explicit(&subscription->pending_full_results, 1, memory_order_relaxed);
+            atomic_fetch_add_explicit(&subscription->dropped_frames, 1, memory_order_release);
+            goto callback_done;
         } else {
             position = atomic_load_explicit(&subscription->receive_enqueue_position, memory_order_relaxed);
         }
-    }
-    if (!claimed) {
-        // Queue saturation and bounded-claim contention both drop this newest
-        // frame. Both are surfaced through the subscription's drop accounting.
-        atomic_fetch_add_explicit(&subscription->pending_full_results, 1, memory_order_relaxed);
-        atomic_fetch_add_explicit(&subscription->dropped_frames, 1, memory_order_release);
-        goto callback_done;
     }
     memcpy(frame->key, z_string_data(key_string), key_length);
     struct z_bytes_reader_t reader = z_bytes_get_reader(sample_payload);
@@ -446,9 +448,7 @@ axoloty_zenoh_result_t axoloty_zenoh_subscribe(const axoloty_zenoh_session_t *se
     struct axoloty_zenoh_subscription *subscription = NULL;
     unsigned subscriber_index = 0;
     for (; subscriber_index < AXOLOTY_ZENOH_MAX_SUBSCRIBERS; subscriber_index++) {
-        if (!slot->subscribers[subscriber_index].active &&
-            atomic_load_explicit(&slot->subscribers[subscriber_index].active_callbacks,
-                                 memory_order_acquire) == 0) {
+        if (!slot->subscribers[subscriber_index].active) {
             subscription = &slot->subscribers[subscriber_index];
             break;
         }
@@ -493,6 +493,8 @@ axoloty_zenoh_result_t axoloty_zenoh_subscribe(const axoloty_zenoh_session_t *se
     if (result != Z_OK) {
         atomic_store_explicit(&subscription->callback_enabled, false, memory_order_release);
         (void)axoloty_zenoh_advance_subscriber_generation(subscription);
+        while (atomic_load_explicit(&subscription->active_callbacks, memory_order_acquire) != 0) {
+        }
         return AXOLOTY_ZENOH_TRANSPORT_ERROR;
     }
     memcpy(subscription->key, key, key_length);
@@ -507,8 +509,11 @@ static axoloty_zenoh_result_t axoloty_zenoh_remove_subscription(
     atomic_store_explicit(&subscription->callback_enabled, false, memory_order_release);
     (void)axoloty_zenoh_advance_subscriber_generation(subscription);
     z_subscriber_drop(z_subscriber_move(&subscription->zenoh_subscriber));
+    while (atomic_load_explicit(&subscription->active_callbacks, memory_order_acquire) != 0) {
+    }
     subscription->active = false;
     subscription->key_length = 0;
+    axoloty_zenoh_reset_receive_queue(subscription);
     return AXOLOTY_ZENOH_OK;
 }
 

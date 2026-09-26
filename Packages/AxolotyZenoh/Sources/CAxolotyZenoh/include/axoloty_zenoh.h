@@ -209,19 +209,15 @@ axoloty_zenoh_result_t axoloty_zenoh_publish(const axoloty_zenoh_session_t *sess
 /// sole consumer. The queue uses atomic per-slot publication and position
 /// claims, so concurrent callback invocations do not share write slots. It has
 /// no locks. The caller must serialize subscribe, unsubscribe, poll, and
-/// close; Zenoh may invoke callbacks on its own threads. A callback only copies
-/// into façade-owned queue storage and never calls Swift or retains borrowed
-/// Zenoh memory. Queue admission makes at most eight atomic-claim attempts; if
-/// the queue is full or contention exhausts those attempts, the newest frame
-/// is dropped and counted for that subscription. Oversized frames include
-/// empty inbound keys and keys/payloads above the stated limits; they are
-/// dropped, not truncated. A generation token rejects callbacks that arrive
-/// after removal or slot reuse. Removal disables and undeclares the subscriber
-/// without spinning for in-flight callbacks. Its handle becomes stale at once,
-/// so its queued frames and counters are no longer accessible; the slot is
-/// reused only after any callback already writing to it has returned. During
-/// that brief retirement, subscribe may report capacity exceeded if no other
-/// quiescent slot is free.
+/// close; Zenoh may invoke callbacks on its own threads. Removing a subscriber
+/// undeclares it before its queue state is reset. A callback only copies into
+/// façade-owned queue storage and never calls Swift or retains borrowed Zenoh
+/// memory. A full queue drops the newest frame and increments the dropped
+/// counter. Oversized frames include empty inbound keys and keys/payloads above
+/// the stated limits; they are dropped, not truncated. A generation token
+/// rejects callbacks that arrive after removal or slot reuse. Removing the
+/// subscriber waits for callbacks already copying a frame before resetting the
+/// queue.
 ///
 /// - Parameters:
 ///   - session: An open session.
@@ -230,8 +226,8 @@ axoloty_zenoh_result_t axoloty_zenoh_publish(const axoloty_zenoh_session_t *sess
 ///     ``AXOLOTY_ZENOH_MAX_KEY_BYTES``.
 ///   - out_subscription: Receives the opaque handle; set to `NULL` on failure.
 /// - Returns: ``AXOLOTY_ZENOH_OK`` when declared;
-///   ``AXOLOTY_ZENOH_CAPACITY_EXCEEDED`` when every slot is active or still
-///   retiring from a callback, without changing an existing slot; invalid argument,
+///   ``AXOLOTY_ZENOH_CAPACITY_EXCEEDED`` when all subscriber slots are occupied
+///   without changing an existing slot; invalid argument,
 ///   ``AXOLOTY_ZENOH_NOT_OPEN``, or transport error otherwise.
 axoloty_zenoh_result_t axoloty_zenoh_subscribe(const axoloty_zenoh_session_t *session,
                                                const uint8_t *key,
@@ -240,10 +236,8 @@ axoloty_zenoh_result_t axoloty_zenoh_subscribe(const axoloty_zenoh_session_t *se
 
 /// Removes exactly the addressed subscription. Closing a session removes all
 /// its subscriptions.
-/// The operation disables and undeclares the callback without waiting for
-/// callbacks already running. The slot remains unavailable for reuse until any
-/// in-flight callback has returned. It discards this subscription's queued
-/// frames and pending poll notifications logically by making the handle stale.
+/// The operation disables and undeclares the callback, waits for callbacks
+/// already running, then discards queued frames and pending poll notifications.
 /// A stale, foreign, or already removed subscription handle is rejected with
 /// ``AXOLOTY_ZENOH_INVALID_ARGUMENT`` and no mutation.
 ///
