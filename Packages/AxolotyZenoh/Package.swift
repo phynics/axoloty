@@ -8,7 +8,8 @@ import PackageDescription
 // product, and no build of the root package, resolves or links Zenoh. See
 // docs/adr/0007-zenoh-adapter-package-boundary.md. The host C façade is the
 // first target; the root package dependency and AxolotyZenohCore product arrive
-// with #804, while the AxolotyZenoh product arrives with #807.
+// with #804. The AxolotyZenoh host product starts here with the configuration
+// surface; its AxolotyRuntimeTransport conformance arrives with #807.
 let package = Package(
     name: "AxolotyZenoh",
     platforms: [
@@ -16,6 +17,7 @@ let package = Package(
     ],
     products: [
         .library(name: "AxolotyZenohCore", targets: ["AxolotyZenohCore"]),
+        .library(name: "AxolotyZenoh", targets: ["AxolotyZenoh"]),
     ],
     dependencies: [
         // ADR 0007 explicitly permits a path dependency on Axoloty; reusing
@@ -47,6 +49,11 @@ let package = Package(
             path: "Sources/AxolotyZenohCore"
         ),
         .target(
+            name: "AxolotyZenoh",
+            dependencies: ["AxolotyZenohCore"],
+            path: "Sources/AxolotyZenoh"
+        ),
+        .target(
             name: "AxolotyZenohContract",
             path: "Sources/AxolotyZenohContract",
             resources: [.copy("Resources/axoloty-zenoh-facade-v1.json")]
@@ -68,6 +75,11 @@ let package = Package(
             name: "AxolotyZenohCoreTests",
             dependencies: ["AxolotyZenohCore", "CAxolotyZenoh", "CAxolotyZenohTestSupport"],
             path: "Tests/AxolotyZenohCoreTests"
+        ),
+        .testTarget(
+            name: "AxolotyZenohTests",
+            dependencies: ["AxolotyZenoh"],
+            path: "Tests/AxolotyZenohTests"
         ),
     ]
 )
