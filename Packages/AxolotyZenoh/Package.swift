@@ -28,9 +28,15 @@ let package = Package(
             path: "Sources/CAxolotyZenoh",
             publicHeadersPath: "include"
         ),
+        .target(
+            name: "CAxolotyZenohTestSupport",
+            dependencies: ["CZenohC"],
+            path: "Tests/CAxolotyZenohTestSupport",
+            publicHeadersPath: "include"
+        ),
         .testTarget(
             name: "CAxolotyZenohTests",
-            dependencies: ["CAxolotyZenoh"],
+            dependencies: ["CAxolotyZenoh", "CAxolotyZenohTestSupport"],
             path: "Tests/CAxolotyZenohTests"
         ),
     ]
