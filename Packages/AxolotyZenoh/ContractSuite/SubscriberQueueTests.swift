@@ -2,7 +2,7 @@
 
 import Testing
 
-@testable import AxolotyZenohContract
+import AxolotyZenohContract
 import CAxolotyZenoh
 import CAxolotyZenohTestSupport
 

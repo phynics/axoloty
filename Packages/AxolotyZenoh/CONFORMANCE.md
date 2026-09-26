@@ -69,4 +69,4 @@ shared contract suite. In particular:
 
 The suite documents no backend-specific tolerances. Divergence status:
 
-> pico leg owned by phynics/axoloty-embedded#8; not assessed here (no third backend behavior comparison performed)
+> pico leg owned by phynics/axoloty-embedded#8; not assessed here (no pico-backend comparison was performed)

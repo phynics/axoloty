@@ -2,7 +2,7 @@
 
 import Testing
 
-@testable import AxolotyZenohContract
+import AxolotyZenohContract
 import CAxolotyZenoh
 
 /// Ownership and lifecycle coverage for the C façade's session registry.
