@@ -23,11 +23,11 @@ enum SetupFailureStage: String, CaseIterable, Sendable {
     var expectedLifecycle: [String] {
         switch self {
         case .start:
-            return ["start", "remove", "stop"]
+            return ["start", "deactivate", "stop"]
         case .subscriptions:
-            return ["start", "install", "remove", "stop"]
+            return ["start", "activate", "deactivate", "stop"]
         case .advertisement:
-            return ["start", "install", "remove", "stop"]
+            return ["start", "activate", "deactivate", "stop"]
         }
     }
 }
@@ -81,11 +81,11 @@ actor TestTransport: AxolotyRuntimeTransport {
         lifecycle.append("stop")
     }
 
-    func installSubscriptions(namespace: String) async throws {
-        lifecycle.append("install")
+    func activateProfileInterest(namespace: String) async throws {
+        lifecycle.append("activate")
         if failureStage == .subscriptions { throw TestTransportFailure() }
     }
-    func removeSubscriptions(namespace: String) async throws { lifecycle.append("remove") }
+    func deactivateProfileInterest(namespace: String) async throws { lifecycle.append("deactivate") }
 
     func sentCount() -> Int { sent.count }
     func firstSent() -> RuntimeOutboundMessage? { sent.first }
@@ -162,8 +162,8 @@ actor DrainingTransport: AxolotyRuntimeTransport {
     }
 
     func stop() async { didStop = true }
-    func installSubscriptions(namespace: String) async throws {}
-    func removeSubscriptions(namespace: String) async throws {}
+    func activateProfileInterest(namespace: String) async throws {}
+    func deactivateProfileInterest(namespace: String) async throws {}
 
     func releaseSend() {
         released = true

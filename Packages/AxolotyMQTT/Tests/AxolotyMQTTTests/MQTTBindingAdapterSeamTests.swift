@@ -57,7 +57,7 @@ struct MQTTBindingAdapterSeamTests {
         let recorder = FrameRecorder()
 
         try await binding.start { recorder.append($0) }
-        try await binding.installSubscriptions(namespace: "node")
+        try await binding.activateProfileInterest(namespace: "node")
         let profile = "coaty/3/node/IOV/00000000-0000-4000-8000-000000000001"
         var payload: [UInt8] = [1, 2, 3]
         client.emit(topic: profile, payload: payload)
@@ -98,16 +98,16 @@ struct MQTTBindingAdapterSeamTests {
 
         client.setSubscribeError(.subscribe)
         await expectNetwork {
-            try await binding.installSubscriptions(namespace: "node")
+            try await binding.activateProfileInterest(namespace: "node")
         }
 
-        // Install one route successfully so removeSubscriptions exercises the
-        // unsubscribe path and its first-error preservation.
+        // Activate one route successfully so deactivateProfileInterest exercises
+        // the unsubscribe path and its first-error preservation.
         client.setSubscribeError(nil)
         try await binding.perform(.externalRouteActivated(transition("external")))
         client.setUnsubscribeError(.unsubscribe)
         await expectNetwork {
-            try await binding.removeSubscriptions(namespace: "node")
+            try await binding.deactivateProfileInterest(namespace: "node")
         }
     }
 
@@ -173,7 +173,7 @@ struct MQTTBindingAdapterSeamTests {
             try await binding.perform(.externalRouteActivated(transition("stale")))
         }
         await client.waitForBlockedSubscribe()
-        try await binding.removeSubscriptions(namespace: "node")
+        try await binding.deactivateProfileInterest(namespace: "node")
         client.releaseBlockedSubscribe()
         try await pending.value
 

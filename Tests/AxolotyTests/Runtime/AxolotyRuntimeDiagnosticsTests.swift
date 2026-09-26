@@ -70,7 +70,7 @@ extension AxolotyRuntimeTests {
         #expect(await runtime.state() == .initialized)
         try await runtime.start()
         #expect(await runtime.state() == .running)
-        #expect(await transport.lifecycle == ["start", "install"])
+        #expect(await transport.lifecycle == ["start", "activate"])
         let expectedWill = RuntimeTransportLastWill(
             topic: "coaty/3/test/DAD/00000000-0000-0000-0000-000000000000",
             payload: Array("{\"objectIds\":[\"00000000-0000-0000-0000-000000000000\"]}".utf8)
@@ -83,14 +83,14 @@ extension AxolotyRuntimeTests {
         await runtime.reconnect()
         #expect(await runtime.state() == .running)
         #expect(await transport.lifecycle == [
-            "start", "install", "remove", "stop", "start", "install"
+            "start", "activate", "deactivate", "stop", "start", "activate"
         ])
         #expect(await transport.lastWills == [expectedWill, expectedWill])
 
         await runtime.stop()
         #expect(await runtime.state() == .stopped)
         let lifecycle = await transport.lifecycle
-        #expect(Array(lifecycle.suffix(2)) == ["remove", "stop"])
+        #expect(Array(lifecycle.suffix(2)) == ["deactivate", "stop"])
         let deadvertisement = try #require(await transport.lastSent())
         #expect(isDeadvertiseRoute(deadvertisement.route))
         #expect(String(decoding: deadvertisement.payload, as: UTF8.self) == "{\"objectIds\":[\"00000000-0000-0000-0000-000000000000\"]}")
@@ -267,7 +267,7 @@ extension AxolotyRuntimeTests {
 
         #expect(await runtime.state() == .stopped)
         #expect(await transport.stopObservedCancellation == false)
-        #expect(Array((await transport.lifecycle).suffix(2)) == ["remove", "stop"])
+        #expect(Array((await transport.lifecycle).suffix(2)) == ["deactivate", "stop"])
         let deadvertisement = try #require(await transport.lastSent())
         #expect(isDeadvertiseRoute(deadvertisement.route))
     }
@@ -302,6 +302,6 @@ extension AxolotyRuntimeTests {
 
         #expect(await runtime.state() == .stopped)
         #expect(await transport.stopObservedCancellation == false)
-        #expect(Array((await transport.lifecycle).suffix(2)) == ["remove", "stop"])
+        #expect(Array((await transport.lifecycle).suffix(2)) == ["deactivate", "stop"])
     }
 }

@@ -47,10 +47,10 @@ struct MQTTBindingNetworkTests {
                 }
             }
             try await withTimeout("subject profile subscriptions", timeout: timeout) {
-                try await subject.installSubscriptions(namespace: namespace)
+                try await subject.activateProfileInterest(namespace: namespace)
             }
             try await withTimeout("peer profile subscriptions", timeout: timeout) {
-                try await peer.installSubscriptions(namespace: namespace)
+                try await peer.activateProfileInterest(namespace: namespace)
             }
             report("started", "namespace=\(namespace)")
 
@@ -117,7 +117,7 @@ struct MQTTBindingNetworkTests {
                     try await subject.start { frame in
                         Task { await subjectInbox.append(frame) }
                     }
-                    try await subject.installSubscriptions(namespace: namespace)
+                    try await subject.activateProfileInterest(namespace: namespace)
                 }
                 if let resubscribeReady = environment["WIRE_MQTT_BINDING_RESUBSCRIBE_READY"] {
                     try mark(resubscribeReady)

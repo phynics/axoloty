@@ -153,6 +153,13 @@ their names. MQTT implements them as server-side wildcard subscriptions, which
 is a broker capability rather than a concept every carrier shares; both default
 to no-ops, so an adapter without the concept simply does not implement them.
 
+The paragraph above records the 0.7 migration contract. The port methods were
+later renamed to `activateProfileInterest(namespace:)` and
+`deactivateProfileInterest(namespace:)` for the second-transport vocabulary
+([#800](https://github.com/phynics/axoloty/issues/800)). MQTT still implements
+them with its server-side wildcard subscriptions; sequencing and default no-op
+behavior are unchanged.
+
 ## `MQTTExternalIoRoute` is `ExternalIoRoute`
 
 The type validating an exact external IO route lost its carrier prefix, and its

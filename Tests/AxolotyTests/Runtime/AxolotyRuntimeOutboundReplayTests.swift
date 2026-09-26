@@ -38,8 +38,8 @@ actor FailOnceOnPublishTransport: AxolotyRuntimeTransport {
     }
 
     func stop() async { receive = nil }
-    func installSubscriptions(namespace: String) async throws {}
-    func removeSubscriptions(namespace: String) async throws {}
+    func activateProfileInterest(namespace: String) async throws {}
+    func deactivateProfileInterest(namespace: String) async throws {}
 
     func sentCount() -> Int { sent.count }
     func sentPayloads() -> [[UInt8]] { sent.map(\.payload) }
