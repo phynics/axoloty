@@ -1,0 +1,151 @@
+// Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
+
+#ifndef AXOLOTY_ZENOH_H
+#define AXOLOTY_ZENOH_H
+
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+/// Result codes returned by every Axoloty Zenoh façade call.
+///
+/// The values are stable for programmatic handling. No Zenoh-owned
+/// (`z_owned_*`) or Zenoh-loaned (`z_loaned_*`) type crosses this header; the
+/// façade owns and destroys every Zenoh value internally.
+typedef enum {
+    /// The call completed successfully.
+    AXOLOTY_ZENOH_OK = 0,
+    /// A required argument was null, malformed, or out of range.
+    AXOLOTY_ZENOH_INVALID_ARGUMENT = 1,
+    /// The addressed session is not open.
+    AXOLOTY_ZENOH_NOT_OPEN = 2,
+    /// The façade's fixed session capacity is exhausted.
+    AXOLOTY_ZENOH_CAPACITY_EXCEEDED = 3,
+    /// Zenoh rejected the operation or the carrier failed.
+    AXOLOTY_ZENOH_TRANSPORT_ERROR = 4,
+} axoloty_zenoh_result_t;
+
+/// The lifecycle state of a session handle.
+typedef enum {
+    /// The handle addresses a closed session.
+    AXOLOTY_ZENOH_SESSION_CLOSED = 0,
+    /// The session is open.
+    AXOLOTY_ZENOH_SESSION_OPEN = 1,
+} axoloty_zenoh_session_state_t;
+
+/// The connectivity mode a session opens in.
+typedef enum {
+    /// Connect to routers only. This is the v1 host profile (AD-7).
+    AXOLOTY_ZENOH_MODE_CLIENT = 0,
+    /// Peer mode, kept for the follow-up router-less milestone (#821).
+    AXOLOTY_ZENOH_MODE_PEER = 1,
+} axoloty_zenoh_mode_t;
+
+/// The fixed number of sessions the façade can hold open at once.
+///
+/// The bound is a compile-time storage capacity, not a scheduling policy.
+/// Opening a session while every slot is occupied returns
+/// ``AXOLOTY_ZENOH_CAPACITY_EXCEEDED`` without partial mutation.
+#define AXOLOTY_ZENOH_MAX_SESSIONS 4
+
+/// The largest connect endpoint the façade accepts, in bytes.
+///
+/// Endpoints are configuration, not Coaty routes, so this bound is independent
+/// of the wire route bound.
+#define AXOLOTY_ZENOH_MAX_ENDPOINT_BYTES 512
+
+/// A bounded session configuration.
+///
+/// Every pointer is borrowed for the duration of ``axoloty_zenoh_open`` only.
+/// The façade copies what it needs into its own Zenoh configuration before the
+/// call returns and never retains a caller pointer.
+typedef struct axoloty_zenoh_config_t {
+    /// Connectivity mode for the new session.
+    axoloty_zenoh_mode_t mode;
+    /// Borrowed printable-ASCII connect endpoint bytes, or `NULL` for none.
+    ///
+    /// A client-mode session without an endpoint relies on Zenoh scouting.
+    /// Endpoint bytes are validated before any Zenoh call: at most
+    /// ``AXOLOTY_ZENOH_MAX_ENDPOINT_BYTES`` bytes, printable ASCII only, and
+    /// neither `"` nor `\`, which the JSON5 configuration value cannot carry
+    /// unescaped.
+    const uint8_t *connect_endpoint;
+    /// The number of valid bytes at ``connect_endpoint``.
+    uint32_t connect_endpoint_length;
+    /// Whether multicast scouting is enabled for this session.
+    bool multicast_scouting_enabled;
+} axoloty_zenoh_config_t;
+
+/// An open Axoloty Zenoh session.
+///
+/// The type is opaque. Its representation, and every Zenoh-owned value inside
+/// it, are private to the façade implementation.
+///
+/// The façade owns one fixed session registry per process and carries no
+/// locks: session lifecycle calls are serialized by the caller (the host
+/// runtime's single owner). The embedded backend has no threading machinery,
+/// so thread safety is deliberately not a façade property.
+typedef struct axoloty_zenoh_session axoloty_zenoh_session_t;
+
+/// Opens a session from a bounded configuration.
+///
+/// The configuration and its endpoint bytes are borrowed only for this call.
+/// On success ``out_session`` receives a handle that must be released with
+/// ``axoloty_zenoh_close``. On every failure ``out_session`` is set to `NULL`
+/// and all partially created state has already been released.
+///
+/// - Parameters:
+///   - config: Borrowed configuration. Must not be `NULL`.
+///   - out_session: Receives the open session handle. Must not be `NULL`.
+/// - Returns: ``AXOLOTY_ZENOH_OK``; ``AXOLOTY_ZENOH_INVALID_ARGUMENT`` when an
+///   argument is null or the configuration is malformed;
+///   ``AXOLOTY_ZENOH_CAPACITY_EXCEEDED`` when every session slot is occupied;
+///   or ``AXOLOTY_ZENOH_TRANSPORT_ERROR`` when Zenoh cannot open the session.
+axoloty_zenoh_result_t axoloty_zenoh_open(const axoloty_zenoh_config_t *config,
+                                          axoloty_zenoh_session_t **out_session);
+
+/// Closes a session and releases its Zenoh state.
+///
+/// A handle addresses an open session until the first successful close. A
+/// repeated close of a handle whose slot is not open returns
+/// ``AXOLOTY_ZENOH_NOT_OPEN`` and changes nothing. A reported close failure
+/// still releases all façade state, so the handle is closed either way.
+///
+/// Handles must not be retained or reused after close. Session slots are
+/// reused by later opens, so a stale handle copied elsewhere is not
+/// distinguishable from a current one; the Swift wrapper clears its handle on
+/// close.
+///
+/// - Parameter session: A handle returned by ``axoloty_zenoh_open``. Must not
+///   be `NULL`.
+/// - Returns: ``AXOLOTY_ZENOH_OK`` when the session was open and is now
+///   closed; ``AXOLOTY_ZENOH_INVALID_ARGUMENT`` for a null or foreign handle;
+///   ``AXOLOTY_ZENOH_NOT_OPEN`` for a handle that is already closed; or
+///   ``AXOLOTY_ZENOH_TRANSPORT_ERROR`` when Zenoh reports a close failure.
+axoloty_zenoh_result_t axoloty_zenoh_close(axoloty_zenoh_session_t *session);
+
+/// Reads the lifecycle state of a session handle.
+///
+/// A handle whose slot has been closed still answers ``AXOLOTY_ZENOH_OK``
+/// with ``AXOLOTY_ZENOH_SESSION_CLOSED``; only a null or foreign handle is
+/// rejected.
+///
+/// - Parameters:
+///   - session: A handle returned by ``axoloty_zenoh_open``. Must not be
+///     `NULL`.
+///   - out_state: Receives the state. Must not be `NULL`.
+/// - Returns: ``AXOLOTY_ZENOH_OK`` when the state was read, or
+///   ``AXOLOTY_ZENOH_INVALID_ARGUMENT`` for a null or foreign handle or a null
+///   output pointer.
+axoloty_zenoh_result_t axoloty_zenoh_state(const axoloty_zenoh_session_t *session,
+                                           axoloty_zenoh_session_state_t *out_state);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* AXOLOTY_ZENOH_H */
