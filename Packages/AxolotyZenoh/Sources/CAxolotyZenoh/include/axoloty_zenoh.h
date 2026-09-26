@@ -200,10 +200,11 @@ axoloty_zenoh_result_t axoloty_zenoh_publish(const axoloty_zenoh_session_t *sess
 /// undeclares it before its queue state is reset. A callback only copies into
 /// façade-owned queue storage and never calls Swift or retains borrowed Zenoh
 /// memory. A full queue drops the newest frame and increments the dropped
-/// counter. Oversized keys/payloads are dropped, not truncated. A generation
-/// token rejects callbacks that arrive after removal or slot reuse. Removing
-/// the subscriber waits for callbacks already copying a frame before resetting
-/// the queue.
+/// counter. Oversized frames include empty inbound keys and keys/payloads above
+/// the stated limits; they are dropped, not truncated. A generation token
+/// rejects callbacks that arrive after removal or slot reuse. Removing the
+/// subscriber waits for callbacks already copying a frame before resetting the
+/// queue.
 ///
 /// - Parameters:
 ///   - session: An open session.

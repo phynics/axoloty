@@ -42,6 +42,9 @@ struct axoloty_zenoh_session {
 
 static struct axoloty_zenoh_session g_sessions[AXOLOTY_ZENOH_MAX_SESSIONS];
 
+_Static_assert(AXOLOTY_ZENOH_MAX_SESSIONS == 4,
+               "callback slot tokens reserve exactly 2 bits for four session slots");
+
 static bool axoloty_zenoh_consume_pending_result(atomic_uint *pending) {
     unsigned count = atomic_load_explicit(pending, memory_order_acquire);
     while (count != 0) {
@@ -395,7 +398,6 @@ axoloty_zenoh_result_t axoloty_zenoh_subscribe(const axoloty_zenoh_session_t *se
         return AXOLOTY_ZENOH_INVALID_ARGUMENT;
     }
     axoloty_zenoh_reset_receive_queue(slot);
-    axoloty_zenoh_reset_receive_counters(slot);
     unsigned slot_index = 0;
     while (slot != &g_sessions[slot_index]) {
         slot_index++;
@@ -420,6 +422,7 @@ axoloty_zenoh_result_t axoloty_zenoh_subscribe(const axoloty_zenoh_session_t *se
         (void)axoloty_zenoh_advance_subscriber_generation(slot);
         return AXOLOTY_ZENOH_TRANSPORT_ERROR;
     }
+    axoloty_zenoh_reset_receive_counters(slot);
     slot->subscribed = true;
     return AXOLOTY_ZENOH_OK;
 }
