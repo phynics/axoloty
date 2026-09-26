@@ -58,6 +58,12 @@ typedef enum {
 /// of the wire route bound.
 #define AXOLOTY_ZENOH_MAX_ENDPOINT_BYTES 512
 
+/// The largest key expression the façade accepts, in bytes.
+#define AXOLOTY_ZENOH_MAX_KEY_BYTES 256
+
+/// The largest publication payload the façade accepts, in bytes.
+#define AXOLOTY_ZENOH_MAX_PAYLOAD_BYTES 2048
+
 /// A bounded session configuration.
 ///
 /// Every pointer is borrowed for the duration of ``axoloty_zenoh_open`` only.
@@ -143,6 +149,34 @@ axoloty_zenoh_result_t axoloty_zenoh_close(axoloty_zenoh_session_t *session);
 ///   output pointer.
 axoloty_zenoh_result_t axoloty_zenoh_state(const axoloty_zenoh_session_t *session,
                                            axoloty_zenoh_session_state_t *out_state);
+
+/// Publishes one borrowed key and payload synchronously.
+///
+/// The key and payload are borrowed for this call only. The façade copies the
+/// key into a Zenoh-owned key expression and copies the payload into a
+/// Zenoh-owned byte value before calling Zenoh. Zenoh consumes that owned
+/// payload before this function returns, so neither caller pointer is retained.
+/// A zero-length payload is valid and may use a `NULL` payload pointer.
+///
+/// - Parameters:
+///   - session: An open session returned by ``axoloty_zenoh_open``.
+///   - key: Borrowed key-expression bytes. Must be non-null and non-empty.
+///   - key_length: Number of valid key bytes, at most
+///     ``AXOLOTY_ZENOH_MAX_KEY_BYTES``.
+///   - payload: Borrowed payload bytes. May be `NULL` only when
+///     `payload_length` is zero.
+///   - payload_length: Number of valid payload bytes, at most
+///     ``AXOLOTY_ZENOH_MAX_PAYLOAD_BYTES``.
+/// - Returns: ``AXOLOTY_ZENOH_OK`` when Zenoh accepts the publication;
+///   ``AXOLOTY_ZENOH_INVALID_ARGUMENT`` for a null, malformed, or oversized
+///   argument; ``AXOLOTY_ZENOH_NOT_OPEN`` for a closed session; or
+///   ``AXOLOTY_ZENOH_TRANSPORT_ERROR`` when Zenoh rejects the publication or
+///   cannot allocate its owned values.
+axoloty_zenoh_result_t axoloty_zenoh_publish(const axoloty_zenoh_session_t *session,
+                                             const uint8_t *key,
+                                             uint32_t key_length,
+                                             const uint8_t *payload,
+                                             uint32_t payload_length);
 
 #ifdef __cplusplus
 }

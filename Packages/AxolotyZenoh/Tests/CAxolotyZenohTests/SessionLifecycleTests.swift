@@ -175,4 +175,101 @@ struct CAxolotyZenohSessionLifecycleTests {
         #expect(axoloty_zenoh_state(session, nil) == AXOLOTY_ZENOH_INVALID_ARGUMENT)
         #expect(axoloty_zenoh_close(session) == AXOLOTY_ZENOH_OK)
     }
+
+    @Test("publishes binary and zero-length borrowed payloads before returning")
+    func copiesBorrowedPayload() throws {
+        let (openResult, opened) = openSession()
+        #expect(openResult == AXOLOTY_ZENOH_OK)
+        let session = try #require(opened)
+
+        var key = Array("axoloty/publication".utf8)
+        var payload: [UInt8] = [0x00, 0x01, 0x7F, 0x80, 0xFF]
+        let result = key.withUnsafeBufferPointer { keyBuffer in
+            payload.withUnsafeBufferPointer { payloadBuffer in
+                axoloty_zenoh_publish(
+                    session,
+                    keyBuffer.baseAddress,
+                    UInt32(keyBuffer.count),
+                    payloadBuffer.baseAddress,
+                    UInt32(payloadBuffer.count)
+                )
+            }
+        }
+        #expect(result == AXOLOTY_ZENOH_OK)
+
+        for index in key.indices {
+            key[index] = 0xFF
+        }
+        for index in payload.indices {
+            payload[index] = 0x00
+        }
+
+        #expect(axoloty_zenoh_publish(session, "axoloty/empty", 13, nil, 0) == AXOLOTY_ZENOH_OK)
+        #expect(axoloty_zenoh_close(session) == AXOLOTY_ZENOH_OK)
+    }
+
+    @Test("rejects oversized keys and payloads before accessing their buffers")
+    func rejectsOversizedPublicationArguments() throws {
+        let (openResult, opened) = openSession()
+        #expect(openResult == AXOLOTY_ZENOH_OK)
+        let session = try #require(opened)
+
+        let oneByte: [UInt8] = [0x61]
+        let oversizedKey = oneByte.withUnsafeBufferPointer { buffer in
+            axoloty_zenoh_publish(
+                session,
+                buffer.baseAddress,
+                UInt32(AXOLOTY_ZENOH_MAX_KEY_BYTES + 1),
+                nil,
+                0
+            )
+        }
+        #expect(oversizedKey == AXOLOTY_ZENOH_INVALID_ARGUMENT)
+
+        let oversizedPayload = oneByte.withUnsafeBufferPointer { buffer in
+            axoloty_zenoh_publish(
+                session,
+                "axoloty/oversized",
+                17,
+                buffer.baseAddress,
+                UInt32(AXOLOTY_ZENOH_MAX_PAYLOAD_BYTES + 1)
+            )
+        }
+        #expect(oversizedPayload == AXOLOTY_ZENOH_INVALID_ARGUMENT)
+
+        #expect(axoloty_zenoh_publish(session, "axoloty/reusable", 16, nil, 0) == AXOLOTY_ZENOH_OK)
+        #expect(axoloty_zenoh_close(session) == AXOLOTY_ZENOH_OK)
+    }
+
+    @Test("rejects malformed publication arguments")
+    func rejectsMalformedPublicationArguments() throws {
+        let (openResult, opened) = openSession()
+        #expect(openResult == AXOLOTY_ZENOH_OK)
+        let session = try #require(opened)
+
+        #expect(axoloty_zenoh_publish(session, nil, 0, nil, 0) == AXOLOTY_ZENOH_INVALID_ARGUMENT)
+        #expect(axoloty_zenoh_publish(session, "axoloty/null", 12, nil, 1) == AXOLOTY_ZENOH_INVALID_ARGUMENT)
+
+        let malformedKey: [UInt8] = Array("axoloty/".utf8) + [0]
+        let malformedResult = malformedKey.withUnsafeBufferPointer { buffer in
+            axoloty_zenoh_publish(
+                session,
+                buffer.baseAddress,
+                UInt32(buffer.count),
+                nil,
+                0
+            )
+        }
+        #expect(malformedResult == AXOLOTY_ZENOH_INVALID_ARGUMENT)
+        #expect(axoloty_zenoh_close(session) == AXOLOTY_ZENOH_OK)
+    }
+
+    @Test("rejects publication on a closed session")
+    func rejectsClosedPublication() throws {
+        let (openResult, opened) = openSession()
+        #expect(openResult == AXOLOTY_ZENOH_OK)
+        let session = try #require(opened)
+        #expect(axoloty_zenoh_close(session) == AXOLOTY_ZENOH_OK)
+        #expect(axoloty_zenoh_publish(session, "axoloty/closed", 15, nil, 0) == AXOLOTY_ZENOH_NOT_OPEN)
+    }
 }
