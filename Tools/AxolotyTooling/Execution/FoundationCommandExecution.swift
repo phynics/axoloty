@@ -22,6 +22,10 @@ private let lifecyclePollErr = Int16(Darwin.POLLERR)
 
 // swiftlint:disable type_body_length file_length function_body_length function_parameter_count optional_data_string_conversion
 final class FoundationCommandExecution: Sendable {
+    /// The synthetic exit code reported when a Swift test command succeeded
+    /// without running a non-skipped test. `test-one` uses it to decide whether
+    /// to try the next package.
+    static let emptyTestRunExitCode: Int32 = 65
     private let environment: [String: String]
     private let configuration: AxolotyCommandRunnerConfiguration
     private let cancellation: AxolotyCommandCancellation
@@ -273,7 +277,7 @@ final class FoundationCommandExecution: Sendable {
         let finishedAt = Date()
         let snapshot = state.collector.diagnosticSnapshot()
         let result = AxolotyCheckCommandResult(
-            exitCode: emptyTestRun ? 65 : processExitCode,
+            exitCode: emptyTestRun ? Self.emptyTestRunExitCode : processExitCode,
             standardOutput: String(decoding: standardOutput, as: UTF8.self),
             standardError: String(decoding: standardError, as: UTF8.self) + emptyTestDiagnostic,
             payload: .observation(AxolotyCommandObservation(

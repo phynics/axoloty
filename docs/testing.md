@@ -161,6 +161,13 @@ group of them through its category. `make explain TIER=...` prints a
 category's commands, policies, locks, and artifacts without executing
 anything.
 
+`test-one` searches the root package first, then the package alternates the
+manifest declares for `Tools` and `Apps`; the root package already builds the
+portable `Packages/*` test targets by path. A filter the manifest places in a
+package is tried there directly, and an unlisted filter falls through until a
+package runs a test. When no package selects a test, the command names every
+package it searched instead of reporting an empty run.
+
 Execution policy lives in the manifest, not in Make recipes or shell front
 controllers. The tier validator enforces that `requiredGates` is exactly the
 `ci` category, that `release` contains every other category, that no

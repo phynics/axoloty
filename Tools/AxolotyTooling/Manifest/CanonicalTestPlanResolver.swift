@@ -33,7 +33,6 @@ enum CanonicalPlanRequest: Sendable {
 enum CanonicalCommandRequest: Sendable {
     case node(name: String)
     case testOne(filter: String, repetition: AxolotyTestRepetition?)
-    case testOneOrNode(value: String, platform: AxolotyCheckPlan.Platform)
     case timing(
         scenario: AxolotyTimingScenario,
         mode: AxolotyTimingMode,
@@ -101,18 +100,6 @@ struct AxolotyCanonicalTestPlanResolver: Sendable {
                 timeoutSeconds: manifest.testOne.timeoutSeconds,
                 repetition: repetition
             )
-        case .testOneOrNode(let value, let platform):
-            if let node = manifest.nodes.first(where: { $0.id == value }),
-               node.filter == nil,
-               node.local,
-               node.isAvailable(on: platform) {
-                return command(for: node)
-            }
-            return command(
-                from: manifest.testOne.command,
-                filter: value,
-                timeoutSeconds: manifest.testOne.timeoutSeconds
-            )
         case .timing(let scenario, let mode, let workspace, let filter):
             let base: AxolotyCommandPlan = switch scenario {
             case .hostBuild:
@@ -139,6 +126,92 @@ struct AxolotyCanonicalTestPlanResolver: Sendable {
                 timeoutSeconds: base.timeoutSeconds
             )
         }
+    }
+
+    /// The ordered commands a `test-one` filter should try.
+    ///
+    /// A filter that names an unfiltered local node is that node's command. For
+    /// every other filter the primary root command comes first, followed by
+    /// each declared package alternate. A package whose manifest node declares
+    /// a filter branch equal to the request is promoted ahead of the rest, so a
+    /// filter the manifest already places in `Tools` or `Apps` does not pay for
+    /// a root build first. Packages with no declared preference are still
+    /// searched, which keeps an unlisted test reachable.
+    ///
+    /// - Parameters:
+    ///   - filter: The Swift Testing filter substituted into every candidate.
+    ///   - repetition: Optional bounded repetition applied to every candidate.
+    ///   - platform: The platform selecting available nodes.
+    /// - Returns: Candidate commands in trial order.
+    func testOneCommands(
+        filter: String,
+        repetition: AxolotyTestRepetition?,
+        platform: AxolotyCheckPlan.Platform
+    ) throws -> [AxolotyCommandPlan] {
+        try validateManifest()
+        if let node = manifest.nodes.first(where: { $0.id == filter }),
+           node.filter == nil,
+           node.local,
+           node.isAvailable(on: platform) {
+            return [command(
+                from: node.command,
+                filter: node.filter,
+                timeoutSeconds: node.timeoutSeconds,
+                repetition: repetition
+            )]
+        }
+        let templates = [manifest.testOne.command] + (manifest.testOne.alternates ?? [])
+        let candidates = templates.map { template in
+            (
+                package: Self.packagePath(of: template),
+                command: command(
+                    from: template,
+                    filter: filter,
+                    timeoutSeconds: manifest.testOne.timeoutSeconds,
+                    repetition: repetition
+                )
+            )
+        }
+        let preferred = preferredPackagePaths(for: filter)
+        guard !preferred.isEmpty else { return candidates.map(\.command) }
+        let preferredSet = Set(preferred)
+        let ranked = candidates.enumerated().sorted { left, right in
+            let leftPreferred = preferredSet.contains(left.element.package)
+            let rightPreferred = preferredSet.contains(right.element.package)
+            if leftPreferred != rightPreferred { return leftPreferred }
+            if leftPreferred,
+               let leftIndex = preferred.firstIndex(of: left.element.package),
+               let rightIndex = preferred.firstIndex(of: right.element.package),
+               leftIndex != rightIndex {
+                return leftIndex < rightIndex
+            }
+            return left.offset < right.offset
+        }
+        return ranked.map(\.element.command)
+    }
+
+    /// Package paths whose declared node filter selects `filter` verbatim.
+    private func preferredPackagePaths(for filter: String) -> [String] {
+        var paths: [String] = []
+        for node in manifest.nodes {
+            guard let nodeFilter = node.filter,
+                  node.command.executable == "swift",
+                  node.command.arguments.first == "test" else { continue }
+            let branches = nodeFilter.split(separator: "|", omittingEmptySubsequences: true)
+            guard branches.contains(Substring(filter)) else { continue }
+            let path = Self.packagePath(of: node.command)
+            if !paths.contains(path) { paths.append(path) }
+        }
+        return paths
+    }
+
+    /// The package a canonical test command targets, or `.` for the root.
+    private static func packagePath(of command: AxolotyCanonicalTestCommand) -> String {
+        guard let index = command.arguments.firstIndex(of: "--package-path"),
+              command.arguments.index(after: index) < command.arguments.endIndex else {
+            return "."
+        }
+        return command.arguments[command.arguments.index(after: index)]
     }
 
     func explanation(

@@ -454,6 +454,50 @@ export function validate(document, { makeTargets, discoveredSelfTests, invokedSe
     errors.push("test-tooling must select RepositoryAuthorityTests");
   }
   if (!document.testOne?.command?.filterFlag || !Number.isInteger(document.testOne?.timeoutSeconds) || document.testOne.timeoutSeconds <= 0) errors.push("testOne must declare a filterFlag and positive timeoutSeconds");
+  // The root package builds the portable Packages/* test targets by path, but
+  // it does not build Tools or Apps. test-one alternates carry their own
+  // package selection so a filter outside the root package still resolves.
+  if (document.testOne && document.testOne.alternates !== undefined) {
+    const alternates = document.testOne.alternates;
+    if (!Array.isArray(alternates) || alternates.length === 0) {
+      errors.push("testOne.alternates must be a nonempty array when present");
+    } else {
+      const seenPackages = new Set();
+      for (const [index, alternate] of alternates.entries()) {
+        if (!alternate || typeof alternate !== "object" || Array.isArray(alternate)) {
+          errors.push(`testOne.alternates[${index}] must be an object`);
+          continue;
+        }
+        if (typeof alternate.executable !== "string" || !alternate.executable) {
+          errors.push(`testOne.alternates[${index}] must declare an executable`);
+        }
+        if (!Array.isArray(alternate.arguments)) {
+          errors.push(`testOne.alternates[${index}] must declare an arguments array`);
+          continue;
+        }
+        if (!alternate.filterFlag) errors.push(`testOne.alternates[${index}] must declare a filterFlag`);
+        const args = alternate.arguments;
+        if (alternate.executable === "swift" && args.includes("test") && !args.includes("-warnings-as-errors")) {
+          errors.push(`testOne.alternates[${index}] must compile with -warnings-as-errors`);
+        }
+        const packageIndex = args.indexOf("--package-path");
+        if (packageIndex < 0 || packageIndex + 1 >= args.length) {
+          errors.push(`testOne.alternates[${index}] must declare --package-path`);
+          continue;
+        }
+        const packagePath = args[packageIndex + 1];
+        if (packagePath === ".") {
+          errors.push(`testOne.alternates[${index}] duplicates the primary root package`);
+          continue;
+        }
+        if (seenPackages.has(packagePath)) errors.push(`testOne.alternates[${index}] repeats package ${JSON.stringify(packagePath)}`);
+        seenPackages.add(packagePath);
+        if (!exists(`${packagePath}/Package.swift`)) {
+          errors.push(`testOne.alternates[${index}] package ${JSON.stringify(packagePath)} has no Package.swift`);
+        }
+      }
+    }
+  }
 
   if (!Array.isArray(document.tiers)) return [...errors, "tiers must be an array"];
 
