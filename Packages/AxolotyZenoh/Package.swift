@@ -16,6 +16,7 @@ let package = Package(
     ],
     products: [
         .library(name: "AxolotyZenohCore", targets: ["AxolotyZenohCore"]),
+        .library(name: "AxolotyZenoh", targets: ["AxolotyZenoh"]),
     ],
     dependencies: [
         // ADR 0007 explicitly permits a path dependency on Axoloty; reusing
@@ -47,6 +48,11 @@ let package = Package(
             path: "Sources/AxolotyZenohCore"
         ),
         .target(
+            name: "AxolotyZenoh",
+            dependencies: ["AxolotyZenohCore"],
+            path: "Sources/AxolotyZenoh"
+        ),
+        .target(
             name: "AxolotyZenohContract",
             path: "Sources/AxolotyZenohContract",
             resources: [.copy("Resources/axoloty-zenoh-facade-v1.json")]
@@ -68,6 +74,11 @@ let package = Package(
             name: "AxolotyZenohCoreTests",
             dependencies: ["AxolotyZenohCore", "CAxolotyZenoh", "CAxolotyZenohTestSupport"],
             path: "Tests/AxolotyZenohCoreTests"
+        ),
+        .testTarget(
+            name: "AxolotyZenohTests",
+            dependencies: ["AxolotyZenoh"],
+            path: "Tests/AxolotyZenohTests"
         ),
     ]
 )
