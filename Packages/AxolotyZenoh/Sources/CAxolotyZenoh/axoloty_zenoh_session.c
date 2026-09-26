@@ -174,3 +174,56 @@ axoloty_zenoh_result_t axoloty_zenoh_state(const axoloty_zenoh_session_t *sessio
     *out_state = slot->open ? AXOLOTY_ZENOH_SESSION_OPEN : AXOLOTY_ZENOH_SESSION_CLOSED;
     return AXOLOTY_ZENOH_OK;
 }
+
+axoloty_zenoh_result_t axoloty_zenoh_publish(const axoloty_zenoh_session_t *session,
+                                             const uint8_t *key,
+                                             uint32_t key_length,
+                                             const uint8_t *payload,
+                                             uint32_t payload_length) {
+    struct axoloty_zenoh_session *slot = axoloty_zenoh_slot(session);
+    if (slot == NULL) {
+        return AXOLOTY_ZENOH_INVALID_ARGUMENT;
+    }
+    if (!slot->open) {
+        return AXOLOTY_ZENOH_NOT_OPEN;
+    }
+    if (key == NULL || key_length == 0 || key_length > AXOLOTY_ZENOH_MAX_KEY_BYTES) {
+        return AXOLOTY_ZENOH_INVALID_ARGUMENT;
+    }
+    if (payload == NULL && payload_length != 0) {
+        return AXOLOTY_ZENOH_INVALID_ARGUMENT;
+    }
+    if (payload_length > AXOLOTY_ZENOH_MAX_PAYLOAD_BYTES) {
+        return AXOLOTY_ZENOH_INVALID_ARGUMENT;
+    }
+    if (z_keyexpr_is_canon((const char *)key, key_length) != Z_OK) {
+        return AXOLOTY_ZENOH_INVALID_ARGUMENT;
+    }
+    for (uint32_t index = 0; index < key_length; index++) {
+        if (key[index] == 0) {
+            return AXOLOTY_ZENOH_INVALID_ARGUMENT;
+        }
+    }
+
+    z_owned_keyexpr_t key_expr;
+    if (z_keyexpr_from_substr(&key_expr, (const char *)key, key_length) != Z_OK) {
+        return AXOLOTY_ZENOH_INVALID_ARGUMENT;
+    }
+
+    z_owned_bytes_t owned_payload;
+    if (z_bytes_copy_from_buf(&owned_payload, payload, payload_length) != Z_OK) {
+        z_keyexpr_drop(z_keyexpr_move(&key_expr));
+        return AXOLOTY_ZENOH_TRANSPORT_ERROR;
+    }
+
+    z_put_options_t options;
+    z_put_options_default(&options);
+    z_result_t result = z_put(
+        z_session_loan(&slot->zenoh_session),
+        z_keyexpr_loan(&key_expr),
+        z_bytes_move(&owned_payload),
+        &options
+    );
+    z_keyexpr_drop(z_keyexpr_move(&key_expr));
+    return result == Z_OK ? AXOLOTY_ZENOH_OK : AXOLOTY_ZENOH_TRANSPORT_ERROR;
+}
