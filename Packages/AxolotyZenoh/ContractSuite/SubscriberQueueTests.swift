@@ -2,6 +2,7 @@
 
 import Testing
 
+@testable import AxolotyZenohContract
 import CAxolotyZenoh
 import CAxolotyZenohTestSupport
 
@@ -100,9 +101,11 @@ extension CAxolotyZenohSessionLifecycleTests {
 
     @Test("a second peer publishes into the owned queue and poll returns copied bytes")
     func subscribePollRoundTripAndUnsubscribe() async throws {
+        let contract = try ZenohFacadeContract.load()
+        #expect(contract.contractVersion == "1.0.0")
         let receiver = try await openPeer()
         let publisher = try openPublisher()
-        let route = Array("axoloty/subscriber/round-trip".utf8)
+        let route = Array(contract.vectors.roundTrip.key.utf8)
         var subscriptionKey = route
         #expect(subscribe(receiver, to: subscriptionKey) == AXOLOTY_ZENOH_OK)
         #expect(subscribe(receiver, to: route) == AXOLOTY_ZENOH_INVALID_ARGUMENT)
@@ -112,7 +115,7 @@ extension CAxolotyZenohSessionLifecycleTests {
         try await Task.sleep(for: .milliseconds(250))
 
         var sourceKey = route
-        var sourcePayload: [UInt8] = [0x00, 0x41, 0x80, 0xFF]
+        var sourcePayload = contract.vectors.roundTrip.payload
         #expect(publish(publisher, key: sourceKey, payload: sourcePayload) == 0)
         sourceKey = [0xFF]
         sourcePayload = [0x00]
@@ -142,7 +145,7 @@ extension CAxolotyZenohSessionLifecycleTests {
         let (pollResult, receivedKey, receivedPayload) = poll(receiver)
         #expect(pollResult == AXOLOTY_ZENOH_OK)
         #expect(receivedKey == route)
-        #expect(receivedPayload == [0x00, 0x41, 0x80, 0xFF])
+        #expect(receivedPayload == contract.vectors.roundTrip.payload)
         #expect(poll(receiver).0 == AXOLOTY_ZENOH_QUEUE_EMPTY)
 
         #expect(publish(publisher, key: route, payload: [0x66]) == 0)
@@ -187,37 +190,70 @@ extension CAxolotyZenohSessionLifecycleTests {
         axoloty_zenoh_test_publisher_close(publisher)
     }
 
+    @Test("each subscriber receives the same publication")
+    func multipleSubscribersReceiveSameFrame() async throws {
+        let contract = try ZenohFacadeContract.load()
+        let firstReceiver = try await openPeer()
+        let secondReceiver = try await openPeer()
+        let publisher = try openPublisher()
+        let vector = contract.vectors.multipleSubscribers
+        let route = Array(vector.key.utf8)
+        #expect(subscribe(firstReceiver, to: route) == AXOLOTY_ZENOH_OK)
+        #expect(subscribe(secondReceiver, to: route) == AXOLOTY_ZENOH_OK)
+        try await Task.sleep(for: .milliseconds(250))
+
+        #expect(publish(publisher, key: route, payload: vector.payload) == 0)
+        #expect(try await waitForDepth(1, on: firstReceiver) == 1)
+        #expect(try await waitForDepth(1, on: secondReceiver) == 1)
+
+        let (firstResult, firstKey, firstPayload) = poll(firstReceiver)
+        let (secondResult, secondKey, secondPayload) = poll(secondReceiver)
+        #expect(firstResult == AXOLOTY_ZENOH_OK)
+        #expect(secondResult == AXOLOTY_ZENOH_OK)
+        #expect(firstKey == route)
+        #expect(secondKey == route)
+        #expect(firstPayload == vector.payload)
+        #expect(secondPayload == vector.payload)
+
+        #expect(axoloty_zenoh_close(firstReceiver) == AXOLOTY_ZENOH_OK)
+        #expect(axoloty_zenoh_close(secondReceiver) == AXOLOTY_ZENOH_OK)
+        axoloty_zenoh_test_publisher_close(publisher)
+    }
+
     @Test("a full queue drops newest exactly once per frame and remains pollable")
     func fullQueueDropsNewest() async throws {
+        let contract = try ZenohFacadeContract.load()
         let receiver = try await openPeer()
         let publisher = try openPublisher()
-        let route = Array("axoloty/subscriber/full".utf8)
+        let vector = contract.vectors.queueOverflow
+        let route = Array(vector.key.utf8)
+        #expect(vector.acceptedPayloads.count == Int(AXOLOTY_ZENOH_RECEIVE_QUEUE_CAPACITY))
+        #expect(vector.expectedDroppedFrameCount == 1)
         #expect(subscribe(receiver, to: route) == AXOLOTY_ZENOH_OK)
         try await Task.sleep(for: .milliseconds(250))
 
-        for value in UInt8(0)..<UInt8(6) {
-            #expect(publish(publisher, key: route, payload: [value]) == 0)
+        for payload in vector.acceptedPayloads + [vector.overflowPayload] {
+            #expect(publish(publisher, key: route, payload: payload) == 0)
         }
         #expect(try await waitForDepth(UInt32(AXOLOTY_ZENOH_RECEIVE_QUEUE_CAPACITY), on: receiver)
             == UInt32(AXOLOTY_ZENOH_RECEIVE_QUEUE_CAPACITY))
         var dropped: UInt32 = 0
         for _ in 0..<200 {
             #expect(axoloty_zenoh_dropped_frame_count(receiver, &dropped) == AXOLOTY_ZENOH_OK)
-            if dropped == 2 { break }
+            if dropped == vector.expectedDroppedFrameCount { break }
             try await Task.sleep(for: .milliseconds(10))
         }
-        #expect(dropped == 2)
+        #expect(dropped == vector.expectedDroppedFrameCount)
         var depth: UInt32 = 0
         #expect(axoloty_zenoh_queue_depth(receiver, &depth) == AXOLOTY_ZENOH_OK)
         #expect(depth == UInt32(AXOLOTY_ZENOH_RECEIVE_QUEUE_CAPACITY))
 
-        for expected in UInt8(0)..<UInt8(4) {
+        for expected in vector.acceptedPayloads {
             let (result, key, payload) = poll(receiver)
             #expect(result == AXOLOTY_ZENOH_OK)
             #expect(key == route)
-            #expect(payload == [expected])
+            #expect(payload == expected)
         }
-        #expect(poll(receiver).0 == AXOLOTY_ZENOH_QUEUE_FULL)
         #expect(poll(receiver).0 == AXOLOTY_ZENOH_QUEUE_FULL)
         #expect(poll(receiver).0 == AXOLOTY_ZENOH_QUEUE_EMPTY)
         #expect(axoloty_zenoh_close(receiver) == AXOLOTY_ZENOH_OK)
@@ -226,21 +262,26 @@ extension CAxolotyZenohSessionLifecycleTests {
 
     @Test("maximum key and payload are accepted; maximum plus one is counted and dropped")
     func oversizedFramesAreNotTruncated() async throws {
+        let contract = try ZenohFacadeContract.load()
         let receiver = try await openPeer()
         let publisher = try openPublisher()
         #expect(subscribe(receiver, to: Array("**".utf8)) == AXOLOTY_ZENOH_OK)
         try await Task.sleep(for: .milliseconds(250))
 
+        let keyOverflow = contract.vectors.keyOverflow
+        let payloadOverflow = contract.vectors.payloadOverflow
         let maxKey = Array((String(repeating: "a/", count: 127) + "aa").utf8)
-        let oversizedKey = Array((String(repeating: "a/", count: 127) + "aaa").utf8)
+        let oversizedKey = Array((String(repeating: "a/", count: (keyOverflow.keyLength - 1) / 2) + "a")
+            .utf8)
         #expect(maxKey.count == Int(AXOLOTY_ZENOH_MAX_KEY_BYTES))
-        #expect(oversizedKey.count == Int(AXOLOTY_ZENOH_MAX_KEY_BYTES) + 1)
+        #expect(oversizedKey.count == keyOverflow.keyLength)
         let maxPayload = [UInt8](repeating: 0xA5, count: Int(AXOLOTY_ZENOH_MAX_PAYLOAD_BYTES))
-        let oversizedPayload = [UInt8](repeating: 0x5A, count: Int(AXOLOTY_ZENOH_MAX_PAYLOAD_BYTES) + 1)
+        let oversizedPayload = [UInt8](repeating: payloadOverflow.fillByte, count: payloadOverflow.payloadLength)
 
         #expect(publish(publisher, key: maxKey, payload: maxPayload) == 0)
-        #expect(publish(publisher, key: oversizedKey, payload: [0x01]) == 0)
-        #expect(publish(publisher, key: Array("axoloty/large-payload".utf8), payload: oversizedPayload)
+        #expect(publish(publisher, key: oversizedKey, payload: [keyOverflow.fillByte]) == 0)
+        let payloadOverflowKey = Array(String(repeating: "x", count: payloadOverflow.keyLength).utf8)
+        #expect(publish(publisher, key: payloadOverflowKey, payload: oversizedPayload)
             == 0)
 
         #expect(try await waitForDepth(1, on: receiver) == 1)

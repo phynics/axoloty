@@ -23,9 +23,11 @@ let package = Package(
         .package(name: "Axoloty", path: "../.."),
     ],
     targets: [
+        // Backend-selection seam: this target name and the façade header stay
+        // fixed while its implementation/dependency is selected for a
+        // conformance run. The suite imports only this façade module.
         // Consumes the pinned prebuilt zenoh-c archive through pkg-config; see
-        // docs/adr/0006-zenoh-host-dependency-packaging.md. Provisioning
-        // rewrites zenohc.pc's prefix and exports PKG_CONFIG_PATH.
+        // docs/adr/0006-zenoh-host-dependency-packaging.md.
         .systemLibrary(
             name: "CZenohC",
             pkgConfig: "zenohc"
@@ -45,15 +47,22 @@ let package = Package(
             path: "Sources/AxolotyZenohCore"
         ),
         .target(
+            name: "AxolotyZenohContract",
+            path: "Sources/AxolotyZenohContract",
+            resources: [.copy("Resources/axoloty-zenoh-facade-v1.json")]
+        ),
+        .target(
             name: "CAxolotyZenohTestSupport",
+            // Test-harness seam for publishing samples larger than the façade
+            // receive bounds. Keep this module name and C entry points stable.
             dependencies: ["CZenohC"],
             path: "Tests/CAxolotyZenohTestSupport",
             publicHeadersPath: "include"
         ),
         .testTarget(
             name: "CAxolotyZenohTests",
-            dependencies: ["CAxolotyZenoh", "CAxolotyZenohTestSupport"],
-            path: "Tests/CAxolotyZenohTests"
+            dependencies: ["CAxolotyZenoh", "CAxolotyZenohTestSupport", "AxolotyZenohContract"],
+            path: "ContractSuite"
         ),
         .testTarget(
             name: "AxolotyZenohCoreTests",
