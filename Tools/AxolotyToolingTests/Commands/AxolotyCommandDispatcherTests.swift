@@ -310,7 +310,7 @@ func canonicalSwiftBuildsTreatWarningsAsErrors() throws {
             command.executable == "swift"
                 && ["build", "test"].contains(command.arguments.first)
                 && !command.arguments.contains("--skip-build")
-        } + [manifest.testOne.command]
+        } + [manifest.testOne.command] + (manifest.testOne.alternates ?? [])
 
     #expect(!compilingCommands.isEmpty)
     for command in compilingCommands {

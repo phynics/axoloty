@@ -152,6 +152,30 @@ func resolverKeepsPackageScopedFilterCommandsBoundToTheirOwner() throws {
 }
 
 @Test
+func testOneCommandsPreferTheOwningPackageAndKeepEveryPackageReachable() throws {
+    let resolver = try AxolotyCanonicalTestPlanResolver(environment: ProcessInfo.processInfo.environment)
+    func packages(for filter: String) throws -> [String] {
+        try resolver.testOneCommands(filter: filter, repetition: nil, platform: .linux).map { command in
+            guard let index = command.arguments.firstIndex(of: "--package-path") else { return "." }
+            return command.arguments[command.arguments.index(after: index)]
+        }
+    }
+
+    // A manifest-declared filter is routed straight to its owning package.
+    #expect(try packages(for: "AxolotyCheckTests").first == "Tools")
+    #expect(try packages(for: "WireDTOBoundaryTests").first == ".")
+    // An unlisted filter still reaches Tools, after the root package.
+    let unlisted = try packages(for: "signalMultiplexerRestoresPreviousSignalDispositionsAndFansOutConcurrentLeases")
+    #expect(unlisted.first == ".")
+    #expect(unlisted.contains("Tools"))
+    // Every candidate substitutes the requested filter.
+    for command in try resolver.testOneCommands(filter: "AxolotyCheckTests", repetition: nil, platform: .linux) {
+        #expect(command.arguments.last == "AxolotyCheckTests")
+    }
+    #expect(resolver.manifest.testOne.alternates?.isEmpty == false)
+}
+
+@Test
 func plannerOrdersDependenciesBeforeDependants() throws {
     let plan = try AxolotyCheckPlanner().plan([node("app", dependencies: ["core"]), node("core")])
     #expect(plan.nodes.map(\.name) == ["core", "app"])
