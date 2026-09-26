@@ -2,13 +2,14 @@
 
 import Testing
 
+import AxolotyZenohContract
 import CAxolotyZenoh
 
 /// Ownership and lifecycle coverage for the C façade's session registry.
 ///
 /// The suite is serialized because the façade owns one fixed session registry
 /// for the process and does not lock it.
-@Suite("Axoloty Zenoh C façade session lifecycle", .serialized)
+@Suite("Axoloty Zenoh façade conformance", .serialized)
 struct CAxolotyZenohSessionLifecycleTests {
     private func baseConfiguration(
         mode: axoloty_zenoh_mode_t = AXOLOTY_ZENOH_MODE_PEER
@@ -42,6 +43,12 @@ struct CAxolotyZenohSessionLifecycleTests {
         return (result, session)
     }
 
+    private func contractVectors() throws(ZenohFacadeContract.FixtureError) -> ZenohFacadeContract.Vectors {
+        let document = try ZenohFacadeContract.load()
+        #expect(document.contractVersion == "1.0.0")
+        return document.vectors
+    }
+
     @Test("a peer session opens, reports OPEN, closes, and rejects a repeated close")
     func openStateClose() throws {
         let (openResult, opened) = openSession()
@@ -63,7 +70,7 @@ struct CAxolotyZenohSessionLifecycleTests {
 
     @Test("an unreachable client open fails and releases its slot")
     func unreachableClientCleansUp() throws {
-        let endpoint = Array("tcp/127.0.0.1:1".utf8)
+        let endpoint = Array(try contractVectors().sessionFailure.endpoint.utf8)
         let (failure, failedSession) = openSession(mode: AXOLOTY_ZENOH_MODE_CLIENT, endpoint: endpoint)
         #expect(failure == AXOLOTY_ZENOH_TRANSPORT_ERROR)
         #expect(failedSession == nil)
