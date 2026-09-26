@@ -311,6 +311,7 @@ extension CAxolotyZenohSessionLifecycleTests {
             let fillerKey = Array("axoloty/contract/fill/\(index)".utf8)
             #expect(subscribe(receiver, to: fillerKey).0 == AXOLOTY_ZENOH_OK)
         }
+        #expect(poll(receiver, subscription: external).0 == AXOLOTY_ZENOH_INVALID_ARGUMENT)
         var rejectedHandle: OpaquePointer?
         let fullResult = profileFourKey.withUnsafeBufferPointer { buffer in
             axoloty_zenoh_subscribe(receiver, buffer.baseAddress, UInt32(buffer.count), &rejectedHandle)

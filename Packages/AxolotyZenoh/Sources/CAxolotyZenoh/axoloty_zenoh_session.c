@@ -2,6 +2,7 @@
 
 #include "axoloty_zenoh.h"
 
+#include <assert.h>
 #include <stdatomic.h>
 #include <string.h>
 
@@ -367,6 +368,10 @@ static void axoloty_zenoh_receive_sample(z_loaned_sample_t *sample, void *contex
     unsigned session_index = (unsigned)(token & 0x3u);
     unsigned subscriber_index = (unsigned)((token >> 2) & 0x7u);
     unsigned generation = (unsigned)(token >> 5);
+    // Callback contexts are minted by this façade; keep the bounds explicit
+    // before indexing fixed registries, including for a future pico backend.
+    assert(session_index < AXOLOTY_ZENOH_MAX_SESSIONS);
+    assert(subscriber_index < AXOLOTY_ZENOH_MAX_SUBSCRIBERS);
     struct axoloty_zenoh_subscription *subscription =
         &g_sessions[session_index].subscribers[subscriber_index];
     atomic_fetch_add_explicit(&subscription->active_callbacks, 1, memory_order_acquire);

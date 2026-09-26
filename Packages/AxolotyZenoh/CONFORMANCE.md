@@ -55,6 +55,10 @@ least `8 × (9,216 + 256) = 75,776` bytes of fixed key/payload arrays per
 session, plus bounded metadata and Zenoh subscriber handles. Queue capacity in
 the host binding is per subscription, not shared across the session.
 
+The façade supports four sessions. Its maximum fixed key/payload array cost is
+therefore `4 × 75,776 = 303,104` bytes (about 303 KB), plus bounded metadata and
+Zenoh subscriber handles across those sessions.
+
 ## Required behavior
 
 Both implementations of the façade ABI must satisfy all assertions in the
