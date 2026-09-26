@@ -55,6 +55,15 @@ least `8 × (9,216 + 256) = 75,776` bytes of fixed key/payload arrays per
 session, plus bounded metadata and Zenoh subscriber handles. Queue capacity in
 the host binding is per subscription, not shared across the session.
 
+Queue admission performs at most eight atomic claim attempts. A full queue or
+exhausted claim retries drops the newest frame and increments that subscription's
+dropped counter and poll notification. Unsubscribe invalidates the handle and
+logically discards that subscription's queued frames and pending notifications;
+other subscription queues are unchanged. Teardown does not spin while callbacks
+finish. A retired slot is unavailable for reuse until any callback that had
+already entered has returned, so a concurrent subscribe can temporarily see
+capacity exhaustion when every other slot is active or retiring.
+
 ## Required behavior
 
 Both implementations of the façade ABI must satisfy all assertions in the
