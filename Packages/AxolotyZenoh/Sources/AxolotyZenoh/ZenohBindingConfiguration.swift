@@ -29,17 +29,24 @@ public enum ZenohBindingConfigurationError: Error, Sendable, Equatable {
 /// Zenoh's synchronous session-open API does not expose a meaningful deadline
 /// that the binding can enforce without adding its own clock or background
 /// task, so this configuration does not include a timeout. The receive limits
-/// may reduce the façade's fixed capacities but cannot exceed them.
+/// may reduce the façade's fixed per-subscription capacities but cannot exceed
+/// them. Two façade subscriber slots are reserved for profile-interest shapes.
+/// ``maximumExternalRouteCapacity`` derives the remaining route slots from the
+/// façade limit.
 public struct ZenohBindingConfiguration: Sendable, Equatable {
+    /// The external-route capacity after reserving two profile-interest slots.
+    public static let maximumExternalRouteCapacity = ZenohSession.maximumSubscriberCount - 2
+
     /// The supported Zenoh connectivity mode.
     public let mode: ZenohBindingMode
     /// The router endpoint, expressed as a Zenoh endpoint string.
     public let connectEndpoint: String
     /// The largest Coaty profile key accepted by the binding, in UTF-8 bytes.
     public let maximumProfileKeyBytes: Int
-    /// The maximum number of exact external routes tracked at once.
+    /// The maximum number of exact external routes tracked at once, in addition
+    /// to two reserved profile-interest subscriptions.
     public let maximumExternalRoutes: Int
-    /// The maximum number of frames admitted to the receive queue.
+    /// The maximum number of frames admitted to each subscription's receive queue.
     public let receiveQueueCapacity: Int
     /// The maximum key-expression size admitted from received frames, in bytes.
     public let receiveKeyCapacity: Int
@@ -54,10 +61,11 @@ public struct ZenohBindingConfiguration: Sendable, Equatable {
     ///     printable ASCII bytes (`0x21...0x7E`) and must not contain `"` or `\\`.
     ///   - maximumProfileKeyBytes: Largest Coaty profile key accepted. Must be
     ///     in `1...256`.
-    ///   - maximumExternalRoutes: Maximum exact external routes tracked. Must
-    ///     be in `1...64`.
-    ///   - receiveQueueCapacity: Maximum admitted receive frames. Must be in
-    ///     `1...4`.
+    ///   - maximumExternalRoutes: Maximum exact external routes tracked in
+    ///     addition to the two profile-interest subscriptions. Must be in
+    ///     `1...maximumExternalRouteCapacity`.
+    ///   - receiveQueueCapacity: Maximum admitted receive frames per
+    ///     subscription. Must be in `1...4`.
     ///   - receiveKeyCapacity: Maximum admitted received key bytes. Must be in
     ///     `1...256`.
     ///   - receivePayloadCapacity: Maximum admitted received payload bytes.
@@ -68,7 +76,7 @@ public struct ZenohBindingConfiguration: Sendable, Equatable {
         mode: ZenohBindingMode = .client,
         connectEndpoint: String = "tcp/127.0.0.1:7447",
         maximumProfileKeyBytes: Int = 256,
-        maximumExternalRoutes: Int = 64,
+        maximumExternalRoutes: Int = ZenohBindingConfiguration.maximumExternalRouteCapacity,
         receiveQueueCapacity: Int = 4,
         receiveKeyCapacity: Int = ZenohFrameStorage.keyCapacity,
         receivePayloadCapacity: Int = ZenohFrameStorage.payloadCapacity
@@ -81,7 +89,7 @@ public struct ZenohBindingConfiguration: Sendable, Equatable {
         guard (1...ZenohFrameStorage.keyCapacity).contains(maximumProfileKeyBytes) else {
             throw .maximumProfileKeyBytesOutOfRange
         }
-        guard (1...64).contains(maximumExternalRoutes) else {
+        guard (1...Self.maximumExternalRouteCapacity).contains(maximumExternalRoutes) else {
             throw .maximumExternalRoutesOutOfRange
         }
         guard (1...4).contains(receiveQueueCapacity) else {

@@ -56,7 +56,7 @@ let package = Package(
         .target(
             name: "AxolotyZenohContract",
             path: "Sources/AxolotyZenohContract",
-            resources: [.copy("Resources/axoloty-zenoh-facade-v1.json")]
+            resources: [.copy("Resources/axoloty-zenoh-facade-v2.json")]
         ),
         .target(
             name: "CAxolotyZenohTestSupport",

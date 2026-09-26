@@ -13,7 +13,7 @@ struct ZenohBindingConfigurationTests {
             mode: .client,
             connectEndpoint: String(repeating: "x", count: 512),
             maximumProfileKeyBytes: 256,
-            maximumExternalRoutes: 64,
+            maximumExternalRoutes: ZenohBindingConfiguration.maximumExternalRouteCapacity,
             receiveQueueCapacity: 4,
             receiveKeyCapacity: 256,
             receivePayloadCapacity: 2048
@@ -22,7 +22,7 @@ struct ZenohBindingConfigurationTests {
         #expect(configuration.mode == .client)
         #expect(configuration.connectEndpoint.utf8.count == 512)
         #expect(configuration.maximumProfileKeyBytes == 256)
-        #expect(configuration.maximumExternalRoutes == 64)
+        #expect(configuration.maximumExternalRoutes == ZenohBindingConfiguration.maximumExternalRouteCapacity)
         #expect(configuration.receiveQueueCapacity == 4)
         #expect(configuration.receiveKeyCapacity == 256)
         #expect(configuration.receivePayloadCapacity == 2048)
@@ -50,7 +50,7 @@ struct ZenohBindingConfigurationTests {
         #expect(configuration.mode == .client)
         #expect(configuration.connectEndpoint == "tcp/127.0.0.1:7447")
         #expect(configuration.maximumProfileKeyBytes == 256)
-        #expect(configuration.maximumExternalRoutes == 64)
+        #expect(configuration.maximumExternalRoutes == ZenohBindingConfiguration.maximumExternalRouteCapacity)
         #expect(configuration.receiveQueueCapacity == 4)
         #expect(configuration.receiveKeyCapacity == ZenohFrameStorage.keyCapacity)
         #expect(configuration.receivePayloadCapacity == ZenohFrameStorage.payloadCapacity)
@@ -90,7 +90,9 @@ struct ZenohBindingConfigurationTests {
             try ZenohBindingConfiguration(maximumExternalRoutes: 0)
         }
         #expect(throws: ZenohBindingConfigurationError.maximumExternalRoutesOutOfRange) {
-            try ZenohBindingConfiguration(maximumExternalRoutes: 65)
+            try ZenohBindingConfiguration(
+                maximumExternalRoutes: ZenohBindingConfiguration.maximumExternalRouteCapacity + 1
+            )
         }
         #expect(throws: ZenohBindingConfigurationError.receiveQueueCapacityOutOfRange) {
             try ZenohBindingConfiguration(receiveQueueCapacity: 0)

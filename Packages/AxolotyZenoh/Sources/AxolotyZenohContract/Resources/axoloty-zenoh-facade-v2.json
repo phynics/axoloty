@@ -1,5 +1,5 @@
 {
-  "contractVersion": "1.0.0",
+  "contractVersion": "2.0.0",
   "vectors": {
     "roundTrip": {
       "key": "axoloty/contract/round-trip",
@@ -8,6 +8,21 @@
     "multipleSubscribers": {
       "key": "axoloty/contract/multiple-subscribers",
       "payload": [17, 0, 255]
+    },
+    "multiSubscription": {
+      "profileFourSegments": {
+        "key": "coaty/3/contracts/ADV/source",
+        "payload": [34, 68]
+      },
+      "profileFiveSegments": {
+        "key": "coaty/3/contracts/ADV/source/value",
+        "payload": [51, 85]
+      },
+      "exactExternalRoute": {
+        "key": "coaty/3/contracts/external/route",
+        "payload": [102, 119]
+      },
+      "maximumSubscribers": 8
     },
     "queueOverflow": {
       "key": "axoloty/contract/queue-overflow",
