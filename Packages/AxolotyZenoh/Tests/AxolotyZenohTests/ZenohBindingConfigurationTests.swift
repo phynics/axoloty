@@ -68,6 +68,9 @@ struct ZenohBindingConfigurationTests {
             try ZenohBindingConfiguration(connectEndpoint: "tcp/router\n")
         }
         #expect(throws: ZenohBindingConfigurationError.invalidConnectEndpoint) {
+            try ZenohBindingConfiguration(connectEndpoint: "tcp/127.0.0.1 :7447")
+        }
+        #expect(throws: ZenohBindingConfigurationError.invalidConnectEndpoint) {
             try ZenohBindingConfiguration(connectEndpoint: "tcp/\"router\"")
         }
         #expect(throws: ZenohBindingConfigurationError.invalidConnectEndpoint) {

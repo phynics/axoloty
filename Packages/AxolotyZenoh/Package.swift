@@ -8,7 +8,8 @@ import PackageDescription
 // product, and no build of the root package, resolves or links Zenoh. See
 // docs/adr/0007-zenoh-adapter-package-boundary.md. The host C façade is the
 // first target; the root package dependency and AxolotyZenohCore product arrive
-// with #804, while the AxolotyZenoh product arrives with #807.
+// with #804. The AxolotyZenoh host product starts here with the configuration
+// surface; its AxolotyRuntimeTransport conformance arrives with #807.
 let package = Package(
     name: "AxolotyZenoh",
     platforms: [

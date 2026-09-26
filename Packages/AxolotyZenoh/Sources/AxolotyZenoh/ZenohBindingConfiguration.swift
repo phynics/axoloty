@@ -50,8 +50,8 @@ public struct ZenohBindingConfiguration: Sendable, Equatable {
     ///
     /// - Parameters:
     ///   - mode: Connectivity mode. Only client mode is supported.
-    ///   - connectEndpoint: Router endpoint. Must contain 1...512 printable
-    ///     ASCII bytes and must not contain `"` or `\\`.
+    ///   - connectEndpoint: Router endpoint. Must contain 1...512 non-space
+    ///     printable ASCII bytes (`0x21...0x7E`) and must not contain `"` or `\\`.
     ///   - maximumProfileKeyBytes: Largest Coaty profile key accepted. Must be
     ///     in `1...256`.
     ///   - maximumExternalRoutes: Maximum exact external routes tracked. Must
@@ -75,7 +75,7 @@ public struct ZenohBindingConfiguration: Sendable, Equatable {
     ) throws(ZenohBindingConfigurationError) {
         let endpointBytes = Array(connectEndpoint.utf8)
         guard (1...512).contains(endpointBytes.count),
-              endpointBytes.allSatisfy({ (0x20...0x7E).contains($0) && $0 != 0x22 && $0 != 0x5C }) else {
+              endpointBytes.allSatisfy({ (0x21...0x7E).contains($0) && $0 != 0x22 && $0 != 0x5C }) else {
             throw .invalidConnectEndpoint
         }
         guard (1...ZenohFrameStorage.keyCapacity).contains(maximumProfileKeyBytes) else {
