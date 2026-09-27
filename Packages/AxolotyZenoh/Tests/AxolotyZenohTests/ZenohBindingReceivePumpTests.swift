@@ -57,6 +57,35 @@ struct ZenohBindingReceivePumpTests {
         await binding.stop()
     }
 
+    @Test("drops and counts frames above configured receive key and payload limits")
+    func dropsFramesAboveConfiguredReceiveLimits() async throws {
+        let session = RecordingZenohSession()
+        let configuration = try ZenohBindingConfiguration(
+            receiveKeyCapacity: 1,
+            receivePayloadCapacity: 1
+        )
+        let binding = ZenohBinding(
+            configuration: configuration,
+            session: session,
+            receivePumpIntervalNanoseconds: 60_000_000_000
+        )
+        let counters = RuntimeTransportDiagnostics()
+        await binding.setDiagnostics(counters)
+        let recorder = FrameRecorder()
+        try await binding.start { recorder.append($0) }
+        try await binding.perform(.externalRouteActivated(transition("x")))
+        session.enqueue(.frame(PollFrameSource(key: Array("xx".utf8), payload: [1])), for: 1)
+        session.enqueue(.frame(PollFrameSource(key: Array("x".utf8), payload: [1, 2])), for: 1)
+
+        binding.drainReceiveQueues()
+
+        #expect(recorder.snapshot().isEmpty)
+        #expect(counters.snapshot().receivedFrames == 0)
+        #expect(counters.snapshot().receiveDrops == 0)
+        #expect(counters.snapshot().oversizedSamples == 2)
+        await binding.stop()
+    }
+
     @Test("forwards transport and closed-session poll failures")
     func forwardsPollFailures() async throws {
         let session = RecordingZenohSession()

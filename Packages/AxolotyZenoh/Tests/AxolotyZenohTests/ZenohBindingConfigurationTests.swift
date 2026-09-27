@@ -14,7 +14,6 @@ struct ZenohBindingConfigurationTests {
             connectEndpoint: String(repeating: "x", count: 512),
             maximumProfileKeyBytes: 256,
             maximumExternalRoutes: ZenohBindingConfiguration.maximumExternalRouteCapacity,
-            receiveQueueCapacity: 4,
             receiveKeyCapacity: 256,
             receivePayloadCapacity: 2048
         )
@@ -23,7 +22,6 @@ struct ZenohBindingConfigurationTests {
         #expect(configuration.connectEndpoint.utf8.count == 512)
         #expect(configuration.maximumProfileKeyBytes == 256)
         #expect(configuration.maximumExternalRoutes == ZenohBindingConfiguration.maximumExternalRouteCapacity)
-        #expect(configuration.receiveQueueCapacity == 4)
         #expect(configuration.receiveKeyCapacity == 256)
         #expect(configuration.receivePayloadCapacity == 2048)
 
@@ -31,14 +29,12 @@ struct ZenohBindingConfigurationTests {
             connectEndpoint: "x",
             maximumProfileKeyBytes: 1,
             maximumExternalRoutes: 1,
-            receiveQueueCapacity: 1,
             receiveKeyCapacity: 1,
             receivePayloadCapacity: 1
         )
         #expect(minimums.connectEndpoint == "x")
         #expect(minimums.maximumProfileKeyBytes == 1)
         #expect(minimums.maximumExternalRoutes == 1)
-        #expect(minimums.receiveQueueCapacity == 1)
         #expect(minimums.receiveKeyCapacity == 1)
         #expect(minimums.receivePayloadCapacity == 1)
     }
@@ -51,7 +47,6 @@ struct ZenohBindingConfigurationTests {
         #expect(configuration.connectEndpoint == "tcp/127.0.0.1:7447")
         #expect(configuration.maximumProfileKeyBytes == 256)
         #expect(configuration.maximumExternalRoutes == ZenohBindingConfiguration.maximumExternalRouteCapacity)
-        #expect(configuration.receiveQueueCapacity == 4)
         #expect(configuration.receiveKeyCapacity == ZenohFrameStorage.keyCapacity)
         #expect(configuration.receivePayloadCapacity == ZenohFrameStorage.payloadCapacity)
     }
@@ -94,12 +89,6 @@ struct ZenohBindingConfigurationTests {
                 maximumExternalRoutes: ZenohBindingConfiguration.maximumExternalRouteCapacity + 1
             )
         }
-        #expect(throws: ZenohBindingConfigurationError.receiveQueueCapacityOutOfRange) {
-            try ZenohBindingConfiguration(receiveQueueCapacity: 0)
-        }
-        #expect(throws: ZenohBindingConfigurationError.receiveQueueCapacityOutOfRange) {
-            try ZenohBindingConfiguration(receiveQueueCapacity: 5)
-        }
         #expect(throws: ZenohBindingConfigurationError.receiveKeyCapacityOutOfRange) {
             try ZenohBindingConfiguration(receiveKeyCapacity: 0)
         }
@@ -125,7 +114,6 @@ struct ZenohBindingConfigurationTests {
             "connectEndpoint",
             "maximumProfileKeyBytes",
             "maximumExternalRoutes",
-            "receiveQueueCapacity",
             "receiveKeyCapacity",
             "receivePayloadCapacity",
         ])
