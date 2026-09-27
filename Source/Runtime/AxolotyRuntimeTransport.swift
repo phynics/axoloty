@@ -74,6 +74,13 @@ public protocol AxolotyRuntimeTransport: AnyObject, Sendable {
     ///
     /// - Parameter handler: Callback invoked after the failure episode recovers.
     func setRecoveryHandler(_ handler: @escaping @Sendable () -> Void) async
+    /// Installs the runtime-owned bounded sink for transport activity counters.
+    ///
+    /// Adapters may update the sink synchronously from their serialized or
+    /// synchronized paths. Transports that do not report counters may ignore it.
+    ///
+    /// - Parameter diagnostics: Shared fixed-size counter sink.
+    func setDiagnostics(_ diagnostics: RuntimeTransportDiagnostics) async
     /// Applies one owned transport effect in protocol action order.
     ///
     /// - Parameter effect: A finished publication, or an exact external-route
@@ -118,6 +125,10 @@ public extension AxolotyRuntimeTransport {
     ///
     /// - Parameter handler: Recovery callback supplied by the runtime.
     func setRecoveryHandler(_ handler: @escaping @Sendable () -> Void) async { _ = handler }
+    /// Does nothing for transports that do not report activity counters.
+    ///
+    /// - Parameter diagnostics: Runtime-owned counter sink.
+    func setDiagnostics(_ diagnostics: RuntimeTransportDiagnostics) async { _ = diagnostics }
     func activateProfileInterest(namespace: String) async throws {}
     func deactivateProfileInterest(namespace: String) async throws {}
     func classifyRoute(_ route: ByteSlice) -> ProtocolRouteClassification {

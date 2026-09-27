@@ -49,6 +49,7 @@ public func runRuntimeTransportContract(
 ) async throws {
     let received = ContractFrameRecorder()
     let failures = ContractFailureRecorder()
+    await fixture.transport.setDiagnostics(RuntimeTransportDiagnostics())
     await fixture.transport.setFailureHandler { failures.append($0) }
 
     try await fixture.start { received.append($0) }

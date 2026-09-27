@@ -9,6 +9,33 @@ import AxolotyWire
 import Foundation
 
 extension AxolotyRuntimeTests {
+    @Test("transport counter surface is bounded and carrier-neutral")
+    func transportCounterSurfaceIsNeutral() {
+        let counters = RuntimeTransportCounters()
+        let names = Mirror(reflecting: counters).children.compactMap(\.label)
+        let forbidden = ["mqtt", "zenoh", "broker", "router", "topic", "key-expression"]
+
+        #expect(names.sorted() == [
+            "activeExternalSubscriptions", "oversizedSamples", "publishedFrames",
+            "receiveDrops", "receivedFrames", "reconnects", "sessionFailures", "sessionOpens",
+        ].sorted())
+        #expect(!names.contains { name in forbidden.contains { name.localizedCaseInsensitiveContains($0) } })
+    }
+
+    @Test("runtime snapshot includes transport counters")
+    func runtimeSnapshotIncludesTransportCounters() async throws {
+        let transport = TestTransport()
+        let runtime = AxolotyRuntime(definition: try makeDefinition(), transport: transport)
+
+        try await runtime.start()
+        let snapshot = await runtime.diagnosticsSnapshot()
+
+        #expect(snapshot.sessionOpens == 1)
+        #expect(snapshot.publishedFrames > 0)
+        #expect(snapshot.transportReconnects == 0)
+        await runtime.stop()
+    }
+
     @Test("run completes when the executor is stopped")
     func runCompletesWhenStopped() async throws {
         let runtime = AxolotyRuntime(definition: try makeDefinition(), transport: TestTransport())

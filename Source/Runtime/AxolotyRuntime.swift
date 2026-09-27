@@ -87,6 +87,7 @@ actor ProtocolExecutor {
     /// `queuedTransportEffects`.
     private var pendingOutboundEffects: [RuntimeQueuedTransportEffect] = []
     var diagnosticsSnapshotValue = RuntimeDiagnostics()
+    private let transportDiagnostics = RuntimeTransportDiagnostics()
     var typedIoState: RuntimeTypedIoState
     var pendingTypedIoToken: RuntimeTypedIoPublicationToken? = nil
     var typedIoFlushAttempts = 0
@@ -154,6 +155,7 @@ actor ProtocolExecutor {
         installOutboundPump()
         do {
             let lastWill = try makeTransportLastWill()
+            await transport.setDiagnostics(transportDiagnostics)
             await transport.setFailureHandler { [weak self] failure in
                 Task { await self?.transportFailed(failure.detail) }
             }
@@ -438,7 +440,19 @@ actor ProtocolExecutor {
     func events() -> AsyncStream<RuntimeEvent> { eventStream }
 
     func diagnostics() -> AsyncStream<RuntimeDiagnostic> { diagnosticStream }
-    func diagnosticsSnapshot() -> RuntimeDiagnostics { diagnosticsSnapshotValue }
+    func diagnosticsSnapshot() -> RuntimeDiagnostics {
+        var snapshot = diagnosticsSnapshotValue
+        let transport = transportDiagnostics.snapshot()
+        snapshot.receivedFrames = transport.receivedFrames
+        snapshot.publishedFrames = transport.publishedFrames
+        snapshot.receiveDrops = transport.receiveDrops
+        snapshot.oversizedSamples = transport.oversizedSamples
+        snapshot.sessionOpens = transport.sessionOpens
+        snapshot.sessionFailures = transport.sessionFailures
+        snapshot.transportReconnects = transport.reconnects
+        snapshot.activeExternalSubscriptions = transport.activeExternalSubscriptions
+        return snapshot
+    }
 
     func terminalFailure() -> (AxolotyError.RuntimeErrorCode, String)? { terminalFailureValue }
 

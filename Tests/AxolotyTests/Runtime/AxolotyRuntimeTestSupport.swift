@@ -38,6 +38,7 @@ actor TestTransport: AxolotyRuntimeTransport, RuntimeTransportContractFixture {
     private var receive: (@Sendable (RuntimeInboundFrame) -> Void)?
     private var failure: (@Sendable (RuntimeTransportFailure) -> Void)?
     private var recovery: (@Sendable () -> Void)?
+    private var transportDiagnostics: RuntimeTransportDiagnostics?
     private var sent: [RuntimeOutboundMessage] = []
     private var delivered: [RuntimeOutboundMessage] = []
     private(set) var lifecycle: [String] = []
@@ -65,6 +66,8 @@ actor TestTransport: AxolotyRuntimeTransport, RuntimeTransportContractFixture {
         contractStartCount += 1
         lifecycle.append("start")
         if failureStage == .start { throw TestTransportFailure() }
+        if contractStartCount > 1 { transportDiagnostics?.recordReconnect() }
+        transportDiagnostics?.recordSessionOpen()
         guard shouldBlockNextStart else { return }
         shouldBlockNextStart = false
         await withCheckedContinuation { continuation in
@@ -90,6 +93,10 @@ actor TestTransport: AxolotyRuntimeTransport, RuntimeTransportContractFixture {
         recovery = handler
     }
 
+    func setDiagnostics(_ diagnostics: RuntimeTransportDiagnostics) async {
+        transportDiagnostics = diagnostics
+    }
+
     func perform(_ effect: RuntimeTransportEffect) async throws {
         switch effect {
         case .publish(let message):
@@ -102,6 +109,7 @@ actor TestTransport: AxolotyRuntimeTransport, RuntimeTransportContractFixture {
                 throw TestTransportFailure()
             }
             delivered.append(message)
+            transportDiagnostics?.recordPublishedFrame()
         case .externalRouteActivated(let transition):
             let route = String(decoding: transition.route, as: UTF8.self)
             contractExternalRoutes.insert(route)
@@ -146,8 +154,10 @@ actor TestTransport: AxolotyRuntimeTransport, RuntimeTransportContractFixture {
 
     func inject(route: String, payload: inout [UInt8]) async {
         if route.hasPrefix("coaty/3/\(contractActiveNamespace ?? "<inactive>")/") {
+            transportDiagnostics?.recordReceivedFrame()
             receive?(.profile(route: route, payload: payload, nowMS: 0))
         } else if contractExternalRoutes.contains(route) {
+            transportDiagnostics?.recordReceivedFrame()
             receive?(.externalIo(route: route, payload: payload, nowMS: 0))
         }
         payload = Array(repeating: 0, count: payload.count)
