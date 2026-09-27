@@ -67,6 +67,13 @@ public protocol AxolotyRuntimeTransport: AnyObject, Sendable {
     /// Implementations must wrap foreign failures before invoking it and must not
     /// retain borrowed protocol data in this callback.
     func setFailureHandler(_ handler: @escaping @Sendable (RuntimeTransportFailure) -> Void) async
+    /// Installs a callback when a transport that reported a recoverable failure is ready again.
+    ///
+    /// The runtime uses this signal to resume without stopping or restarting a
+    /// transport that recovered its existing session.
+    ///
+    /// - Parameter handler: Callback invoked after the failure episode recovers.
+    func setRecoveryHandler(_ handler: @escaping @Sendable () -> Void) async
     /// Applies one owned transport effect in protocol action order.
     ///
     /// - Parameter effect: A finished publication, or an exact external-route
@@ -107,6 +114,10 @@ public extension AxolotyRuntimeTransport {
     }
 
     func setFailureHandler(_ handler: @escaping @Sendable (RuntimeTransportFailure) -> Void) async { _ = handler }
+    /// Does nothing for transports that do not report asynchronous recovery.
+    ///
+    /// - Parameter handler: Recovery callback supplied by the runtime.
+    func setRecoveryHandler(_ handler: @escaping @Sendable () -> Void) async { _ = handler }
     func activateProfileInterest(namespace: String) async throws {}
     func deactivateProfileInterest(namespace: String) async throws {}
     func classifyRoute(_ route: ByteSlice) -> ProtocolRouteClassification {

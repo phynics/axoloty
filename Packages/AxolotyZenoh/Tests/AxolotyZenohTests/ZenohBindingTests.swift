@@ -125,6 +125,64 @@ struct ZenohBindingTests {
         await binding.stop()
     }
 
+    @Test("same-namespace profile interest recovers after retained rollback handles are cleared")
+    func profileInterestReactivationAfterRollback() async throws {
+        let session = RecordingZenohSession()
+        let binding = try makeBinding(session: session)
+        try await binding.start { _ in }
+        session.subscribeFailureOnAttempt = 2
+        session.unsubscribeResult = .transportError
+        await #expect(throws: AxolotyError.self) {
+            try await binding.activateProfileInterest(namespace: "node")
+        }
+
+        session.unsubscribeResult = .success
+        do {
+            try await binding.activateProfileInterest(namespace: "node")
+            Issue.record("incomplete retained state must require explicit cleanup")
+        } catch {
+            guard case let .runtime(code, _) = error else {
+                Issue.record("expected incomplete-state error, got \(error)")
+                return
+            }
+            #expect(code == .subscriptionFailed)
+        }
+        try await binding.deactivateProfileInterest(namespace: "node")
+        session.subscribeFailureOnAttempt = nil
+        try await binding.activateProfileInterest(namespace: "node")
+        try await binding.deactivateProfileInterest(namespace: "node")
+
+        #expect(session.operations.suffix(4).elementsEqual([
+            .subscribe(Array("coaty/3/node/*/*".utf8), id: 3),
+            .subscribe(Array("coaty/3/node/*/*/*".utf8), id: 4),
+            .unsubscribe(3),
+            .unsubscribe(4),
+        ]))
+        await binding.stop()
+        #expect(session.operations.last == .close)
+    }
+
+    @Test("profile namespace changes are rejected and stopped deactivation is harmless")
+    func profileNamespaceAndStoppedDeactivationContract() async throws {
+        let binding = try makeBinding(session: RecordingZenohSession())
+        try await binding.deactivateProfileInterest(namespace: "node")
+        try await binding.start { _ in }
+        try await binding.activateProfileInterest(namespace: "node")
+
+        do {
+            try await binding.activateProfileInterest(namespace: "other")
+            Issue.record("a live profile namespace cannot be replaced in place")
+        } catch {
+            guard case .invalidConfiguration = error else {
+                Issue.record("expected invalidConfiguration, got \(error)")
+                return
+            }
+        }
+
+        await binding.stop()
+        try await binding.deactivateProfileInterest(namespace: "node")
+    }
+
     @Test("classifies routes using the active namespace and binding bounds")
     func routeClassification() async throws {
         let session = RecordingZenohSession()
@@ -165,11 +223,72 @@ struct ZenohBindingTests {
         let binding = try makeBinding(session: RecordingZenohSession())
         let recorder = FailureRecorder()
         await binding.setFailureHandler { recorder.append($0) }
+        try await binding.start { _ in }
         let failure = RuntimeTransportFailure(code: .brokerUnavailable, detail: "session lost")
 
         binding.reportFailure(failure)
 
         #expect(recorder.snapshot() == [failure])
+        await binding.stop()
+    }
+
+    @Test("debounces router loss and emits one failure and one recovery per outage")
+    func routerLossDebounceAndRecovery() async throws {
+        let session = RecordingZenohSession()
+        let now = NanosecondTestClock()
+        let binding = try makeBinding(session: session, now: { now.value }, debounce: 1_000)
+        let failures = FailureRecorder()
+        let recoveries = RecoveryRecorder()
+        await binding.setFailureHandler { failures.append($0) }
+        await binding.setRecoveryHandler { recoveries.append() }
+        try await binding.start { _ in }
+
+        binding.drainReceiveQueues()
+        now.advance(by: 10_000)
+        binding.drainReceiveQueues()
+        #expect(failures.snapshot().isEmpty)
+
+        session.connectedRouters = 1
+        binding.drainReceiveQueues()
+        session.connectedRouters = 0
+        binding.drainReceiveQueues()
+        now.advance(by: 999)
+        binding.drainReceiveQueues()
+        #expect(failures.snapshot().isEmpty)
+
+        now.advance(by: 1)
+        binding.drainReceiveQueues()
+        binding.drainReceiveQueues()
+        #expect(failures.snapshot() == [RuntimeTransportFailure(
+            code: .brokerUnavailable,
+            detail: ZenohBinding.routerLossFailureDetail
+        )])
+
+        session.connectedRouters = 1
+        binding.drainReceiveQueues()
+        binding.drainReceiveQueues()
+        #expect(recoveries.snapshot() == 1)
+        #expect(failures.snapshot().count == 1)
+        await binding.stop()
+    }
+
+    @Test("an intentional stop during router absence does not report failure")
+    func intentionalStopDuringRouterLossIsSilent() async throws {
+        let session = RecordingZenohSession()
+        let now = NanosecondTestClock()
+        let binding = try makeBinding(session: session, now: { now.value }, debounce: 1_000)
+        let failures = FailureRecorder()
+        await binding.setFailureHandler { failures.append($0) }
+        try await binding.start { _ in }
+        session.connectedRouters = 1
+        binding.drainReceiveQueues()
+        session.connectedRouters = 0
+        binding.drainReceiveQueues()
+        now.advance(by: 1_000)
+
+        await binding.stop()
+        #expect(!binding.drainReceiveQueues())
+        #expect(failures.snapshot().isEmpty)
     }
 
     @Test("maps façade capacity errors through the transport boundary")
@@ -249,14 +368,18 @@ struct ZenohBindingTests {
     private func makeBinding(
         session: any ZenohBindingSession,
         clock: @escaping @Sendable () -> UInt32 = { 0 },
-        receivePumpIntervalNanoseconds: UInt64 = 60_000_000_000
+        receivePumpIntervalNanoseconds: UInt64 = 60_000_000_000,
+        now: @escaping @Sendable () -> UInt64 = { 0 },
+        debounce: UInt64 = ZenohBinding.routerLossDebounceNanoseconds
     ) throws -> ZenohBinding {
         let configuration = try ZenohBindingConfiguration()
         return ZenohBinding(
             configuration: configuration,
             session: session,
             clock: clock,
-            receivePumpIntervalNanoseconds: receivePumpIntervalNanoseconds
+            receivePumpIntervalNanoseconds: receivePumpIntervalNanoseconds,
+            monotonicNowNanoseconds: now,
+            routerLossDebounceNanoseconds: debounce
         )
     }
 
@@ -290,6 +413,7 @@ final class RecordingZenohSession: ZenohBindingSession {
     var publishResult: ZenohResult = .success
     var unsubscribeResult: ZenohResult = .success
     var subscribeFailureOnAttempt: Int?
+    var connectedRouters: UInt32 = 0
 
     enum PollEntry {
         case frame(PollFrameSource)
@@ -352,6 +476,8 @@ final class RecordingZenohSession: ZenohBindingSession {
             return .result(result)
         }
     }
+
+    func connectedRouterCount() -> ZenohRouterCountResult { .count(connectedRouters) }
 }
 
 final class PollFrameSource {
@@ -375,4 +501,20 @@ final class FailureRecorder: @unchecked Sendable {
     func snapshot() -> [RuntimeTransportFailure] {
         lock.withLock { failures }
     }
+}
+
+final class RecoveryRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var count = 0
+
+    func append() { lock.withLock { count += 1 } }
+    func snapshot() -> Int { lock.withLock { count } }
+}
+
+final class NanosecondTestClock: @unchecked Sendable {
+    private let lock = NSLock()
+    private var current: UInt64 = 0
+
+    var value: UInt64 { lock.withLock { current } }
+    func advance(by amount: UInt64) { lock.withLock { current &+= amount } }
 }

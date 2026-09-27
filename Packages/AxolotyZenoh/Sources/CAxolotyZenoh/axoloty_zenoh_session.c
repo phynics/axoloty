@@ -46,6 +46,12 @@ struct axoloty_zenoh_session {
 
 static struct axoloty_zenoh_session g_sessions[AXOLOTY_ZENOH_MAX_SESSIONS];
 
+// `z_open()` is synchronous and the host binding serializes it with a
+// process-wide lock. Keep each unicast link open bounded so a stalled endpoint
+// cannot hold that lock indefinitely. Router-link recovery uses the existing
+// session and does not call `z_open()` again.
+#define AXOLOTY_ZENOH_LINK_OPEN_TIMEOUT_MS "5000"
+
 _Static_assert(AXOLOTY_ZENOH_MAX_SESSIONS == 4,
                "callback slot tokens reserve exactly 2 bits for four session slots");
 _Static_assert((AXOLOTY_ZENOH_MAX_SUBSCRIBERS & (AXOLOTY_ZENOH_MAX_SUBSCRIBERS - 1)) == 0,
@@ -172,6 +178,16 @@ static z_result_t axoloty_zenoh_open_zenoh_session(struct axoloty_zenoh_session 
         z_config_loan_mut(&zenoh_config),
         Z_CONFIG_MODE_KEY,
         config->mode == AXOLOTY_ZENOH_MODE_CLIENT ? "\"client\"" : "\"peer\""
+    );
+    if (result != Z_OK) {
+        z_config_drop(z_config_move(&zenoh_config));
+        return result;
+    }
+
+    result = zc_config_insert_json5(
+        z_config_loan_mut(&zenoh_config),
+        "transport/unicast/open_timeout",
+        AXOLOTY_ZENOH_LINK_OPEN_TIMEOUT_MS
     );
     if (result != Z_OK) {
         z_config_drop(z_config_move(&zenoh_config));

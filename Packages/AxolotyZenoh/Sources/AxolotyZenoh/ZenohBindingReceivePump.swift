@@ -8,6 +8,7 @@ struct ZenohReceiveDrain {
     let callback: (@Sendable (RuntimeInboundFrame) -> Void)?
     let frames: [RuntimeInboundFrame]
     let failure: RuntimeTransportFailure?
+    let recovered: Bool
     let isActive: Bool
 }
 
@@ -23,8 +24,8 @@ extension ZenohBinding {
         for frame in outcome.frames { callback(frame) }
         if let failure = outcome.failure {
             reportFailure(failure)
-            return false
         }
+        if outcome.recovered { reportRecovery() }
         return outcome.isActive
     }
 
@@ -45,7 +46,7 @@ extension ZenohBinding {
 
     private func drainReceiveQueuesLocked() -> ZenohReceiveDrain {
         guard started, let callback = receive else {
-            return ZenohReceiveDrain(callback: nil, frames: [], failure: nil, isActive: false)
+            return ZenohReceiveDrain(callback: nil, frames: [], failure: nil, recovered: false, isActive: false)
         }
         let subscriptions = profileSubscriptions + externalSubscriptions.map(\.subscription)
         let routeState = ZenohInboundRouteState(
@@ -55,7 +56,9 @@ extension ZenohBinding {
         )
         var frames: [RuntimeInboundFrame] = []
         var storage = ZenohFrameStorage()
-        var failure: RuntimeTransportFailure?
+        let connectivity = pollRouterConnectivityLocked()
+        var failure = connectivity.failure
+        var isActive = true
 
         for subscription in subscriptions {
             if let pollFailure = pollSubscription(
@@ -65,10 +68,57 @@ extension ZenohBinding {
                 frames: &frames
             ) {
                 failure = pollFailure
+                isActive = false
                 break
             }
         }
-        return ZenohReceiveDrain(callback: callback, frames: frames, failure: failure, isActive: true)
+        return ZenohReceiveDrain(
+            callback: callback,
+            frames: frames,
+            failure: failure,
+            recovered: connectivity.recovered,
+            isActive: isActive
+        )
+    }
+
+    private func pollRouterConnectivityLocked() -> (failure: RuntimeTransportFailure?, recovered: Bool) {
+        switch session.connectedRouterCount() {
+        case let .count(count) where count > 0:
+            let recovered = routerLossReported
+            hasObservedRouter = true
+            routerLossBeganAtNanoseconds = nil
+            routerLossReported = false
+            return (nil, recovered)
+        case .count:
+            guard hasObservedRouter else { return (nil, false) }
+            let now = monotonicNowNanoseconds()
+            if let began = routerLossBeganAtNanoseconds {
+                guard !routerLossReported, now &- began >= routerLossDebounceNanoseconds else {
+                    return (nil, false)
+                }
+            } else {
+                routerLossBeganAtNanoseconds = now
+                return (nil, false)
+            }
+            routerLossReported = true
+            return (
+                RuntimeTransportFailure(
+                    code: .brokerUnavailable,
+                    detail: Self.routerLossFailureDetail
+                ),
+                false
+            )
+        case let .failure(result):
+            guard hasObservedRouter, !routerLossReported else { return (nil, false) }
+            routerLossReported = true
+            return (
+                ZenohBindingSupport.failure(for: ZenohBindingSupport.error(
+                    for: result,
+                    operation: "Zenoh connected-router query"
+                )),
+                false
+            )
+        }
     }
 
     private func pollSubscription(

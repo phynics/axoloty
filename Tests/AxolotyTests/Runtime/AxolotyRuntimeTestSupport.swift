@@ -35,6 +35,7 @@ enum SetupFailureStage: String, CaseIterable, Sendable {
 actor TestTransport: AxolotyRuntimeTransport {
     private var receive: (@Sendable (RuntimeInboundFrame) -> Void)?
     private var failure: (@Sendable (RuntimeTransportFailure) -> Void)?
+    private var recovery: (@Sendable () -> Void)?
     private var sent: [RuntimeOutboundMessage] = []
     private(set) var lifecycle: [String] = []
     private(set) var lastWills: [RuntimeTransportLastWill?] = []
@@ -61,6 +62,10 @@ actor TestTransport: AxolotyRuntimeTransport {
 
     func setFailureHandler(_ handler: @escaping @Sendable (RuntimeTransportFailure) -> Void) async {
         failure = handler
+    }
+
+    func setRecoveryHandler(_ handler: @escaping @Sendable () -> Void) async {
+        recovery = handler
     }
 
     func perform(_ effect: RuntimeTransportEffect) async throws {
@@ -107,6 +112,8 @@ actor TestTransport: AxolotyRuntimeTransport {
         }
         failure?(RuntimeTransportFailure(code: code, detail: wrapped.userFriendlyMessage))
     }
+
+    func recover() { recovery?() }
 }
 
 struct TestTransportFailure: Error, Sendable {}
