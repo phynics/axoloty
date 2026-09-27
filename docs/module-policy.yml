@@ -380,8 +380,7 @@
         "AxolotyProtocol",
         "AxolotyStaticRuntime",
         "AxolotyWire",
-        "Foundation",
-        "Testing"
+        "Foundation"
       ],
       "forbiddenImports": [
         "CZenohC",
@@ -427,6 +426,210 @@
         "AxolotyZenoh"
       ],
       "note": "Host-only test support product. Shared behavioral assertions live outside Tests so sibling adapter packages can reuse them; firmware consumer manifests do not expose this product."
+    },
+    {
+      "name": "CZenohC",
+      "role": "adapter",
+      "platformClass": "host",
+      "path": "Packages/AxolotyZenoh/Sources/CZenohC",
+      "allowedImports": [],
+      "forbiddenImports": [
+        "Axoloty",
+        "AxolotyMQTT",
+        "AxolotyZenoh",
+        "AxolotyZenohCore",
+        "Foundation",
+        "MQTTNIO",
+        "NIO"
+      ],
+      "note": "Host-only system-library boundary for the pinned zenoh-c archive. It is declared only by the separate AxolotyZenoh package."
+    },
+    {
+      "name": "CAxolotyZenoh",
+      "role": "adapter",
+      "platformClass": "host",
+      "path": "Packages/AxolotyZenoh/Sources/CAxolotyZenoh",
+      "allowedImports": [],
+      "forbiddenImports": [
+        "Axoloty",
+        "AxolotyMQTT",
+        "AxolotyZenoh",
+        "Foundation",
+        "MQTTNIO",
+        "NIO"
+      ],
+      "note": "C façade for the Zenoh carrier. The system-library dependency stays inside the separate adapter package."
+    },
+    {
+      "name": "AxolotyZenohCore",
+      "role": "portable",
+      "platformClass": "portable",
+      "path": "Packages/AxolotyZenoh/Sources/AxolotyZenohCore",
+      "allowedImports": [
+        "AxolotyWire",
+        "CAxolotyZenoh"
+      ],
+      "forbiddenImports": [
+        "Axoloty",
+        "AxolotyMQTT",
+        "AxolotyZenoh",
+        "CZenohC",
+        "Foundation",
+        "MQTTNIO",
+        "NIO",
+        "NIOCore",
+        "NIOPosix",
+        "NIOConcurrencyHelpers",
+        "NIOSSL",
+        "NIOTransportServices",
+        "Network",
+        "Logging",
+        "OSLog",
+        "ErrorKit",
+        "Combine"
+      ],
+      "note": "Portable Embedded-Swift-compatible core. It may use the stable C façade, but cannot import the carrier system library or host runtime/transport modules."
+    },
+    {
+      "name": "AxolotyZenoh",
+      "role": "adapter",
+      "platformClass": "host",
+      "path": "Packages/AxolotyZenoh/Sources/AxolotyZenoh",
+      "allowedImports": [
+        "Axoloty",
+        "AxolotyProtocol",
+        "AxolotyWire",
+        "AxolotyZenohCore",
+        "Foundation"
+      ],
+      "forbiddenImports": [
+        "CZenohC",
+        "MQTTNIO",
+        "NIO",
+        "NIOCore",
+        "NIOPosix",
+        "NIOConcurrencyHelpers",
+        "NIOSSL",
+        "NIOTransportServices",
+        "Network",
+        "Logging",
+        "OSLog",
+        "AxolotyMQTT",
+        "MCP"
+      ],
+      "note": "Host runtime adapter over the bounded Zenoh core. Native transport calls remain behind CAxolotyZenoh."
+    },
+    {
+      "name": "AxolotyZenohContract",
+      "role": "tooling",
+      "platformClass": "tooling",
+      "path": "Packages/AxolotyZenoh/Sources/AxolotyZenohContract",
+      "allowedImports": [
+        "Foundation"
+      ],
+      "forbiddenImports": [
+        "Axoloty",
+        "AxolotyMQTT",
+        "AxolotyZenoh",
+        "CZenohC",
+        "MQTTNIO",
+        "NIO"
+      ],
+      "note": "Host-only package contract fixture; it does not participate in runtime composition."
+    },
+    {
+      "name": "CAxolotyZenohTestSupport",
+      "role": "tooling",
+      "platformClass": "tooling",
+      "path": "Packages/AxolotyZenoh/Tests/CAxolotyZenohTestSupport",
+      "allowedImports": [],
+      "forbiddenImports": [
+        "Axoloty",
+        "AxolotyMQTT",
+        "AxolotyZenoh",
+        "MQTTNIO",
+        "NIO"
+      ],
+      "note": "C-only host test seam for exercising façade receive bounds; available only to the Zenoh package tests."
+    },
+    {
+      "name": "CAxolotyZenohTests",
+      "role": "tooling",
+      "platformClass": "tooling",
+      "path": "Packages/AxolotyZenoh/ContractSuite",
+      "allowedImports": [
+        "AxolotyZenohContract",
+        "CAxolotyZenoh",
+        "CAxolotyZenohTestSupport",
+        "Testing"
+      ],
+      "forbiddenImports": [
+        "Axoloty",
+        "AxolotyMQTT",
+        "AxolotyZenoh",
+        "CZenohC",
+        "MQTTNIO",
+        "NIO"
+      ],
+      "note": "Host-only C façade contract tests."
+    },
+    {
+      "name": "AxolotyZenohCoreTests",
+      "role": "tooling",
+      "platformClass": "tooling",
+      "path": "Packages/AxolotyZenoh/Tests/AxolotyZenohCoreTests",
+      "allowedImports": [
+        "AxolotyWire",
+        "CAxolotyZenoh",
+        "AxolotyZenohCore",
+        "CAxolotyZenohTestSupport",
+        "Testing"
+      ],
+      "forbiddenImports": [
+        "Axoloty",
+        "AxolotyMQTT",
+        "AxolotyZenoh",
+        "CZenohC",
+        "MQTTNIO",
+        "NIO"
+      ],
+      "note": "Host-only tests for the portable Zenoh core."
+    },
+    {
+      "name": "AxolotyZenohTests",
+      "role": "tooling",
+      "platformClass": "tooling",
+      "path": "Packages/AxolotyZenoh/Tests/AxolotyZenohTests",
+      "allowedImports": [
+        "Axoloty",
+        "AxolotyMQTT",
+        "AxolotyProtocol",
+        "AxolotyProtocolTraceTestSupport",
+        "AxolotyTestBroker",
+        "AxolotyTransportContractTestSupport",
+        "AxolotyWire",
+        "AxolotyZenoh",
+        "AxolotyZenohCore",
+        "Darwin",
+        "Foundation",
+        "Glibc",
+        "Testing"
+      ],
+      "forbiddenImports": [
+        "CZenohC",
+        "MQTTNIO",
+        "NIO",
+        "NIOCore",
+        "NIOPosix",
+        "NIOConcurrencyHelpers",
+        "NIOSSL",
+        "NIOTransportServices",
+        "Network",
+        "Logging",
+        "OSLog",
+        "MCP"
+      ],
+      "note": "Host-only integration and conformance tests. Carrier comparisons use the public AxolotyMQTT and AxolotyTestBroker modules rather than importing networking libraries directly."
     },
     {
       "name": "AxolotyVersion",
