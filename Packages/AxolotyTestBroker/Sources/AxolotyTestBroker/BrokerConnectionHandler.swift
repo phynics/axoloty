@@ -70,7 +70,7 @@ final class BrokerConnectionHandler: ChannelInboundHandler, @unchecked Sendable 
             channel.writeAndFlush(MQTTPacketEncoder.unsuback(packetID: unsubscribe.packetID), promise: nil)
 
         case let .publish(publish):
-            broker.handleInboundPublish(publish)
+            broker.handleInboundPublish(publish, from: connectionID)
             if publish.qos == 1, let packetID = publish.packetID {
                 channel.writeAndFlush(MQTTPacketEncoder.puback(packetID: packetID), promise: nil)
             }

@@ -1,4 +1,6 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
+// The shared executable replay keeps its established cross-check path intact.
+// swiftlint:disable file_length
 
 import Foundation
 import Axoloty
@@ -7,119 +9,6 @@ import AxolotyProtocol
 import AxolotyStaticRuntime
 import AxolotyWire
 
-/// The thirteen Coaty Core wire families carried by the trace contract.
-enum TraceEventFamily: String, CaseIterable, Codable, Equatable, Hashable, Sendable {
-    case advertise = "ADV"
-    case deadvertise = "DAD"
-    case channel = "CHN"
-    case associate = "ASC"
-    case ioValue = "IOV"
-    case discover = "DSC"
-    case resolve = "RSV"
-    case query = "QRY"
-    case retrieve = "RTV"
-    case update = "UPD"
-    case complete = "CPL"
-    case call = "CLL"
-    case `return` = "RTN"
-}
-enum TraceDirection: String, Codable, Equatable, Sendable { case inbound, outbound }
-enum TraceRouteClassification: String, Codable, Equatable, Sendable { case coaty, external }
-enum TraceLocalOperation: String, Codable, Equatable, Sendable { case processInbound, publishOutbound }
-enum TraceRejectionCode: String, Codable, Equatable, Sendable {
-    case malformed, payloadTooLarge, unsupported, duplicate, saturated, deadlineExpired, correlationMismatch, externalRouteMismatch
-}
-
-struct TraceState: Codable, Equatable, Sendable {
-    let activeObjectIDs: [String]
-    let pendingCorrelationIDs: [String]
-    let associationIDs: [String]
-    let generation: Int
-    init(activeObjectIDs: [String] = [], pendingCorrelationIDs: [String] = [], associationIDs: [String] = [], generation: Int = 0) {
-        self.activeObjectIDs = activeObjectIDs.sorted()
-        self.pendingCorrelationIDs = pendingCorrelationIDs.sorted()
-        self.associationIDs = associationIDs.sorted()
-        self.generation = generation
-    }
-}
-struct TraceCapabilities: Codable, Equatable, Sendable {
-    let supportedFamilies: [TraceEventFamily]
-    init(supportedFamilies: [TraceEventFamily] = TraceEventFamily.allCases) { self.supportedFamilies = supportedFamilies.sorted { $0.rawValue < $1.rawValue } }
-}
-struct TraceLimits: Codable, Equatable, Sendable {
-    let maximumPayloadBytes: Int
-    let maximumObjects: Int
-    let maximumPendingCorrelations: Int
-    static let `default` = TraceLimits(maximumPayloadBytes: 2_048, maximumObjects: 4, maximumPendingCorrelations: 4)
-}
-struct TraceInput: Codable, Equatable, Sendable {
-    let family: TraceEventFamily
-    let direction: TraceDirection
-    let fixtureID: String
-    let fixturePayload: String
-    let payloadBytes: Int
-    let objectID: String?
-    let correlationID: String?
-    let associatingRoute: String?
-    let routeClassification: TraceRouteClassification?
-    let isExternalRoute: Bool?
-    let duplicate: Bool
-    let malformed: Bool
-    let deadlineExpired: Bool
-    init(family: TraceEventFamily, direction: TraceDirection, fixtureID: String, fixturePayload: String, objectID: String? = nil, correlationID: String? = nil, associatingRoute: String? = nil, routeClassification: TraceRouteClassification? = nil, isExternalRoute: Bool? = nil, duplicate: Bool = false, malformed: Bool? = nil, deadlineExpired: Bool = false) {
-        self.family = family; self.direction = direction; self.fixtureID = fixtureID; self.fixturePayload = fixturePayload
-        self.payloadBytes = fixturePayload.utf8.count; self.objectID = objectID; self.correlationID = correlationID
-        self.associatingRoute = associatingRoute; self.routeClassification = routeClassification; self.isExternalRoute = isExternalRoute
-        self.duplicate = duplicate; self.malformed = malformed ?? ((try? JSONSerialization.jsonObject(with: Data(fixturePayload.utf8), options: [.fragmentsAllowed])) == nil); self.deadlineExpired = deadlineExpired
-    }
-}
-struct TraceAction: Codable, Equatable, Sendable {
-    let kind: String; let family: TraceEventFamily; let correlationID: String?; let route: String?; let payload: [UInt8]?
-    init(kind: String, family: TraceEventFamily, correlationID: String? = nil, route: String? = nil, payload: [UInt8]? = nil) {
-        self.kind = kind; self.family = family; self.correlationID = correlationID; self.route = route; self.payload = payload
-    }
-
-    private enum CodingKeys: String, CodingKey { case kind, family, correlationID, route, payload }
-
-    init(from decoder: any Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        kind = try container.decode(String.self, forKey: .kind)
-        family = try container.decode(TraceEventFamily.self, forKey: .family)
-        correlationID = try container.decodeIfPresent(String.self, forKey: .correlationID)
-        route = try container.decodeIfPresent(String.self, forKey: .route)
-        payload = try container.decodeIfPresent([UInt8].self, forKey: .payload)
-    }
-}
-struct TraceRejection: Codable, Equatable, Sendable { let code: TraceRejectionCode; let reason: String }
-struct TraceObservation: Codable, Equatable, Sendable { let actions: [TraceAction]; let rejection: TraceRejection?; let nextState: TraceState }
-struct TraceStep: Codable, Equatable, Sendable {
-    let sequence: Int; let timeMilliseconds: UInt64; let priorState: TraceState; let capabilities: TraceCapabilities; let limits: TraceLimits; let input: TraceInput; let localOperation: TraceLocalOperation; let expected: TraceObservation
-}
-struct ProtocolTrace: Codable, Equatable, Sendable {
-    static let schemaVersion = 1
-    let schemaVersion: Int; let id: String; let description: String; let initialState: TraceState; let setup: [TraceStep]; let steps: [TraceStep]
-    init(id: String, description: String, initialState: TraceState, setup: [TraceStep] = [], steps: [TraceStep]) { self.schemaVersion = Self.schemaVersion; self.id = id; self.description = description; self.initialState = initialState; self.setup = setup; self.steps = steps }
-}
-/// The executable scenario spelling used by the G6 evidence contract.
-typealias ProtocolTraceScenario = ProtocolTrace
-struct TraceRun: Codable, Equatable, Sendable { let traceID: String; let observations: [TraceObservation] }
-enum TraceReplayError: Error, Equatable, Sendable {
-    case schemaVersion(Int); case stateMismatch(traceID: String, sequence: Int); case expectedMismatch(traceID: String, sequence: Int); case staticCapacityExceeded(traceID: String, sequence: Int)
-}
-protocol TraceReplayAdapter: Sendable { func replay(_ trace: ProtocolTrace) async throws -> TraceRun }
-
-/// The bounded, executable trace-driver contract used by both runtime
-/// profiles. Drivers own setup, one-step application, normalized state
-/// projection, and shutdown; callers never seed processor state directly.
-protocol RuntimeTraceDriver: ~Copyable {
-    mutating func start() async throws
-    mutating func apply(_ step: TraceStep) async throws -> TraceObservation
-    mutating func snapshot() async -> NormalizedProtocolState
-    mutating func stop() async
-}
-
-typealias NormalizedProtocolState = TraceState
-
 /// Carries the result of ``StaticTraceReplayAdapter/runOnLargeStack(_:)``
 /// back off the dedicated thread that ran the body.
 private final class LargeStackResultBox<Value>: @unchecked Sendable {
@@ -127,9 +16,39 @@ private final class LargeStackResultBox<Value>: @unchecked Sendable {
     var error: Error?
 }
 
+private final class RuntimeEventReceiptQueue: @unchecked Sendable {
+    private let lock = NSLock()
+    private var iterator: AsyncStream<RuntimeEvent>.Iterator
+
+    init(stream: AsyncStream<RuntimeEvent>) {
+        iterator = stream.makeAsyncIterator()
+    }
+
+    func next() async -> RuntimeEvent? {
+        var current = lock.withLock { iterator }
+        let event = await current.next()
+        lock.withLock { iterator = current }
+        return event
+    }
+}
+
 struct HostTraceReplayAdapter: TraceReplayAdapter {
     func replay(_ trace: ProtocolTrace) async throws -> TraceRun {
-        try await HostRuntimeTraceReplay(trace: trace).replay()
+        try await RuntimeTraceReplayAdapter(makeTransport: { HostTraceTransport() }).replay(trace)
+    }
+}
+
+/// Replays one shared protocol trace using a caller-selected runtime carrier.
+///
+/// The factory must return a fresh, stopped transport for each replay. The
+/// runtime is created and closed inside the adapter, so every trace starts from
+/// the corpus state and no carrier metadata enters ``TraceObservation``.
+struct RuntimeTraceReplayAdapter: TraceReplayAdapter {
+    let makeTransport: @Sendable () throws -> any RuntimeTraceCarrier
+
+    func replay(_ trace: ProtocolTrace) async throws -> TraceRun {
+        var replay = try HostRuntimeTraceReplay(trace: trace, transport: makeTransport())
+        return try await replay.replay()
     }
 }
 struct StaticTraceReplayAdapter: TraceReplayAdapter {
@@ -183,48 +102,52 @@ struct StaticTraceReplayAdapter: TraceReplayAdapter {
     }
 }
 
-private final class HostTraceTransport: AxolotyRuntimeTransport, @unchecked Sendable {
+private final class HostTraceTransport: RuntimeTraceCarrier, @unchecked Sendable {
     private let lock = NSLock()
-    private var classification: ProtocolRouteClassification = .coaty
-    private var effects: [RuntimeTransportEffect] = []
+    private var receive: (@Sendable (RuntimeInboundFrame) -> Void)?
 
-    func start(receive: @escaping @Sendable (RuntimeInboundFrame) -> Void) async throws {}
+    func start(receive: @escaping @Sendable (RuntimeInboundFrame) -> Void) async throws {
+        lock.withLock { self.receive = receive }
+    }
     func setFailureHandler(_ handler: @escaping @Sendable (RuntimeTransportFailure) -> Void) async {}
     func activateProfileInterest(namespace: String) async throws {}
     func deactivateProfileInterest(namespace: String) async throws {}
-    func stop() async {}
-
-    func perform(_ effect: RuntimeTransportEffect) async throws {
-        record(effect)
+    func stop() async {
+        lock.withLock { receive = nil }
     }
 
-    private func record(_ effect: RuntimeTransportEffect) {
-        lock.lock(); defer { lock.unlock() }
-        effects.append(effect)
+    func perform(_ effect: RuntimeTransportEffect) async throws {
+        _ = effect
+    }
+
+    func setOutboundEffectsEnabled(_ enabled: Bool) { _ = enabled }
+
+    func inject(_ frame: RuntimeInboundFrame, traceID: String, sequence: Int) async throws {
+        _ = traceID
+        _ = sequence
+        let callback = lock.withLock { receive }
+        callback?(frame)
     }
 
     func classifyRoute(_ route: ByteSlice) -> ProtocolRouteClassification {
-        lock.lock(); defer { lock.unlock() }
-        return classification
-    }
-
-    func setClassification(_ value: ProtocolRouteClassification) {
-        lock.lock(); defer { lock.unlock() }
-        classification = value
+        let prefix = Array("external/".utf8)
+        guard route.length >= prefix.count else { return .coaty }
+        for index in prefix.indices where route.byte(at: index) != prefix[index] { return .coaty }
+        return .external
     }
 }
 
 private struct HostRuntimeTraceReplay: RuntimeTraceDriver {
     private let trace: ProtocolTrace
     private let runtime: AxolotyRuntime
-    private let transport: HostTraceTransport
+    private let transport: any RuntimeTraceCarrier
     private var driverState = TraceState()
     private var driverLabels = TraceLabels()
     private var driverStarted = false
+    private var eventReceipts: RuntimeEventReceiptQueue?
 
-    init(trace: ProtocolTrace) throws {
+    init(trace: ProtocolTrace, transport: any RuntimeTraceCarrier = HostTraceTransport()) throws {
         self.trace = trace
-        let transport = HostTraceTransport()
         self.transport = transport
         // A non-zero runtime identity is required by the protocol routing-key
         // boundary.  Keeping it deterministic makes host traces reproducible.
@@ -249,6 +172,7 @@ private struct HostRuntimeTraceReplay: RuntimeTraceDriver {
     }
 
     mutating func start() async throws {
+        eventReceipts = RuntimeEventReceiptQueue(stream: await runtime.events())
         try await runtime.start()
         _ = await runtime.conformanceObservation()
         driverStarted = true
@@ -282,10 +206,12 @@ private struct HostRuntimeTraceReplay: RuntimeTraceDriver {
         driverStarted = false
     }
 
-    func replay() async throws -> TraceRun {
+    mutating func replay() async throws -> TraceRun {
         guard trace.schemaVersion == ProtocolTrace.schemaVersion else {
             throw TraceReplayError.schemaVersion(trace.schemaVersion)
         }
+        eventReceipts = RuntimeEventReceiptQueue(stream: await runtime.events())
+        transport.setOutboundEffectsEnabled(false)
         try await runtime.start()
         _ = await runtime.conformanceObservation()
         var state = trace.initialState
@@ -295,6 +221,7 @@ private struct HostRuntimeTraceReplay: RuntimeTraceDriver {
             try await seed(state: state, time: firstStep.timeMilliseconds, family: firstStep.input.family)
             _ = await runtime.conformanceObservation()
         }
+        transport.setOutboundEffectsEnabled(true)
         if !trace.setup.isEmpty {
             for setupStep in trace.setup {
                 labels.learn(state: state)
@@ -334,12 +261,12 @@ private struct HostRuntimeTraceReplay: RuntimeTraceDriver {
         return TraceRun(traceID: trace.id, observations: observations)
     }
 
-    private func seed(state: TraceState, time: UInt64, family: TraceEventFamily) async throws {
+    private mutating func seed(state: TraceState, time: UInt64, family: TraceEventFamily) async throws {
         for objectID in state.activeObjectIDs {
             let object = Self.identity(objectID)
             let topic = "coaty/3/trace/ADV/\(Self.uuidText(object))"
             let payload = "{\"object\":{\"objectId\":\"\(Self.uuidText(object))\",\"coreType\":\"CoatyObject\",\"objectType\":\"trace.Object\",\"name\":\"\(objectID)\"}}"
-            _ = await runtime.receive(.profile(route: topic, payload: Array(payload.utf8), nowMS: UInt32(time)))
+            _ = try await injectAndAwaitReceipt(.profile(route: topic, payload: Array(payload.utf8), nowMS: UInt32(time)))
         }
         if let correlationID = state.pendingCorrelationIDs.first {
             let correlation = Self.identity(correlationID)
@@ -359,15 +286,15 @@ private struct HostRuntimeTraceReplay: RuntimeTraceDriver {
                         ? .query(correlationID: correlation, payload: payload, timeoutMS: 5_000)
                         : .discover(correlationID: correlation, payload: payload, timeoutMS: 5_000)
             _ = await runtime.request(request, nowMS: UInt32(time))
+            _ = try await nextRuntimeReceipt(sequence: 0)
         }
     }
 
-    private func applyRuntime(_ step: TraceStep) async throws -> (RuntimeReceipt, RuntimeConformanceObservation) {
+    private mutating func applyRuntime(_ step: TraceStep) async throws -> (RuntimeReceipt, RuntimeConformanceObservation) {
         let input = step.input
         let source = Self.identity(input.objectID ?? "trace-source")
         let correlation = input.correlationID.map(Self.identity)
             ?? (SharedProtocolTraceReplay<64>.capability(input.family).isOneWay ? nil : Self.identity("malformed-correlation"))
-        transport.setClassification(input.routeClassification == .external ? .external : .coaty)
         let receipt: RuntimeReceipt
         if input.direction == .outbound {
             switch input.family {
@@ -389,9 +316,45 @@ private struct HostRuntimeTraceReplay: RuntimeTraceDriver {
             let correlationText = correlation.map(Self.uuidText)
             let topic = "coaty/3/trace/\(input.family.rawValue)/\(Self.uuidText(source))"
                 + (correlationText.map { "/\($0)" } ?? "")
-            receipt = await runtime.receive(.profile(route: topic, payload: Array(input.fixturePayload.utf8), nowMS: UInt32(step.timeMilliseconds)))
+            let frame = RuntimeInboundFrame.profile(
+                route: topic,
+                payload: Array(input.fixturePayload.utf8),
+                nowMS: UInt32(step.timeMilliseconds)
+            )
+            receipt = try await injectAndAwaitReceipt(frame, sequence: step.sequence)
         }
         return (receipt, await runtime.conformanceObservation())
+    }
+
+    private mutating func injectAndAwaitReceipt(
+        _ frame: RuntimeInboundFrame,
+        sequence: Int = 0
+    ) async throws -> RuntimeReceipt {
+        try await transport.inject(frame, traceID: trace.id, sequence: sequence)
+        return try await nextRuntimeReceipt(sequence: sequence)
+    }
+
+    private mutating func nextRuntimeReceipt(sequence: Int) async throws -> RuntimeReceipt {
+        guard let eventReceipts else {
+            throw TraceReplayError.missingRuntimeReceipt(traceID: trace.id, sequence: sequence)
+        }
+        let traceID = trace.id
+        let event = try await withThrowingTaskGroup(of: RuntimeEvent?.self) { group in
+            group.addTask { await eventReceipts.next() }
+            group.addTask {
+                try await Task.sleep(for: .seconds(10))
+                throw TraceReplayError.missingRuntimeReceipt(traceID: traceID, sequence: sequence)
+            }
+            guard let result = try await group.next() else {
+                throw TraceReplayError.missingRuntimeReceipt(traceID: traceID, sequence: sequence)
+            }
+            group.cancelAll()
+            return result
+        }
+        guard case let .transition(receipt) = event else {
+            throw TraceReplayError.missingRuntimeReceipt(traceID: trace.id, sequence: sequence)
+        }
+        return receipt
     }
 
     private static func observation(

@@ -370,6 +370,45 @@
       ]
     },
     {
+      "name": "AxolotyProtocolTraceTestSupport",
+      "role": "tooling",
+      "platformClass": "tooling",
+      "path": "Packages/AxolotyProtocolTraceTestSupport/Sources/AxolotyProtocolTraceTestSupport",
+      "allowedImports": [
+        "Axoloty",
+        "AxolotyObjectModel",
+        "AxolotyProtocol",
+        "AxolotyStaticRuntime",
+        "AxolotyWire",
+        "Foundation",
+        "Testing"
+      ],
+      "forbiddenImports": [
+        "CZenohC",
+        "AxolotyZenoh"
+      ],
+      "note": "Host-only shared protocol trace corpus and replay support. The root package stays Zenoh-free; firmware consumer manifests do not expose this product."
+    },
+    {
+      "name": "AxolotyTestBroker",
+      "role": "tooling",
+      "platformClass": "tooling",
+      "path": "Packages/AxolotyTestBroker/Sources/AxolotyTestBroker",
+      "allowedImports": [
+        "NIOConcurrencyHelpers",
+        "NIOCore",
+        "NIOPosix"
+      ],
+      "forbiddenImports": [
+        "Axoloty",
+        "AxolotyProtocol",
+        "AxolotyMQTT",
+        "CZenohC",
+        "AxolotyZenoh"
+      ],
+      "note": "Host-only in-process MQTT broker for deterministic transport tests; no firmware consumer manifest exposes this product."
+    },
+    {
       "name": "AxolotyTransportContractTestSupport",
       "role": "tooling",
       "platformClass": "tooling",

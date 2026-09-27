@@ -18,10 +18,24 @@ public final class TestMQTTBroker: Sendable {
     public struct Configuration: Sendable {
         public var host: String
         public var port: Int
+        /// Prevents a client from receiving publications that it publishes itself.
+        public var excludesPublisherFromDelivery: Bool
 
-        public init(host: String = "127.0.0.1", port: Int = 0) {
+        /// Creates in-process broker settings.
+        ///
+        /// - Parameters:
+        ///   - host: Address on which the broker listens.
+        ///   - port: Listening port, or `0` to request an ephemeral port.
+        ///   - excludesPublisherFromDelivery: Prevents a publishing client's
+        ///     own subscriptions from receiving that publication.
+        public init(
+            host: String = "127.0.0.1",
+            port: Int = 0,
+            excludesPublisherFromDelivery: Bool = false
+        ) {
             self.host = host
             self.port = port
+            self.excludesPublisherFromDelivery = excludesPublisherFromDelivery
         }
     }
 
@@ -104,6 +118,21 @@ public final class TestMQTTBroker: Sendable {
         state.withLockedValue { current in
             current.published.removeAll()
         }
+    }
+
+    /// Injects one publication from the broker into matching active sessions.
+    ///
+    /// This host-only seam lets transport tests drive an inbound subscription
+    /// without opening a second MQTT client connection.
+    public func injectPublication(topic: String, payload: [UInt8]) {
+        handleInboundPublish(MQTTPublishPacket(
+            topic: topic,
+            payload: payload,
+            qos: 0,
+            retain: false,
+            duplicate: false,
+            packetID: nil
+        ))
     }
 
     /// Closes a live connection without a `DISCONNECT`.
@@ -206,8 +235,9 @@ public final class TestMQTTBroker: Sendable {
 
     /// Handles an inbound `PUBLISH`: records it, applies retention, and routes
     /// it to every active subscription that matches.
-    func handleInboundPublish(_ packet: MQTTPublishPacket) {
+    func handleInboundPublish(_ packet: MQTTPublishPacket, from connectionID: UInt64? = nil) {
         state.withLockedValue { current in
+            let publishingClientID = connectionID.flatMap { current.connections[$0]?.clientID }
             current.published.append(BrokerPublishedFrame(
                 topic: packet.topic,
                 payload: packet.payload,
@@ -221,13 +251,22 @@ public final class TestMQTTBroker: Sendable {
                     current.retained[packet.topic] = RetainedMessage(payload: packet.payload, qos: packet.qos)
                 }
             }
-            route(packet, in: &current)
+            route(
+                packet,
+                in: &current,
+                excludingClientID: configuration.excludesPublisherFromDelivery ? publishingClientID : nil
+            )
         }
     }
 
     /// Routes a `PUBLISH` to each matching active session.
-    private func route(_ packet: MQTTPublishPacket, in current: inout BrokerState) {
+    private func route(
+        _ packet: MQTTPublishPacket,
+        in current: inout BrokerState,
+        excludingClientID: String? = nil
+    ) {
         for (clientID, session) in current.sessions {
+            guard clientID != excludingClientID else { continue }
             let deliveryQoS = session.subscriptions.reduce(into: UInt8(0)) { best, entry in
                 if MQTTTopicMatcher.matches(filter: entry.key, topic: packet.topic) {
                     best = max(best, min(entry.value, packet.qos))

@@ -111,3 +111,48 @@ shared contract suite. In particular:
 The suite documents no backend-specific tolerances. Divergence status:
 
 > Existing vectors remain to be qualified by phynics/axoloty-embedded#8. Contract 2.1.0 requires its pico implementation to provide the same connected-router query and vectors; if it cannot, record the divergence with evidence (no pico-backend comparison was performed here).
+
+## MQTT and Zenoh protocol trace parity (#811)
+
+`AxolotyProtocolTraceTestSupport` owns one trace schema, fixture corpus,
+canonical observations, and runtime replay adapter. The Zenoh tests reuse this
+module for 34 protocol-eligible traces. They run each trace through `MQTTBinding`
+with the root package's in-process broker and through `ZenohBinding` with an
+injected session. They do not start `zenohd`.
+
+The adapter suppresses startup and state-seeding publications. It sends outbound
+actions from scenario steps through each binding. The comparison ignores
+carrier keys, timestamps, and transport identifiers. It compares actions,
+families, normalized correlation labels, payloads, route classes, rejections,
+and protocol state.
+
+The parity run uses 34 of the 35 stored traces. It covers all 13 closed-profile
+families (`ADV`, `DAD`, `CHN`, `ASC`, `IOV`, `DSC`, `RSV`, `QRY`, `RTV`, `UPD`,
+`CPL`, `CLL`, `RTN`), plus malformed, duplicate, saturation, correlation,
+deadline, and external-route cases. It omits only `negative-payload-limit`:
+that fixture exceeds Zenoh's fixed 2,048-byte receive-buffer maximum and is
+rejected before it reaches `AxolotyProtocol`. The root trace suite continues to
+verify that case against the shared protocol implementation. It is outside
+cross-carrier protocol-observation parity because it tests a transport-boundary
+limit. The parity check does not tolerate differences in protocol observations.
+
+The MQTT-versus-Zenoh route-classification matrix required by #808/#811 is:
+
+| Equivalent route bytes | MQTT | Zenoh | Result |
+|---|---|---|---|
+| Active `coaty/3/node/IOV/...` | Coaty | Coaty | Equivalent |
+| `coaty/3/node/ADV/...` | Unrelated | Unrelated | Equivalent |
+| `coaty/3/other/IOV/...` | Unrelated | Unrelated | Equivalent |
+| `legacy/source/value` | External | External | Equivalent |
+| `bad//route` | Unrelated | Unrelated | Equivalent |
+| `bad/+/route` | Unrelated | Unrelated | Equivalent |
+| `bad/*/route` | External | Unrelated | Deliberate divergence |
+| One non-UTF-8 key byte (`FF`) | External | External | Equivalent classification; Zenoh frame admission separately rejects non-UTF-8 keys |
+
+The `*` row is deliberate: MQTT's route classifier permits this byte in an
+otherwise external topic, while Zenoh rejects wildcard key expressions and
+external activation fails before subscription. The test asserts each side's
+documented result and excludes only this row from classification equality.
+This adapter-level divergence does not relax protocol trace equality. The
+non-UTF-8 row compares classifier results only; a Zenoh inbound frame must
+still be valid UTF-8 before it can become a runtime route.

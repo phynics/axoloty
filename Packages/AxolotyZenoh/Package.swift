@@ -86,6 +86,9 @@ let package = Package(
             dependencies: [
                 "AxolotyZenoh",
                 .product(name: "AxolotyTransportContractTestSupport", package: "Axoloty"),
+                .product(name: "AxolotyProtocolTraceTestSupport", package: "Axoloty"),
+                .product(name: "AxolotyTestBroker", package: "Axoloty"),
+                .product(name: "AxolotyMQTT", package: "Axoloty"),
                 .product(name: "Axoloty", package: "Axoloty"),
                 .product(name: "AxolotyProtocol", package: "Axoloty"),
                 .product(name: "AxolotyWire", package: "Axoloty"),
