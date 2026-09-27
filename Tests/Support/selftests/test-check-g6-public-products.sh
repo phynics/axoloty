@@ -21,6 +21,8 @@ let package = Package(
     .library(name: "AxolotyIoRouting"),
     .library(name: "AxolotySensorThingsModel"),
     .library(name: "AxolotySensorThings"), .library(name: "AxolotyStaticRuntime"),
+    .library(name: "AxolotyTransportContractTestSupport"),
+    .library(name: "AxolotyProtocolTraceTestSupport"),
     .library(name: "AxolotyTestBroker")
   ]
 )
