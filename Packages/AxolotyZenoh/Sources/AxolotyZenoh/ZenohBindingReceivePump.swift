@@ -89,36 +89,30 @@ extension ZenohBinding {
             routerLossBeganAtNanoseconds = nil
             routerLossReported = false
             return (nil, recovered)
-        case .count:
-            guard hasObservedRouter else { return (nil, false) }
-            let now = monotonicNowNanoseconds()
-            if let began = routerLossBeganAtNanoseconds {
-                guard !routerLossReported, now &- began >= routerLossDebounceNanoseconds else {
-                    return (nil, false)
-                }
-            } else {
-                routerLossBeganAtNanoseconds = now
+        case .count, .failure:
+            return observeRouterAbsence()
+        }
+    }
+
+    private func observeRouterAbsence() -> (failure: RuntimeTransportFailure?, recovered: Bool) {
+        guard hasObservedRouter else { return (nil, false) }
+        let now = monotonicNowNanoseconds()
+        if let began = routerLossBeganAtNanoseconds {
+            guard !routerLossReported, now &- began >= routerLossDebounceNanoseconds else {
                 return (nil, false)
             }
-            routerLossReported = true
-            return (
-                RuntimeTransportFailure(
-                    code: .brokerUnavailable,
-                    detail: Self.routerLossFailureDetail
-                ),
-                false
-            )
-        case let .failure(result):
-            guard hasObservedRouter, !routerLossReported else { return (nil, false) }
-            routerLossReported = true
-            return (
-                ZenohBindingSupport.failure(for: ZenohBindingSupport.error(
-                    for: result,
-                    operation: "Zenoh connected-router query"
-                )),
-                false
-            )
+        } else {
+            routerLossBeganAtNanoseconds = now
+            return (nil, false)
         }
+        routerLossReported = true
+        return (
+            RuntimeTransportFailure(
+                code: .brokerUnavailable,
+                detail: Self.routerLossFailureDetail
+            ),
+            false
+        )
     }
 
     private func pollSubscription(

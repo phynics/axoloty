@@ -272,6 +272,61 @@ struct ZenohBindingTests {
         await binding.stop()
     }
 
+    @Test("router presence query failures use the same debounced loss path")
+    func routerPresenceQueryFailureIsDebounced() async throws {
+        let session = RecordingZenohSession()
+        let now = NanosecondTestClock()
+        let binding = try makeBinding(session: session, now: { now.value }, debounce: 1_000)
+        let failures = FailureRecorder()
+        await binding.setFailureHandler { failures.append($0) }
+        try await binding.start { _ in }
+        session.connectedRouters = 1
+        binding.drainReceiveQueues()
+
+        session.connectedRouterQueryFailure = .transportError
+        binding.drainReceiveQueues()
+        now.advance(by: 999)
+        binding.drainReceiveQueues()
+        #expect(failures.snapshot().isEmpty)
+
+        now.advance(by: 1)
+        binding.drainReceiveQueues()
+        #expect(failures.snapshot() == [RuntimeTransportFailure(
+            code: .brokerUnavailable,
+            detail: ZenohBinding.routerLossFailureDetail
+        )])
+        await binding.stop()
+    }
+
+    @Test("a router return inside the debounce window resets the loss timer")
+    func routerPresenceFlapResetsDebounce() async throws {
+        let session = RecordingZenohSession()
+        let now = NanosecondTestClock()
+        let binding = try makeBinding(session: session, now: { now.value }, debounce: 1_000)
+        let failures = FailureRecorder()
+        await binding.setFailureHandler { failures.append($0) }
+        try await binding.start { _ in }
+        session.connectedRouters = 1
+        binding.drainReceiveQueues()
+
+        session.connectedRouters = 0
+        binding.drainReceiveQueues()
+        now.advance(by: 999)
+        binding.drainReceiveQueues()
+        session.connectedRouters = 1
+        binding.drainReceiveQueues()
+        session.connectedRouters = 0
+        binding.drainReceiveQueues()
+        now.advance(by: 999)
+        binding.drainReceiveQueues()
+        #expect(failures.snapshot().isEmpty)
+
+        now.advance(by: 1)
+        binding.drainReceiveQueues()
+        #expect(failures.snapshot().count == 1)
+        await binding.stop()
+    }
+
     @Test("an intentional stop during router absence does not report failure")
     func intentionalStopDuringRouterLossIsSilent() async throws {
         let session = RecordingZenohSession()
@@ -414,6 +469,7 @@ final class RecordingZenohSession: ZenohBindingSession {
     var unsubscribeResult: ZenohResult = .success
     var subscribeFailureOnAttempt: Int?
     var connectedRouters: UInt32 = 0
+    var connectedRouterQueryFailure: ZenohResult?
 
     enum PollEntry {
         case frame(PollFrameSource)
@@ -477,7 +533,10 @@ final class RecordingZenohSession: ZenohBindingSession {
         }
     }
 
-    func connectedRouterCount() -> ZenohRouterCountResult { .count(connectedRouters) }
+    func connectedRouterCount() -> ZenohRouterCountResult {
+        if let connectedRouterQueryFailure { return .failure(connectedRouterQueryFailure) }
+        return .count(connectedRouters)
+    }
 }
 
 final class PollFrameSource {

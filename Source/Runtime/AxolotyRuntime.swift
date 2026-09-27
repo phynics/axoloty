@@ -68,6 +68,8 @@ actor ProtocolExecutor {
     private var failureTeardownScheduled = false
     private let transportIngressRelay = RuntimeTransportIngressRelay()
     private var recoveryArrivedBeforeFailure = false
+    private var softRecoveryConsumed = false
+    private var softRecoveryInProgress = false
     private var transportEpoch: UInt64 = 0
     private var transportIngressContinuation: AsyncStream<RuntimeInboundFrame>.Continuation?
     private var transportIngressTask: Task<Void, Never>?
@@ -138,6 +140,7 @@ actor ProtocolExecutor {
         }
         hasStarted = true
         recoveryArrivedBeforeFailure = false
+        softRecoveryConsumed = false
         state = .starting
         transportEpoch &+= 1
         let epoch = transportEpoch
@@ -253,6 +256,7 @@ actor ProtocolExecutor {
         guard state == .running || state == .reconnecting else { return }
         state = .reconnecting
         recoveryArrivedBeforeFailure = false
+        softRecoveryConsumed = false
         transportEpoch &+= 1
         let epoch = transportEpoch
         processor.resetTransport()
@@ -339,6 +343,7 @@ actor ProtocolExecutor {
         try await publishIoAdvertisements(nowMS: monotonicNowMS())
         guard state == .reconnecting, transportEpoch == epoch else { return }
         state = .running
+        softRecoveryConsumed = true
         await startRuntimeModules(restarting: true)
         // Replay effects that were accepted before failure ahead of work
         // accepted while reconnecting, preserving publication order.
@@ -349,10 +354,17 @@ actor ProtocolExecutor {
     private func transportRecovered() async {
         guard state == .running || state == .reconnecting else { return }
         guard state == .reconnecting else {
+            guard !softRecoveryConsumed, !recoveryArrivedBeforeFailure else { return }
             recoveryArrivedBeforeFailure = true
             return
         }
+        guard !softRecoveryConsumed, !softRecoveryInProgress else { return }
+        softRecoveryInProgress = true
+        defer { softRecoveryInProgress = false }
         let epoch = transportEpoch
+        await cancelAndDrainIngressPump()
+        await stopOutboundPump()
+        guard state == .reconnecting, transportEpoch == epoch else { return }
         installTransportIngressPump(epoch: epoch)
         installOutboundPump()
         do {
@@ -362,6 +374,7 @@ actor ProtocolExecutor {
             diagnosticsSnapshotValue.transportFailures += 1
             emit(.init(kind: .transportFailed, detail: runtimeErrorDetail(error)))
         }
+        softRecoveryConsumed = true
     }
 
     func lifecycleState() -> RuntimeLifecycleState { state }
@@ -979,6 +992,12 @@ actor ProtocolExecutor {
         transportIngressTask = nil
     }
 
+    private func cancelAndDrainIngressPump() async {
+        let task = transportIngressTask
+        cancelIngressPump()
+        await task?.value
+    }
+
     private func transportFailed(_ detail: String) async {
         diagnosticsSnapshotValue.transportFailures += 1
         guard state == .running || state == .reconnecting || state == .starting else { return }
@@ -987,8 +1006,12 @@ actor ProtocolExecutor {
         // terminal runtime failure.  Leave the executor in an explicit
         // reconnecting state so the caller can restore the network path and
         // invoke `reconnect()` without losing the immutable definition.
-        guard state == .running else { return }
+        guard state == .running else {
+            if state == .reconnecting { softRecoveryConsumed = false }
+            return
+        }
         state = .reconnecting
+        softRecoveryConsumed = false
         transportEpoch &+= 1
         let failedEpoch = transportEpoch
         processor.resetTransport()
