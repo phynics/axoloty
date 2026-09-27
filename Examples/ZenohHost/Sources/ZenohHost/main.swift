@@ -65,7 +65,6 @@ struct ZenohHost {
             let payload = String(bytes: event.value, encoding: .utf8) ?? "<invalid UTF-8>"
             print("RECEIVED channel=\(channel) payload=\(payload)")
         }
-        await runtime.stop()
     }
 
     private static func send(
@@ -84,6 +83,7 @@ struct ZenohHost {
         for _ in 0..<100 {
             if await runtime.diagnosticsSnapshot().publishedFrames > initialPublications {
                 print("PUBLISHED channel=\(channel) bytes=\(bytes.count)")
+                try? await Task.sleep(for: .milliseconds(250))
                 return
             }
             try? await Task.sleep(for: .milliseconds(10))

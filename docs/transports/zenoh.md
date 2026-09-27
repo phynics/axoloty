@@ -48,7 +48,9 @@ consumers use `ZenohBinding` and `ZenohBindingConfiguration` instead.
 The host binding supports client mode with a router connect endpoint. Its
 receive queues hold up to four frames per subscription by default. It accepts
 keys up to 256 UTF-8 bytes and payloads up to 2,048 bytes. The configuration can
-lower these limits. It cannot raise them.
+lower these limits. It cannot raise them. The façade reserves two of eight
+subscriber slots for profile subscriptions, so the binding supports at most six
+exact external routes. A route containing `*` is not exact and is rejected.
 
 ### Zenoh network configuration
 
@@ -76,10 +78,11 @@ CONTAINER_NETWORK=host make test-tier TIER=zenoh-live BUILD_DIR=.build
 
 The tier stores the verified router under
 `.build/zenoh-live/dependencies/router/unpacked`. Start that binary in the
-pinned container:
+pinned container. The fallback locates `zenohd` if a later archive changes its
+directory layout:
 
 ```sh
-CONTAINER_NETWORK=host .devcontainer/run.sh /workspace/.build/zenoh-live/dependencies/router/unpacked/zenohd -l tcp/0.0.0.0:7447
+CONTAINER_NETWORK=host .devcontainer/run.sh sh -c 'router=/workspace/.build/zenoh-live/dependencies/router/unpacked/zenohd; if [ ! -x "$router" ]; then router=$(find /workspace/.build/zenoh-live/dependencies/router/unpacked -type f -name zenohd -print -quit); fi; test -n "$router"; exec "$router" -l tcp/0.0.0.0:7447'
 ```
 
 In a second terminal, start the subscriber in the pinned development container:
@@ -104,26 +107,25 @@ LD_LIBRARY_PATH=/workspace/.build/zenoh-live/dependencies/zenoh-c/unpacked/lib \
 ```
 
 The subscriber prints `RECEIVED channel=demo payload={"privateData":{"message":"hello from host B"}}`. Stop
-the subscriber and router with Ctrl-C. `zenoh-live` provisioning is Linux-only;
+the subscriber and router with Ctrl-C. `PUBLISHED` means the Zenoh session
+accepted the publication. It does not confirm delivery to the subscriber.
+`zenoh-live` provisioning is Linux-only;
 the adapter itself also targets supported macOS hosts. See
 [`docs/dependencies/zenoh.md`](../dependencies/zenoh.md) for the pinned
 versions, artifacts, and live-tier details.
 
-The executable requires the endpoint as its second argument. Use a valid Coaty
-Channel JSON payload with `send`. `ZenohBindingConfiguration` defaults to
-`tcp/127.0.0.1:7447`, but this example passes the endpoint explicitly. Both
-processes must use the same namespace and channel identifier. The example uses
-namespace `zenoh-example`.
+Use the command form `ZenohHost <mode> <endpoint> <channel> [payload]`. The
+endpoint follows the mode. Use a valid Coaty Channel JSON payload with `send`.
+`ZenohBindingConfiguration` defaults to `tcp/127.0.0.1:7447`, but this example
+passes the endpoint explicitly. Both processes must use the same namespace and
+channel identifier. The example uses namespace `zenoh-example`.
 
 ## Embedded smoke scenario
 
-The ESP-IDF implementation, device configuration, and smoke scenario belong to
+The embedded Zenoh implementation and its smoke scenario are tracked under
 [`phynics/axoloty-embedded#8`](https://github.com/phynics/axoloty-embedded/issues/8).
-That scenario starts an embedded Zenoh client and a host Axoloty subscriber,
-checks router presence, exchanges a Coaty route and payload, then interrupts and
-restores the router to check recovery. Follow the linked repository's
-`docs/zenoh-embedded.md` for its supported board setup and run instructions.
-This repository does not contain firmware instructions or device credentials.
+Check that issue for current scope and setup. This repository does not contain
+firmware instructions or device credentials.
 
 ## Inspect diagnostics
 
@@ -137,6 +139,7 @@ router rejected or lost a connection.
 | Router is not reachable | Check that `zenohd` is running and that its listener matches the binding endpoint. Inspect `sessionOpens` and `sessionFailures`, but do not treat a successful session open as proof of a router connection. Check router logs and network reachability. After an established connection drops, inspect `transportFailures` and `reconnects`. |
 | Connect endpoint is invalid | Check the exact `connectEndpoint` string. Configuration rejects empty strings, whitespace, quotes, backslashes, non-ASCII bytes, and strings longer than 512 bytes. `ZenohBindingConfiguration(connectEndpoint:)` throws `ZenohBindingConfigurationError.invalidConnectEndpoint`. `ZenohBinding(connectEndpoint:)` maps that failure to `AxolotyError.invalidConfiguration`. |
 | Oversized frames or receive drops | Inspect `oversizedSamples` for keys or payloads above configured limits. Inspect `receiveDrops` for full per-subscription queues or frames the binding could not admit. `receivedFrames` counts frames admitted to the runtime callback. |
+| External route subscription is rejected | The host binding accepts at most six exact external routes per session. Routes containing `*` are not exact Zenoh key expressions. See the [documented MQTT and Zenoh route difference](../../Packages/AxolotyZenoh/CONFORMANCE.md#mqtt-and-zenoh-protocol-trace-parity-811). |
 | Router loss and recovery debounce | The binding reports loss only after all connected routers remain absent for one second. Inspect `sessionFailures`, runtime state, `transportFailures`, `reconnects`, and `transportReconnects`. A short router interruption can end before the debounce and produce no reconnect. |
 | Live tier does not run | `zenoh-live` requires Linux and host container networking. Check the tier output and `.build/zenoh-live` logs. The tier provisions pinned artifacts and verifies their checksums. |
 
