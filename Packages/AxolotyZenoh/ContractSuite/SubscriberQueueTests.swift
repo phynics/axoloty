@@ -105,7 +105,7 @@ extension CAxolotyZenohSessionLifecycleTests {
     @Test("a second peer publishes into the owned queue and poll returns copied bytes")
     func subscribePollRoundTripAndUnsubscribe() async throws {
         let contract = try ZenohFacadeContract.load()
-        #expect(contract.contractVersion == "2.0.0")
+        #expect(contract.contractVersion == "2.1.0")
         let receiver = try await openPeer()
         let publisher = try openPublisher()
         let route = Array(contract.vectors.roundTrip.key.utf8)

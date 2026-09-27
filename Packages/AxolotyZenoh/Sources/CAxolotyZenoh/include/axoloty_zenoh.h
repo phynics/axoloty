@@ -175,6 +175,24 @@ axoloty_zenoh_result_t axoloty_zenoh_close(axoloty_zenoh_session_t *session);
 axoloty_zenoh_result_t axoloty_zenoh_state(const axoloty_zenoh_session_t *session,
                                            axoloty_zenoh_session_state_t *out_state);
 
+/// Reads the number of routers currently connected to a session.
+///
+/// The count is collected synchronously. Zenoh invokes the count-only callback
+/// once per connected router and drops it before this function returns.
+///
+/// - Parameters:
+///   - session: A handle returned by ``axoloty_zenoh_open``. Must not be
+///     `NULL` or foreign.
+///   - out_count: Receives the connected-router count. Set to zero when the
+///     session is closed or Zenoh reports a failure. Must not be `NULL`.
+/// - Returns: ``AXOLOTY_ZENOH_OK`` when the count was read;
+///   ``AXOLOTY_ZENOH_NOT_OPEN`` for a closed session;
+///   ``AXOLOTY_ZENOH_INVALID_ARGUMENT`` for a null or foreign handle or a null
+///   output pointer; or ``AXOLOTY_ZENOH_TRANSPORT_ERROR`` when Zenoh rejects
+///   the query.
+axoloty_zenoh_result_t axoloty_zenoh_connected_router_count(const axoloty_zenoh_session_t *session,
+                                                            uint32_t *out_count);
+
 /// Publishes one borrowed key and payload synchronously.
 ///
 /// The key and payload are borrowed for this call only. The façade copies the

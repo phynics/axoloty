@@ -19,6 +19,14 @@ public enum ZenohSubscriptionResult: Equatable {
     case result(ZenohResult)
 }
 
+/// The result of querying the number of connected routers.
+public enum ZenohRouterCountResult: Equatable {
+    /// The number of routers connected when the query completed.
+    case count(UInt32)
+    /// The façade could not provide a count.
+    case failure(ZenohResult)
+}
+
 /// A synchronous owner for one C façade session handle.
 ///
 /// Session lifecycle, subscription, and polling calls must be serialized. The
@@ -84,6 +92,20 @@ public struct ZenohSession: ~Copyable {
         let result = ZenohResult(cResult: axoloty_zenoh_close(handle))
         self.handle = nil
         return result
+    }
+
+    /// Reads the number of routers connected to this session.
+    ///
+    /// The query is synchronous and performs no allocation in the Core
+    /// wrapper. A successful peer session without a router returns `.count(0)`.
+    ///
+    /// - Returns: The router count, or the structured façade failure.
+    public func connectedRouterCount() -> ZenohRouterCountResult {
+        guard let handle else { return .failure(.notOpen) }
+        var count: UInt32 = 0
+        let result = ZenohResult(cResult: axoloty_zenoh_connected_router_count(handle, &count))
+        guard result == .success else { return .failure(result) }
+        return .count(count)
     }
 
     /// Publishes borrowed key and payload bytes synchronously.

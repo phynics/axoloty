@@ -310,6 +310,35 @@ axoloty_zenoh_result_t axoloty_zenoh_state(const axoloty_zenoh_session_t *sessio
     return AXOLOTY_ZENOH_OK;
 }
 
+static void axoloty_zenoh_count_router(const z_id_t *router_id, void *context) {
+    (void)router_id;
+    uint32_t *count = context;
+    (*count)++;
+}
+
+axoloty_zenoh_result_t axoloty_zenoh_connected_router_count(const axoloty_zenoh_session_t *session,
+                                                            uint32_t *out_count) {
+    if (out_count == NULL) {
+        return AXOLOTY_ZENOH_INVALID_ARGUMENT;
+    }
+    *out_count = 0;
+    struct axoloty_zenoh_session *slot = axoloty_zenoh_slot(session);
+    if (slot == NULL) {
+        return AXOLOTY_ZENOH_INVALID_ARGUMENT;
+    }
+    if (!slot->open) {
+        return AXOLOTY_ZENOH_NOT_OPEN;
+    }
+
+    z_owned_closure_zid_t callback;
+    z_closure_zid(&callback, axoloty_zenoh_count_router, NULL, out_count);
+    z_result_t result = z_info_routers_zid(
+        z_session_loan(&slot->zenoh_session),
+        z_closure_zid_move(&callback)
+    );
+    return result == Z_OK ? AXOLOTY_ZENOH_OK : AXOLOTY_ZENOH_TRANSPORT_ERROR;
+}
+
 axoloty_zenoh_result_t axoloty_zenoh_publish(const axoloty_zenoh_session_t *session,
                                              const uint8_t *key,
                                              uint32_t key_length,

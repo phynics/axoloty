@@ -1,5 +1,5 @@
 {
-  "contractVersion": "2.0.0",
+  "contractVersion": "2.1.0",
   "vectors": {
     "roundTrip": {
       "key": "axoloty/contract/round-trip",
@@ -42,6 +42,14 @@
     },
     "sessionFailure": {
       "endpoint": "tcp/127.0.0.1:1"
+    },
+    "routerPresence": {
+      "peerModeCount": 0,
+      "openResult": "OK",
+      "closedResult": "NOT_OPEN",
+      "nullSessionResult": "INVALID_ARGUMENT",
+      "foreignSessionResult": "INVALID_ARGUMENT",
+      "nullOutputResult": "INVALID_ARGUMENT"
     }
   }
 }

@@ -45,7 +45,7 @@ struct CAxolotyZenohSessionLifecycleTests {
 
     private func contractVectors() throws(ZenohFacadeContract.FixtureError) -> ZenohFacadeContract.Vectors {
         let document = try ZenohFacadeContract.load()
-        #expect(document.contractVersion == "2.0.0")
+        #expect(document.contractVersion == "2.1.0")
         return document.vectors
     }
 
@@ -66,6 +66,41 @@ struct CAxolotyZenohSessionLifecycleTests {
         #expect(state == AXOLOTY_ZENOH_SESSION_CLOSED)
 
         #expect(axoloty_zenoh_close(session) == AXOLOTY_ZENOH_NOT_OPEN)
+    }
+
+    @Test("router presence reports zero without a router and validates session state")
+    func connectedRouterCount() throws {
+        let vectors = try contractVectors().routerPresence
+        let (openResult, opened) = openSession()
+        #expect(openResult == AXOLOTY_ZENOH_OK)
+        let session = try #require(opened)
+
+        var count = UInt32.max
+        #expect(axoloty_zenoh_connected_router_count(session, &count) == AXOLOTY_ZENOH_OK)
+        #expect(count == vectors.peerModeCount)
+        #expect(vectors.openResult == "OK")
+        #expect(axoloty_zenoh_connected_router_count(session, nil) == AXOLOTY_ZENOH_INVALID_ARGUMENT)
+        #expect(vectors.nullOutputResult == "INVALID_ARGUMENT")
+
+        #expect(axoloty_zenoh_close(session) == AXOLOTY_ZENOH_OK)
+        count = UInt32.max
+        #expect(axoloty_zenoh_connected_router_count(session, &count) == AXOLOTY_ZENOH_NOT_OPEN)
+        #expect(count == 0)
+        #expect(vectors.closedResult == "NOT_OPEN")
+    }
+
+    @Test("router presence rejects null and foreign arguments")
+    func connectedRouterCountInvalidArguments() throws {
+        let vectors = try contractVectors().routerPresence
+        var count = UInt32.max
+        #expect(axoloty_zenoh_connected_router_count(nil, &count) == AXOLOTY_ZENOH_INVALID_ARGUMENT)
+        #expect(count == 0)
+        #expect(vectors.nullSessionResult == "INVALID_ARGUMENT")
+
+        let foreign = OpaquePointer(bitPattern: 0xDEAD_BEEF)!
+        #expect(axoloty_zenoh_connected_router_count(foreign, &count) == AXOLOTY_ZENOH_INVALID_ARGUMENT)
+        #expect(count == 0)
+        #expect(vectors.foreignSessionResult == "INVALID_ARGUMENT")
     }
 
     @Test("an unreachable client open fails and releases its slot")
