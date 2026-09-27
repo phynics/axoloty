@@ -9,6 +9,7 @@ const testsRoot = path.join(root, "Tests");
 const manifest = fs.readFileSync(path.join(root, "Package.swift"), "utf8");
 const toolsManifest = fs.readFileSync(path.join(root, "Tools/Package.swift"), "utf8");
 const wireManifest = fs.readFileSync(path.join(root, "Packages/AxolotyWire/Package.swift"), "utf8");
+const traceSupportRoot = "Packages/AxolotyProtocolTraceTestSupport/Sources/AxolotyProtocolTraceTestSupport";
 
 function targetBlock(kind, name, source = manifest) {
   const expression = new RegExp(
@@ -39,9 +40,18 @@ test("test targets have explicit ownership and no per-file root selection", () =
   const ordinary = targetBlock("testTarget", "AxolotyTests");
   assert.match(ordinary, /path: "Tests\/AxolotyTests"/);
   assert.doesNotMatch(ordinary, /\b(?:sources|exclude):\s*\[/);
-  assert.match(ordinary, /\.copy\("ProtocolTrace\/trace\.schema\.json"\)/);
-  assert.match(ordinary, /\.copy\("ProtocolTrace\/Fixtures\/family-seeds\.json"\)/);
+  assert.doesNotMatch(ordinary, /(?:trace\.schema\.json|family-seeds\.json)/);
   assert.match(ordinary, /\.process\("WireCompatibility\/Fixtures"\)/);
+
+  const traceSupport = targetBlock("target", "AxolotyProtocolTraceTestSupport");
+  assert.equal(targetPath("target", "AxolotyProtocolTraceTestSupport"), traceSupportRoot);
+  assert.match(traceSupport, /\.copy\("trace\.schema\.json"\)/);
+  assert.match(traceSupport, /\.copy\("Fixtures\/family-seeds\.json"\)/);
+  for (const resource of ["trace.schema.json", "Fixtures/family-seeds.json"]) {
+    assert.ok(fs.existsSync(path.join(root, traceSupportRoot, resource)), `${resource} must exist in the trace support target`);
+  }
+  assert.equal((manifest.match(/\.copy\("trace\.schema\.json"\)/g) ?? []).length, 1);
+  assert.equal((manifest.match(/\.copy\("Fixtures\/family-seeds\.json"\)/g) ?? []).length, 1);
 
   assert.equal(targetPath("target", "AxolotyTestSupport"), "Tests/AxolotyTestSupport");
   assert.equal(targetPath("testTarget", "AxolotyLiveWireTests"), "Tests/AxolotyLiveWireTests");

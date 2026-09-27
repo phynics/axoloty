@@ -16,8 +16,10 @@ const EXPECTED = Object.freeze({
     "AxolotySensorThingsModel",
     "AxolotySensorThings",
     "AxolotyStaticRuntime",
-    // Verification infrastructure. It is a product so broker-backed test
-    // targets can depend on it, but no shipped product may.
+    // Host-only verification infrastructure shared with sibling packages.
+    "AxolotyTransportContractTestSupport",
+    "AxolotyProtocolTraceTestSupport",
+    // Broker-backed test targets depend on this, but no shipped product may.
     "AxolotyTestBroker",
   ],
   // The root package is a library package. Executables are products of the
