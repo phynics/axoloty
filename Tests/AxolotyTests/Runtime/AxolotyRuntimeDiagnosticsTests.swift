@@ -25,14 +25,66 @@ extension AxolotyRuntimeTests {
     @Test("runtime snapshot includes transport counters")
     func runtimeSnapshotIncludesTransportCounters() async throws {
         let transport = TestTransport()
-        let runtime = AxolotyRuntime(definition: try makeDefinition(), transport: transport)
+        let sourceID = "00000000-0000-4000-8000-000000000801"
+        let actorID = "00000000-0000-4000-8000-000000000802"
+        let sourceMetadata: StaticString = "{\"objectId\":\"00000000-0000-4000-8000-000000000801\",\"objectType\":\"coaty.IoSource\",\"name\":\"counter-source\",\"coreType\":\"IoSource\",\"valueType\":\"com.example.Bool\"}"
+        let actorMetadata: StaticString = "{\"objectId\":\"00000000-0000-4000-8000-000000000802\",\"objectType\":\"coaty.IoActor\",\"name\":\"counter-actor\",\"coreType\":\"IoActor\",\"valueType\":\"com.example.Bool\"}"
+        var builder = try RuntimeBuilder(sourceID: .zero, namespace: "test")
+        let source: IoSource<Bool> = try builder.ioSource(
+            metadata: Object<IoSourceMetadata>(decoding: ByteSlice(
+                bytes: sourceMetadata.utf8Start,
+                length: sourceMetadata.utf8CodeUnitCount
+            )),
+            as: Bool.self,
+            externalRoute: try ExternalIoRoute("counter/external")
+        )
+        _ = try builder.ioActor(
+            metadata: Object<IoActorMetadata>(decoding: ByteSlice(
+                bytes: actorMetadata.utf8Start,
+                length: actorMetadata.utf8CodeUnitCount
+            )),
+            as: Bool.self
+        ) { _, _ in }
+        let runtime = AxolotyRuntime(definition: try builder.finish(), transport: transport)
 
         try await runtime.start()
-        let snapshot = await runtime.diagnosticsSnapshot()
+        let startupPublications = await transport.sentCount()
+        #expect(await runtime.publish(.channel(
+            identifier: "counter-publication",
+            payload: Array(#"{"privateData":{"counter":true}}"#.utf8)
+        )) == .accepted)
+        try await waitUntil("counter publication to reach the transport") {
+            await transport.sentCount() > startupPublications
+        }
+        await transport.deliver(.profile(
+            route: "coaty/3/test/ASC/\(sourceID)",
+            payload: Array("{\"ioSourceId\":\"\(sourceID)\",\"ioActorId\":\"\(actorID)\",\"associatingRoute\":\"counter/external\"}".utf8),
+            nowMS: 1
+        ))
+        try await waitUntil("external subscription to activate") {
+            try await runtime.io.state(of: source).hasAssociations
+        }
+        var ignoredPayload: [UInt8] = [1]
+        await transport.inject(route: "unrelated/route", payload: &ignoredPayload)
+        await transport.rejectOversizedSample()
+        let activeSnapshot = await runtime.diagnosticsSnapshot()
 
-        #expect(snapshot.sessionOpens == 1)
-        #expect(snapshot.publishedFrames > 0)
-        #expect(snapshot.transportReconnects == 0)
+        #expect(activeSnapshot.sessionOpens == 1)
+        #expect(activeSnapshot.publishedFrames == UInt64(startupPublications + 1))
+        #expect(activeSnapshot.receivedFrames == 1)
+        #expect(activeSnapshot.receiveDrops == 1)
+        #expect(activeSnapshot.oversizedSamples == 1)
+        #expect(activeSnapshot.activeExternalSubscriptions == 1)
+
+        await transport.fail(TestTransportFailure())
+        try await waitUntil("runtime to enter reconnecting state") {
+            await runtime.state() == .reconnecting
+        }
+        await runtime.reconnect()
+        let recoveredSnapshot = await runtime.diagnosticsSnapshot()
+        #expect(recoveredSnapshot.sessionFailures == 1)
+        #expect(recoveredSnapshot.transportReconnects == 1)
+        #expect(recoveredSnapshot.sessionOpens == 2)
         await runtime.stop()
     }
 
