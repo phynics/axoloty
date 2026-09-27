@@ -186,6 +186,9 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
                     continuation.resume(throwing: AxolotyError.runtime(code: .notStarted, reason: "MQTT binding is already started"))
                     return
                 }
+                if let diagnostics = lock.withLock({ diagnostics }) {
+                    delegate.setFailureObserver { diagnostics.recordSessionFailure() }
+                }
                 delegate.setReceive { [weak self] topic, payload, nowMS in
                     self?.admitInbound(topic: topic, payload: payload, nowMS: nowMS, receive: receive)
                 }
@@ -211,6 +214,7 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
             }
             await client.disconnect()
             delegate.clearReceive()
+            delegate.clearFailureObserver()
             throw error
         }
     }
@@ -265,6 +269,7 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
         delegate.failStart(AxolotyError.runtime(code: .cancelled, reason: "MQTT binding stopped while connecting"))
         await client.disconnect()
         delegate.clearReceive()
+        delegate.clearFailureObserver()
     }
 
     /// Activates the closed profile's bounded MQTT wildcard subscriptions.
@@ -626,6 +631,10 @@ final class RuntimeMQTTDelegate: RuntimeMQTTClientDelegate, @unchecked Sendable 
 
     func setFailureObserver(_ observer: @escaping @Sendable () -> Void) {
         lock.withLock { failureObserver = observer }
+    }
+
+    func clearFailureObserver() {
+        lock.withLock { failureObserver = nil }
     }
 
     private var failure: (@Sendable (RuntimeTransportFailure) -> Void)?
