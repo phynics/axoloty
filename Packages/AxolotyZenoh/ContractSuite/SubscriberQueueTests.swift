@@ -80,6 +80,46 @@ extension CAxolotyZenohSessionLifecycleTests {
         return 0
     }
 
+    /// Retries a peer publication until the subscriber queue proves delivery.
+    /// The deadline is the success bound; the short pause only paces retries
+    /// and does not assume that peer discovery completes within a fixed delay.
+    private func publishUntilDepth(
+        _ expected: UInt32,
+        publisher: UnsafeMutableRawPointer,
+        key: [UInt8],
+        payload: [UInt8],
+        on session: OpaquePointer,
+        subscription: OpaquePointer
+    ) async throws(any Error) -> UInt32 {
+        let clock = ContinuousClock()
+        let deadline = clock.now.advanced(by: .seconds(15))
+        var nextPublishAt = clock.now
+
+        while clock.now < deadline {
+            if clock.now >= nextPublishAt {
+                guard publish(publisher, key: key, payload: payload) == 0 else {
+                    Issue.record("Peer publisher rejected a retry")
+                    return 0
+                }
+                nextPublishAt = clock.now.advanced(by: .milliseconds(500))
+            }
+
+            var depth: UInt32 = 0
+            guard axoloty_zenoh_queue_depth(session, subscription, &depth) == AXOLOTY_ZENOH_OK else {
+                Issue.record("Failed to read receive queue depth during peer delivery")
+                return 0
+            }
+            if depth >= expected { return depth }
+
+            // Poll delivery state between rate-limited retries. The delay
+            // paces checks; only queue depth completes this wait.
+            try await Task.sleep(for: .milliseconds(10))
+        }
+
+        Issue.record("Timed out retrying peer publication until receive queue depth \(expected)")
+        return 0
+    }
+
     private func poll(_ session: OpaquePointer, subscription: OpaquePointer) -> (axoloty_zenoh_result_t, [UInt8], [UInt8]) {
         var key = [UInt8](repeating: 0, count: Int(AXOLOTY_ZENOH_MAX_KEY_BYTES))
         var payload = [UInt8](repeating: 0, count: Int(AXOLOTY_ZENOH_MAX_PAYLOAD_BYTES))
@@ -295,6 +335,10 @@ extension CAxolotyZenohSessionLifecycleTests {
         #expect(try await waitForDepth(1, on: receiver, subscription: profileFour) == 1)
         #expect(try await waitForDepth(1, on: receiver, subscription: external) == 1)
         #expect(poll(receiver, subscription: profileFive).0 == AXOLOTY_ZENOH_QUEUE_EMPTY)
+        let (profileExternalResult, profileExternalKey, profileExternalPayload) = poll(receiver, subscription: profileFour)
+        #expect(profileExternalResult == AXOLOTY_ZENOH_OK)
+        #expect(profileExternalKey == externalKey)
+        #expect(profileExternalPayload == route.payload)
         let (externalFrameResult, externalFrameKey, externalFramePayload) = poll(receiver, subscription: external)
         #expect(externalFrameResult == AXOLOTY_ZENOH_OK)
         #expect(externalFrameKey == externalKey)
@@ -304,7 +348,10 @@ extension CAxolotyZenohSessionLifecycleTests {
 
         #expect(publish(publisher, key: externalKey, payload: [0x7A]) == 0)
         #expect(try await waitForDepth(1, on: receiver, subscription: profileFour) == 1)
-        #expect(poll(receiver, subscription: profileFour).0 == AXOLOTY_ZENOH_OK)
+        let (afterUnsubscribeResult, afterUnsubscribeKey, afterUnsubscribePayload) = poll(receiver, subscription: profileFour)
+        #expect(afterUnsubscribeResult == AXOLOTY_ZENOH_OK)
+        #expect(afterUnsubscribeKey == externalKey)
+        #expect(afterUnsubscribePayload == [0x7A])
         #expect(poll(receiver, subscription: external).0 == AXOLOTY_ZENOH_INVALID_ARGUMENT)
 
         for index in 0..<(vectors.maximumSubscribers - 2) {
@@ -321,10 +368,21 @@ extension CAxolotyZenohSessionLifecycleTests {
         let foreign = OpaquePointer(bitPattern: 0xDEAD_BEEF)!
         #expect(axoloty_zenoh_unsubscribe(receiver, foreign) == AXOLOTY_ZENOH_INVALID_ARGUMENT)
 
-        try await Task.sleep(for: .milliseconds(250))
-        #expect(publish(publisher, key: Array(four.key.utf8), payload: [0x6B]) == 0)
-        #expect(try await waitForDepth(1, on: receiver, subscription: profileFour) == 1)
-        #expect(poll(receiver, subscription: profileFour).0 == AXOLOTY_ZENOH_OK)
+        let profileDepth = try await publishUntilDepth(
+            1,
+            publisher: publisher,
+            key: Array(four.key.utf8),
+            payload: [0x6B],
+            on: receiver,
+            subscription: profileFour
+        )
+        #expect(profileDepth == 1)
+        let (profileResult, profileKey, profilePayload) = poll(receiver, subscription: profileFour)
+        #expect(profileResult == AXOLOTY_ZENOH_OK)
+        #expect(profileKey == Array(four.key.utf8))
+        #expect(profilePayload == [0x6B])
+        #expect(poll(receiver, subscription: profileFour).0 == AXOLOTY_ZENOH_QUEUE_EMPTY)
+        #expect(poll(receiver, subscription: profileFive).0 == AXOLOTY_ZENOH_QUEUE_EMPTY)
         #expect(axoloty_zenoh_close(receiver) == AXOLOTY_ZENOH_OK)
         axoloty_zenoh_test_publisher_close(publisher)
     }
