@@ -16,8 +16,10 @@ metadata without changing expected behavior. Minor releases add optional
 vectors or clarify requirements without weakening existing assertions. Major
 releases may change ABI and requirements. Version 2 changes subscribe to return
 an opaque handle and scopes unsubscribe, polling, queue depth, and overflow
-counters to that handle. A conformance report MUST identify
-both this contract version and the exact Axoloty Git revision that supplied it.
+counters to that handle. Version 2.1 adds the synchronous connected-router count
+query and its router-presence vectors without changing prior requirements. A
+conformance report MUST identify both this contract version and the exact
+Axoloty Git revision that supplied it.
 
 `phynics/axoloty-embedded#8` consumes the artifact by pinning the Axoloty Git
 revision and extracting only the contract directory, for example:
@@ -35,7 +37,11 @@ path so the embedded conformance runner can compile the same source against its
 local harness modules. The tradeoff is that the embedded conformance runner
 must explicitly refresh its revision pin when the contract changes; it must not
 copy and maintain a second contract. **`phynics/axoloty-embedded#8` must re-pin
-the Axoloty revision that contains contract 2.0.0 and the new handle-based ABI.**
+the Axoloty revision that contains contract 2.1.0 and the connected-router query;
+pico must implement the same query and vectors, or record a divergence with
+capture or test evidence.** The `axoloty-zenoh-facade-v2.json` filename remains
+because the major ABI generation is still version 2; the additive minor version
+is identified by `contractVersion`.
 
 ## Fixed subscriber and queue bounds
 
@@ -79,6 +85,9 @@ shared contract suite. In particular:
   truncated;
 - an unreachable session returns the façade transport failure and releases
   its slot.
+- a freshly opened peer session reports zero connected routers with `OK` when
+  no router is present; a closed session returns `NOT_OPEN`; null or foreign
+  handles and null output pointers return `INVALID_ARGUMENT`.
 
 ## zenoh-c test mapping
 
@@ -97,7 +106,8 @@ shared contract suite. In particular:
 | Payload overflow | `oversizedFramesAreNotTruncated` |
 | Session failure | `unreachableClientCleansUp` |
 | Reopen | `capacitySaturationAndRelease` |
+| Connected-router presence | `connectedRouterCount`, `connectedRouterCountInvalidArguments` |
 
 The suite documents no backend-specific tolerances. Divergence status:
 
-> pico leg owned by phynics/axoloty-embedded#8; not assessed here (no pico-backend comparison was performed)
+> Existing vectors remain to be qualified by phynics/axoloty-embedded#8. Contract 2.1.0 requires its pico implementation to provide the same connected-router query and vectors; if it cannot, record the divergence with evidence (no pico-backend comparison was performed here).

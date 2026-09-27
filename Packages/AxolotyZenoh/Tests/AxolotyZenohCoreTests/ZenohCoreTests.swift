@@ -56,6 +56,15 @@ struct AxolotyZenohCoreTests {
         #expect(session.publish(key: .empty, payload: .empty) == .notOpen)
     }
 
+    @Test("connected-router query reports zero and preserves closed-session failure")
+    func connectedRouterCount() {
+        var session = ZenohSession()
+        #expect(session.open(configuration: ZenohConfiguration(mode: .peer)) == .success)
+        #expect(session.connectedRouterCount() == .count(0))
+        #expect(session.close() == .success)
+        #expect(session.connectedRouterCount() == .failure(.notOpen))
+    }
+
     @Test("poll copies a peer frame into fixed storage")
     func pollsFrameIntoStorage() async throws {
         var receiver = ZenohSession()

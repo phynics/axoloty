@@ -44,6 +44,24 @@ public enum ZenohFacadeContract {
         public let payloadOverflow: Overflow
         /// An unreachable endpoint used to exercise session-open failure.
         public let sessionFailure: SessionFailure
+        /// Inputs and expected results for the connected-router count query.
+        public let routerPresence: RouterPresence
+    }
+
+    /// Shared expectations for querying connected-router presence.
+    public struct RouterPresence: Decodable {
+        /// Expected router count for a freshly opened peer session without routers.
+        public let peerModeCount: UInt32
+        /// Expected result name for a successful peer-session query.
+        public let openResult: String
+        /// Expected result name for querying a closed session.
+        public let closedResult: String
+        /// Expected result name for a null session handle.
+        public let nullSessionResult: String
+        /// Expected result name for a foreign session handle.
+        public let foreignSessionResult: String
+        /// Expected result name for a null output pointer.
+        public let nullOutputResult: String
     }
 
     /// Shared inputs for concurrent subscriptions in one session.
