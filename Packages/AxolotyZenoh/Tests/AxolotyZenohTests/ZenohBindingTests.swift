@@ -6,6 +6,7 @@ import Foundation
 import Axoloty
 @_spi(AxolotyRuntimeAdapter) import AxolotyProtocol
 import AxolotyWire
+import AxolotyTransportContractTestSupport
 @testable import AxolotyZenoh
 @testable import AxolotyZenohCore
 
@@ -23,6 +24,13 @@ struct ZenohBindingTests {
         await binding.stop()
 
         #expect(session.operations == [.open(Array("tcp/127.0.0.1:7447".utf8)), .close])
+    }
+
+    @Test("ZenohBinding satisfies the shared runtime transport contract")
+    func sharedTransportContract() async throws {
+        let session = RecordingZenohSession()
+        let binding = try makeBinding(session: session)
+        try await runRuntimeTransportContract(using: ZenohContractFixture(binding: binding, session: session))
     }
 
     @Test("publishes the resolved route and an owned payload copy")
@@ -536,6 +544,88 @@ final class RecordingZenohSession: ZenohBindingSession {
     func connectedRouterCount() -> ZenohRouterCountResult {
         if let connectedRouterQueryFailure { return .failure(connectedRouterQueryFailure) }
         return .count(connectedRouters)
+    }
+}
+
+private struct ZenohContractFixture: RuntimeTransportContractFixture, @unchecked Sendable {
+    let binding: ZenohBinding
+    let session: RecordingZenohSession
+
+    var transport: any AxolotyRuntimeTransport { binding }
+
+    func start(receive: @escaping @Sendable (RuntimeInboundFrame) -> Void) async throws {
+        try await binding.start(receive: receive)
+    }
+
+    func profileSubscriptions() async -> [String] {
+        session.operations.compactMap { operation in
+            guard case let .subscribe(route, _) = operation else { return nil }
+            let value = String(decoding: route, as: UTF8.self)
+            return value.hasPrefix("coaty/3/contract-node/") ? value : nil
+        }
+    }
+
+    func profileUnsubscriptions() async -> [String] {
+        let routesByID = Dictionary(uniqueKeysWithValues: session.operations.compactMap { operation -> (Int, String)? in
+            guard case let .subscribe(route, id) = operation else { return nil }
+            return (id, String(decoding: route, as: UTF8.self))
+        })
+        return session.operations.compactMap { operation in
+            guard case let .unsubscribe(id) = operation else { return nil }
+            let route = routesByID[id]
+            return route?.hasPrefix("coaty/3/contract-node/") == true ? route : nil
+        }
+    }
+
+    func externalSubscriptions() async -> [String] {
+        session.operations.compactMap { operation in
+            guard case let .subscribe(route, _) = operation else { return nil }
+            let value = String(decoding: route, as: UTF8.self)
+            return value == "contract/external/value" ? value : nil
+        }
+    }
+
+    func externalUnsubscriptions() async -> [String] {
+        let routesByID = Dictionary(uniqueKeysWithValues: session.operations.compactMap { operation -> (Int, String)? in
+            guard case let .subscribe(route, id) = operation else { return nil }
+            return (id, String(decoding: route, as: UTF8.self))
+        })
+        return session.operations.compactMap { operation in
+            guard case let .unsubscribe(id) = operation,
+                  routesByID[id] == "contract/external/value" else { return nil }
+            return "contract/external/value"
+        }
+    }
+
+    func publications() async -> [RuntimeOutboundMessage] {
+        session.operations.compactMap { operation in
+            guard case let .publish(route, payload) = operation else { return nil }
+            return RuntimeOutboundMessage(route: String(decoding: route, as: UTF8.self), payload: payload)
+        }
+    }
+
+    func inject(route: String, payload: inout [UInt8]) async {
+        guard let subscriptionID = session.operations.compactMap({ operation -> Int? in
+            guard case let .subscribe(bytes, id) = operation,
+                  String(decoding: bytes, as: UTF8.self) == route ||
+                  (route.hasPrefix("coaty/3/contract-node/") && String(decoding: bytes, as: UTF8.self).hasPrefix("coaty/3/contract-node/")) else {
+                return nil
+            }
+            return id
+        }).first else { return }
+        session.enqueue(.frame(PollFrameSource(key: Array(route.utf8), payload: payload)), for: subscriptionID)
+        session.mutateQueuedBytesAfterPoll = true
+        payload = Array(repeating: 0, count: payload.count)
+    }
+
+    func drainInbound() async { binding.drainReceiveQueues() }
+
+    func reportFailure() async {
+        binding.reportFailure(RuntimeTransportFailure(code: .brokerUnavailable, detail: "contract failure"))
+    }
+
+    func startCount() async -> Int {
+        session.operations.filter { if case .open = $0 { return true }; return false }.count
     }
 }
 

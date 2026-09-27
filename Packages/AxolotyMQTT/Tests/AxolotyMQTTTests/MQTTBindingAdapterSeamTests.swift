@@ -3,6 +3,7 @@
 import Axoloty
 import AxolotyProtocol
 import AxolotyWire
+import AxolotyTransportContractTestSupport
 import Foundation
 import Testing
 @testable import AxolotyMQTT
@@ -47,6 +48,14 @@ struct MQTTBindingAdapterSeamTests {
         // connection must not reach the application.
         client.emit(topic: "late", payload: [UInt8(1)])
         #expect(recorder.snapshot().isEmpty)
+    }
+
+    @Test("MQTTBinding satisfies the shared runtime transport contract")
+    func sharedTransportContract() async throws {
+        let delegate = RuntimeMQTTDelegate()
+        let client = FakeMQTTClient(delegate: delegate, connectsImmediately: true)
+        let binding = try makeBinding(client: client, delegate: delegate)
+        try await runRuntimeTransportContract(using: MQTTContractFixture(binding: binding, client: client))
     }
 
     @Test("callbacks copy payloads and admit only active profile or subscribed external routes")
@@ -263,7 +272,7 @@ struct MQTTBindingAdapterSeamTests {
     }
 }
 
-private enum FakeError: Error, Equatable {
+enum FakeError: Error, Equatable {
     case publish, subscribe, unsubscribe, connection
 }
 
@@ -295,7 +304,7 @@ private final class ErrorRecorder: @unchecked Sendable {
     }
 }
 
-private final class FakeMQTTClient: RuntimeMQTTClientAdapter, @unchecked Sendable {
+final class FakeMQTTClient: RuntimeMQTTClientAdapter, @unchecked Sendable {
     private let lock = NSLock()
     private let delegate: RuntimeMQTTDelegate
     private let connectsImmediately: Bool
@@ -310,6 +319,7 @@ private final class FakeMQTTClient: RuntimeMQTTClientAdapter, @unchecked Sendabl
     private var unsubscribeError: FakeError?
     private var shouldBlockNextSubscribe = false
     private var lastWillValue: RuntimeTransportLastWill?
+    private var publishedMessagesValue: [RuntimeOutboundMessage] = []
 
     init(delegate: RuntimeMQTTDelegate, connectsImmediately: Bool) {
         self.delegate = delegate
@@ -321,6 +331,7 @@ private final class FakeMQTTClient: RuntimeMQTTClientAdapter, @unchecked Sendabl
     func subscribeTopics() -> [String] { locked { subscribeTopicsValue } }
     func unsubscribeTopics() -> [String] { locked { unsubscribeTopicsValue } }
     func lastWill() -> RuntimeTransportLastWill? { locked { lastWillValue } }
+    func publishedMessages() -> [RuntimeOutboundMessage] { locked { publishedMessagesValue } }
     func setPublishError(_ error: FakeError?) { locked { publishError = error } }
     func setSubscribeError(_ error: FakeError?) { locked { subscribeError = error } }
     func setUnsubscribeError(_ error: FakeError?) { locked { unsubscribeError = error } }
@@ -338,6 +349,7 @@ private final class FakeMQTTClient: RuntimeMQTTClientAdapter, @unchecked Sendabl
 
     func publish(topic: String, payload: [UInt8]) async throws {
         if let error = locked({ publishError }) { throw error }
+        locked { publishedMessagesValue.append(RuntimeOutboundMessage(route: topic, payload: payload)) }
     }
 
     @MainActor
@@ -393,4 +405,48 @@ private final class FakeMQTTClient: RuntimeMQTTClientAdapter, @unchecked Sendabl
         lock.lock(); defer { lock.unlock() }
         return body()
     }
+}
+
+private struct MQTTContractFixture: RuntimeTransportContractFixture {
+    let binding: MQTTBinding
+    let client: FakeMQTTClient
+
+    var transport: any AxolotyRuntimeTransport { binding }
+
+    func start(receive: @escaping @Sendable (RuntimeInboundFrame) -> Void) async throws {
+        try await binding.start(receive: receive)
+    }
+
+    func profileSubscriptions() async -> [String] {
+        client.subscribeTopics()
+            .filter { $0.hasPrefix("coaty/3/contract-node/") }
+            .map { $0.replacingOccurrences(of: "+", with: "*") }
+    }
+
+    func profileUnsubscriptions() async -> [String] {
+        client.unsubscribeTopics()
+            .filter { $0.hasPrefix("coaty/3/contract-node/") }
+            .map { $0.replacingOccurrences(of: "+", with: "*") }
+    }
+
+    func externalSubscriptions() async -> [String] {
+        client.subscribeTopics().filter { $0 == "contract/external/value" }
+    }
+
+    func externalUnsubscriptions() async -> [String] {
+        client.unsubscribeTopics().filter { $0 == "contract/external/value" }
+    }
+
+    func publications() async -> [RuntimeOutboundMessage] { client.publishedMessages() }
+
+    func inject(route: String, payload: inout [UInt8]) async {
+        client.emit(topic: route, payload: payload)
+        payload = Array(repeating: 0, count: payload.count)
+    }
+
+    func drainInbound() async {}
+
+    func reportFailure() async { client.emitFailure(FakeError.connection) }
+
+    func startCount() async -> Int { client.connectCount() }
 }
