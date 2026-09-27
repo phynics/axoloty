@@ -105,7 +105,7 @@ help:
 		'make axoloty-tool AXOLOTY_TOOL_ARGS="--help"  Run the Swift tooling CLI in-container' \
 		'make verify        Run the canonical ordinary pre-PR verification plan' \
 		'make test-one FILTER=... [REPEAT=n] [REPEAT_UNTIL=pass|fail]  Run a bounded test filter, optionally repeated' \
-		'make test-tier TIER=ci|wire|embedded|release  Run one canonical test category' \
+		'make test-tier TIER=ci|wire|embedded|release|zenoh-live  Run one canonical test tier' \
 		'make explain TIER=...  Explain commands, policies, locks, and artifacts' \
 		'make checkpoint     Run the release checkpoint validation' \
 		'make serve-mqtt    Run the local MQTT broker in the container' \

@@ -67,6 +67,27 @@ Verified SHA-256 of the archives used for qualification:
 43de097382e3db4f95903cbadbbf472a21fbea53d6a3193606ae12b034a20881  zenoh-1.10.0-x86_64-unknown-linux-gnu-standalone.zip
 ```
 
+## Live host integration
+
+The opt-in `zenoh-live` tier downloads the pinned `zenohd` and `zenoh-c`
+archives, verifies both checksums, rewrites `zenohc.pc` for the extracted
+location, and removes neither the archives nor logs until the caller clears its
+`.build/zenoh-live` scratch space. The tier owns a unique TCP port and router
+process for each run, then runs the live `AxolotyZenoh` suite and terminates the
+router on exit.
+
+Run it through the pinned Linux container with host networking:
+
+```sh
+CONTAINER_NETWORK=host make test-tier TIER=zenoh-live BUILD_DIR=.build
+```
+
+The scenarios cover two host `ZenohBinding` clients, an independent C client in
+both directions, an external IO route, runtime soft recovery after killing and
+restarting `zenohd`, and graceful transport shutdown. This tier is separate
+from `make verify`; it is selected by the `Zenoh live integration` workflow on
+`exploration/zenoh`.
+
 ## Qualification evidence
 
 ### Host (Linux x86_64, Swift 6.3, `axoloty-dev` container)

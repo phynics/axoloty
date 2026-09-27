@@ -1,0 +1,52 @@
+name: Zenoh live integration
+
+on:
+  push:
+    branches: [exploration/zenoh]
+  pull_request:
+    branches: [exploration/zenoh]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: zenoh-live-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  zenoh-live:
+    name: Pinned zenohd integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup container image
+        uses: ./.github/actions/setup-container
+        with:
+          runtime: podman
+          require-current-build-inputs: "true"
+          content-tag-prefix: swift-6.4
+          candidate-tag-prefix: ${{ github.event_name == 'pull_request' && format('swift-6.4-pr-{0}', github.event.pull_request.number) || 'swift-6.4' }}
+
+      - name: Run opt-in live Zenoh tier
+        env:
+          CONTAINER_CREATE_TIMEOUT_SECONDS: "300"
+        run: >-
+          CONTAINER_NETWORK=host make test-tier TIER=zenoh-live
+          CONTAINER_RUNTIME=podman BUILD_DIR=.build BUILD_LOCK=0
+          SPM_CACHE_DIR=.swiftpm-cache
+
+      - name: Upload router logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: zenoh-live-router-logs-${{ github.run_id }}
+          path: .build/zenoh-live/runs/*/zenohd.log
+          if-no-files-found: warn
+          retention-days: 7

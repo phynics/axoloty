@@ -84,6 +84,7 @@ func typedInvocationParserClassifiesReleaseCommandsAndEnvironmentFallbacks() {
     let parser = AxolotyCommandParser(environment: ["FILTER": "FallbackSuite", "TIER": "unit"])
 
     #expect(parser.parse(["release", "checkpoint"]) == .release(.checkpoint))
+    #expect(parser.parse(["zenoh", "live"]) == .zenohLive)
     #expect(parser.parse(["test-one"]) == .testOne(filter: "FallbackSuite", repetition: nil))
     #expect(parser.parse(["test-tier"]) == .testTier(name: "unit", ci: false))
     #expect(parser.parse(["explain"]) == .explain(tier: "unit", ci: false))

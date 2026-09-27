@@ -497,9 +497,12 @@ test("validator checks Make ownership when invocation data is supplied", () => {
   assert.ok(errors.includes(`${"selfTest " + pathName}: no Make target invokes it`));
 });
 
-test("the four categories are the whole taxonomy", () => {
+test("the declared tiers are the whole taxonomy", () => {
   const document = JSON.parse(fs.readFileSync(path.join(root, "Tests/Support/test-tiers.json"), "utf8"));
-  assert.deepEqual(document.tiers.map(tier => tier.id), ["ci", "wire", "embedded", "release"]);
+  assert.deepEqual(document.tiers.map(tier => tier.id), ["ci", "wire", "embedded", "release", "zenoh-live"]);
+  assert.equal(document.tiers.find(tier => tier.id === "zenoh-live").attested, true);
+  assert.ok(document.tiers.find(tier => tier.id === "release").nodes.includes("zenoh-live-integration"));
+  assert.ok(!document.tiers.find(tier => tier.id === "ci").nodes.includes("zenoh-live-integration"));
   assert.equal("plans" in document, false);
   assert.equal("releaseGates" in document, false);
   assert.equal("ciRequiredGates" in document, false);
