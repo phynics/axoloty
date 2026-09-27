@@ -1,18 +1,20 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
 import Foundation
+import Synchronization
 
-final class AxolotyCommandOutputCollector: @unchecked Sendable {
-    private let lock = NSLock()
-    private var output: [AxolotyCommandOutputStream: Data] = [:]
-    private var progress = Data()
-    private var pendingLines: [AxolotyCommandOutputStream: String] = [:]
-    private var latestStartedTest: String?
+final class AxolotyCommandOutputCollector: Sendable {
+    private struct State: Sendable {
+        var output: [AxolotyCommandOutputStream: Data] = [:]
+        var progress = Data()
+        var pendingLines: [AxolotyCommandOutputStream: String] = [:]
+        var latestStartedTest: String?
+    }
+    private let state = Mutex(State())
     private let streamOutput: @Sendable (AxolotyCommandOutputStream, String) -> Void
     private let streamedStreams: Set<AxolotyCommandOutputStream>
-    private let streamLock = NSLock()
-    private let observerLock = NSLock()
-    private var lineObserver: (@Sendable (AxolotyCommandOutputStream, String) -> Void)?
+    private let streamLock = Mutex(())
+    private let lineObserver = Mutex<(@Sendable (AxolotyCommandOutputStream, String) -> Void)?>(nil)
 
     init(
         streamOutput: @escaping @Sendable (AxolotyCommandOutputStream, String) -> Void,
@@ -29,53 +31,47 @@ final class AxolotyCommandOutputCollector: @unchecked Sendable {
     /// must only call `emitProgressLocked` for live output; the plain
     /// `emitProgress` entry point would deadlock.
     func setLineObserver(_ observer: (@Sendable (AxolotyCommandOutputStream, String) -> Void)?) {
-        observerLock.lock()
-        defer { observerLock.unlock() }
-        lineObserver = observer
+        lineObserver.withLock { $0 = observer }
     }
 
     func append(_ data: Data, from stream: AxolotyCommandOutputStream) {
         guard !data.isEmpty else { return }
         let text = String(decoding: data, as: UTF8.self)
-        streamLock.lock()
-        lock.lock()
-        output[stream, default: Data()].append(data)
-        let previous = pendingLines[stream, default: ""]
-        let combined = previous + text
-        let components = combined.split(separator: "\n", omittingEmptySubsequences: false)
-        pendingLines[stream] = components.last.map(String.init) ?? ""
-        var completeLines: [String] = []
-        for line in components.dropLast() {
-            let candidate = line.trimmingCharacters(in: .whitespacesAndNewlines)
-            if candidate.contains("◇ Test "), candidate.contains(" started") {
-                latestStartedTest = candidate
+        streamLock.withLock { _ in
+            let completeLines = state.withLock { state -> [String] in
+                state.output[stream, default: Data()].append(data)
+                let previous = state.pendingLines[stream, default: ""]
+                let combined = previous + text
+                let components = combined.split(separator: "\n", omittingEmptySubsequences: false)
+                state.pendingLines[stream] = components.last.map(String.init) ?? ""
+                var completeLines: [String] = []
+                for line in components.dropLast() {
+                    let candidate = line.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if candidate.contains("◇ Test "), candidate.contains(" started") {
+                        state.latestStartedTest = candidate
+                    }
+                    completeLines.append(candidate)
+                }
+                return completeLines
             }
-            completeLines.append(candidate)
-        }
-        let shouldStream = streamedStreams.contains(stream)
-        lock.unlock()
-
-        if shouldStream {
-            streamOutput(stream, text)
-        }
-        observerLock.lock()
-        let observer = lineObserver
-        observerLock.unlock()
-        if let observer {
-            for line in completeLines where !line.isEmpty {
-                observer(stream, line)
+            let shouldStream = streamedStreams.contains(stream)
+            if shouldStream {
+                streamOutput(stream, text)
+            }
+            let observer = lineObserver.withLock { $0 }
+            if let observer {
+                for line in completeLines where !line.isEmpty {
+                    observer(stream, line)
+                }
             }
         }
-        streamLock.unlock()
     }
 
     func emitProgress(_ text: String) {
-        streamLock.lock()
-        lock.lock()
-        progress.append(Data(text.utf8))
-        lock.unlock()
-        streamOutput(.standardError, text)
-        streamLock.unlock()
+        streamLock.withLock { _ in
+            state.withLock { $0.progress.append(Data(text.utf8)) }
+            streamOutput(.standardError, text)
+        }
     }
 
     /// Emits progress while the caller already holds the stream lock.
@@ -89,62 +85,53 @@ final class AxolotyCommandOutputCollector: @unchecked Sendable {
     ///   - plain: The text recorded in durable progress artifacts, with any
     ///     terminal control sequences removed.
     func emitProgressLocked(_ text: String, plain: String) {
-        lock.lock()
-        progress.append(Data(plain.utf8))
-        lock.unlock()
+        state.withLock { $0.progress.append(Data(plain.utf8)) }
         streamOutput(.standardError, text)
     }
 
     func data(for stream: AxolotyCommandOutputStream) -> Data {
-        lock.lock()
-        defer { lock.unlock() }
-        return output[stream, default: Data()]
+        state.withLock { $0.output[stream, default: Data()] }
     }
 
     var latestTest: String? {
-        lock.lock()
-        defer { lock.unlock() }
-        return latestStartedTest
+        state.withLock { $0.latestStartedTest }
     }
 
     func diagnosticSnapshot() -> (lastTest: String?, outputBytes: Int) {
-        lock.lock()
-        defer { lock.unlock() }
-        let outputBytes = output.values.reduce(into: 0) { total, data in total += data.count }
-        return (latestStartedTest, outputBytes)
+        state.withLock { state in
+            let outputBytes = state.output.values.reduce(into: 0) { total, data in total += data.count }
+            return (state.latestStartedTest, outputBytes)
+        }
     }
 
     func progressData() -> Data {
-        lock.lock()
-        defer { lock.unlock() }
-        return progress
+        state.withLock { $0.progress }
     }
 
     func finishLines() {
-        streamLock.lock()
-        var observedLines: [AxolotyCommandOutputStream: [String]] = [:]
-        lock.lock()
-        for (stream, line) in pendingLines {
-            let candidate = line.trimmingCharacters(in: .whitespacesAndNewlines)
-            if candidate.contains("◇ Test "), candidate.contains(" started") {
-                latestStartedTest = candidate
+        streamLock.withLock { _ in
+            let observedLines = state.withLock { state -> [AxolotyCommandOutputStream: [String]] in
+                var observedLines: [AxolotyCommandOutputStream: [String]] = [:]
+                for (stream, line) in state.pendingLines {
+                    let candidate = line.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if candidate.contains("◇ Test "), candidate.contains(" started") {
+                        state.latestStartedTest = candidate
+                    }
+                    if !candidate.isEmpty {
+                        observedLines[stream, default: []].append(candidate)
+                    }
+                }
+                state.pendingLines.removeAll()
+                return observedLines
             }
-            if !candidate.isEmpty {
-                observedLines[stream, default: []].append(candidate)
-            }
-        }
-        pendingLines.removeAll()
-        lock.unlock()
-        observerLock.lock()
-        let observer = lineObserver
-        observerLock.unlock()
-        if let observer {
-            for (stream, lines) in observedLines {
-                for line in lines {
-                    observer(stream, line)
+            let observer = lineObserver.withLock { $0 }
+            if let observer {
+                for (stream, lines) in observedLines {
+                    for line in lines {
+                        observer(stream, line)
+                    }
                 }
             }
         }
-        streamLock.unlock()
     }
 }
