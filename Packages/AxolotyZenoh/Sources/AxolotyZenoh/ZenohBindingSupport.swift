@@ -155,9 +155,6 @@ enum ZenohBindingSupport {
         case .maximumExternalRoutesOutOfRange:
             option = "maximumExternalRoutes"
             reason = "must be in 1...\(ZenohBindingConfiguration.maximumExternalRouteCapacity)"
-        case .receiveQueueCapacityOutOfRange:
-            option = "receiveQueueCapacity"
-            reason = "must be in 1...4"
         case .receiveKeyCapacityOutOfRange:
             option = "receiveKeyCapacity"
             reason = "must be in 1...\(ZenohFrameStorage.keyCapacity)"

@@ -124,6 +124,11 @@ extension ZenohBinding {
         for _ in 0..<ZenohBindingSupport.receivePumpDrainLimit {
             switch session.poll(subscription, into: &storage) {
             case let .frame(frame):
+                guard frame.keyLength <= configuration.receiveKeyCapacity,
+                      frame.payloadLength <= configuration.receivePayloadCapacity else {
+                    diagnostics?.recordOversizedSample()
+                    continue
+                }
                 if let inbound = copyFrame(frame, from: storage, routeState: routeState) {
                     frames.append(inbound)
                     diagnostics?.recordReceivedFrame()

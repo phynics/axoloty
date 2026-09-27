@@ -46,11 +46,14 @@ receive queues. The C façade owns Zenoh's C values and their lifetimes. Swift
 consumers use `ZenohBinding` and `ZenohBindingConfiguration` instead.
 
 The host binding supports client mode with a router connect endpoint. Its
-receive queues hold up to four frames per subscription by default. It accepts
-keys up to 256 UTF-8 bytes and payloads up to 2,048 bytes. The configuration can
-lower these limits. It cannot raise them. The façade reserves two of eight
-subscriber slots for profile subscriptions, so the binding supports at most six
-exact external routes. A route containing `*` is not exact and is rejected.
+receive queues hold up to four frames per subscription. This is a fixed façade
+bound and cannot be configured. It accepts keys up to 256 UTF-8 bytes and
+payloads up to 2,048 bytes. Configuration can lower the key and payload limits.
+Frames above either configured limit are dropped and counted in
+`oversizedSamples`; neither limit can be raised above the façade maximum. The
+façade reserves two of eight subscriber slots for profile subscriptions, so the
+binding supports at most six exact external routes. A route containing `*` is
+not exact and is rejected.
 
 ### Zenoh network configuration
 
@@ -138,7 +141,7 @@ router rejected or lost a connection.
 |---|---|
 | Router is not reachable | Check that `zenohd` is running and that its listener matches the binding endpoint. Inspect `sessionOpens` and `sessionFailures`, but do not treat a successful session open as proof of a router connection. Check router logs and network reachability. After an established connection drops, inspect `transportFailures` and `reconnects`. |
 | Connect endpoint is invalid | Check the exact `connectEndpoint` string. Configuration rejects empty strings, whitespace, quotes, backslashes, non-ASCII bytes, and strings longer than 512 bytes. `ZenohBindingConfiguration(connectEndpoint:)` throws `ZenohBindingConfigurationError.invalidConnectEndpoint`. `ZenohBinding(connectEndpoint:)` maps that failure to `AxolotyError.invalidConfiguration`. |
-| Oversized frames or receive drops | Inspect `oversizedSamples` for keys or payloads above configured limits. Inspect `receiveDrops` for full per-subscription queues or frames the binding could not admit. `receivedFrames` counts frames admitted to the runtime callback. |
+| Oversized frames or receive drops | Inspect `oversizedSamples` for keys or payloads above configured limits, and `receiveDrops` for full fixed-depth per-subscription façade queues or frames the binding could not admit. `receivedFrames` counts frames admitted to the runtime callback. |
 | External route subscription is rejected | The host binding accepts at most six exact external routes per session. Routes containing `*` are not exact Zenoh key expressions. See the [documented MQTT and Zenoh route difference](../../Packages/AxolotyZenoh/CONFORMANCE.md#mqtt-and-zenoh-protocol-trace-parity-811). |
 | Router loss and recovery debounce | The binding reports loss only after all connected routers remain absent for one second. Inspect `sessionFailures`, runtime state, `transportFailures`, `reconnects`, and `transportReconnects`. A short router interruption can end before the debounce and produce no reconnect. |
 | Live tier does not run | `zenoh-live` requires Linux and host container networking. Check the tier output and `.build/zenoh-live` logs. The tier provisions pinned artifacts and verifies their checksums. |

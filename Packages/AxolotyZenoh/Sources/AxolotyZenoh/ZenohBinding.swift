@@ -55,7 +55,6 @@ public final class ZenohBinding: AxolotyRuntimeTransport, @unchecked Sendable {
     ///   - connectEndpoint: Zenoh router endpoint.
     ///   - maximumProfileKeyBytes: Maximum profile key length.
     ///   - maximumExternalRoutes: Maximum exact external routes.
-    ///   - receiveQueueCapacity: Maximum queued frames per subscription.
     ///   - receiveKeyCapacity: Maximum received key length.
     ///   - receivePayloadCapacity: Maximum received payload length.
     /// - Throws: ``AxolotyError/invalidConfiguration(option:reason:)`` when a
@@ -64,7 +63,6 @@ public final class ZenohBinding: AxolotyRuntimeTransport, @unchecked Sendable {
         connectEndpoint: String = "tcp/127.0.0.1:7447",
         maximumProfileKeyBytes: Int = 256,
         maximumExternalRoutes: Int = ZenohBindingConfiguration.maximumExternalRouteCapacity,
-        receiveQueueCapacity: Int = 4,
         receiveKeyCapacity: Int = ZenohFrameStorage.keyCapacity,
         receivePayloadCapacity: Int = ZenohFrameStorage.payloadCapacity
     ) throws(AxolotyError) {
@@ -74,7 +72,6 @@ public final class ZenohBinding: AxolotyRuntimeTransport, @unchecked Sendable {
                 connectEndpoint: connectEndpoint,
                 maximumProfileKeyBytes: maximumProfileKeyBytes,
                 maximumExternalRoutes: maximumExternalRoutes,
-                receiveQueueCapacity: receiveQueueCapacity,
                 receiveKeyCapacity: receiveKeyCapacity,
                 receivePayloadCapacity: receivePayloadCapacity
             )
