@@ -50,7 +50,12 @@ let package = Package(
         ),
         .target(
             name: "AxolotyZenoh",
-            dependencies: ["AxolotyZenohCore"],
+            dependencies: [
+                "AxolotyZenohCore",
+                .product(name: "Axoloty", package: "Axoloty"),
+                .product(name: "AxolotyProtocol", package: "Axoloty"),
+                .product(name: "AxolotyWire", package: "Axoloty"),
+            ],
             path: "Sources/AxolotyZenoh"
         ),
         .target(
@@ -78,7 +83,12 @@ let package = Package(
         ),
         .testTarget(
             name: "AxolotyZenohTests",
-            dependencies: ["AxolotyZenoh"],
+            dependencies: [
+                "AxolotyZenoh",
+                .product(name: "Axoloty", package: "Axoloty"),
+                .product(name: "AxolotyProtocol", package: "Axoloty"),
+                .product(name: "AxolotyWire", package: "Axoloty"),
+            ],
             path: "Tests/AxolotyZenohTests"
         ),
     ]
