@@ -4,8 +4,18 @@ import Axoloty
 @_spi(AxolotyRuntimeAdapter) import AxolotyProtocol
 import AxolotyWire
 import AxolotyZenohCore
+import Foundation
 
 enum ZenohBindingSupport {
+    // One tick every 10 ms, with at most one façade queue capacity (four
+    // polls) per subscription. Eight handles cap work per tick at 32 polls.
+    static let receivePumpIntervalNanoseconds: UInt64 = 10_000_000
+    static let receivePumpDrainLimit = 4
+
+    static func monotonicNowMS() -> UInt32 {
+        UInt32(truncatingIfNeeded: DispatchTime.now().uptimeNanoseconds / 1_000_000)
+    }
+
     static func validateNamespace(_ namespace: String) throws(AxolotyError) {
         let bytes = Array(namespace.utf8)
         guard (1...64).contains(bytes.count),
@@ -57,6 +67,45 @@ enum ZenohBindingSupport {
                 return .unrelated
             }
             return .coaty
+        }
+    }
+
+    static func inboundFrame(
+        routeBytes: [UInt8],
+        payload: [UInt8],
+        nowMS: UInt32,
+        routeState: ZenohInboundRouteState
+    ) -> RuntimeInboundFrame? {
+        guard !routeBytes.isEmpty,
+              routeBytes.count <= WireBufferConfig.maxTopicLength,
+              !routeBytes.contains(where: { $0 == 0 || $0 == 0x23 || $0 == 0x2B || $0 == 0x2A }) else {
+            return nil
+        }
+        guard let route = String(bytes: routeBytes, encoding: .utf8) else { return nil }
+        if let activeNamespace = routeState.activeNamespace,
+           routeBytes.count <= routeState.maximumProfileKeyLength,
+           isActiveProfile(
+               routeBytes,
+               namespace: activeNamespace,
+               maximumKeyLength: routeState.maximumProfileKeyLength
+           ) {
+            return .profile(route: route, payload: payload, nowMS: nowMS)
+        }
+        guard routeState.externalRoutes.contains(routeBytes) else { return nil }
+        return .externalIo(route: route, payload: payload, nowMS: nowMS)
+    }
+
+    private static func isActiveProfile(
+        _ routeBytes: [UInt8],
+        namespace: String,
+        maximumKeyLength: Int
+    ) -> Bool {
+        routeBytes.withUnsafeBufferPointer { buffer in
+            guard let base = buffer.baseAddress else { return false }
+            let topic = TopicView(topicBytes: base, length: buffer.count)
+            guard (try? topic.validate(maximumTopicLength: maximumKeyLength)) != nil,
+                  let actualNamespace = topic.namespaceLevel else { return false }
+            return equals(actualNamespace, namespace)
         }
     }
 
@@ -133,4 +182,10 @@ enum ZenohBindingSupport {
         for index in bytes.indices where slice.byte(at: index) != bytes[index] { return false }
         return true
     }
+}
+
+struct ZenohInboundRouteState {
+    let activeNamespace: String?
+    let externalRoutes: [[UInt8]]
+    let maximumProfileKeyLength: Int
 }

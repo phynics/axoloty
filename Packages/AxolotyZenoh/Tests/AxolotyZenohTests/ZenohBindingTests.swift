@@ -7,7 +7,7 @@ import Axoloty
 @_spi(AxolotyRuntimeAdapter) import AxolotyProtocol
 import AxolotyWire
 @testable import AxolotyZenoh
-import AxolotyZenohCore
+@testable import AxolotyZenohCore
 
 @Suite("Zenoh runtime transport")
 struct ZenohBindingTests {
@@ -246,9 +246,18 @@ struct ZenohBindingTests {
         }
     }
 
-    private func makeBinding(session: any ZenohBindingSession) throws -> ZenohBinding {
+    private func makeBinding(
+        session: any ZenohBindingSession,
+        clock: @escaping @Sendable () -> UInt32 = { 0 },
+        receivePumpIntervalNanoseconds: UInt64 = 60_000_000_000
+    ) throws -> ZenohBinding {
         let configuration = try ZenohBindingConfiguration()
-        return ZenohBinding(configuration: configuration, session: session)
+        return ZenohBinding(
+            configuration: configuration,
+            session: session,
+            clock: clock,
+            receivePumpIntervalNanoseconds: receivePumpIntervalNanoseconds
+        )
     }
 
     private func transition(_ route: String) -> OwnedExternalRouteTransition {
@@ -263,7 +272,7 @@ struct ZenohBindingTests {
     }
 }
 
-private final class RecordingZenohSession: ZenohBindingSession {
+final class RecordingZenohSession: ZenohBindingSession {
     enum Operation: Equatable {
         case open([UInt8])
         case close
@@ -274,10 +283,18 @@ private final class RecordingZenohSession: ZenohBindingSession {
 
     private(set) var operations: [Operation] = []
     private var nextID = 0
+    private var queuedPolls: [Int: [PollEntry]] = [:]
+    private(set) var pollCount = 0
+    var mutateQueuedBytesAfterPoll = false
     var closeResult: ZenohResult = .success
     var publishResult: ZenohResult = .success
     var unsubscribeResult: ZenohResult = .success
     var subscribeFailureOnAttempt: Int?
+
+    enum PollEntry {
+        case frame(PollFrameSource)
+        case result(ZenohResult)
+    }
 
     func open(endpoint: [UInt8]) -> ZenohResult {
         operations.append(.open(endpoint))
@@ -307,9 +324,47 @@ private final class RecordingZenohSession: ZenohBindingSession {
         operations.append(.unsubscribe(subscription))
         return unsubscribeResult
     }
+
+    func enqueue(_ entry: PollEntry, for subscription: Int) {
+        queuedPolls[subscription, default: []].append(entry)
+    }
+
+    func poll(_ subscription: Int, into storage: inout ZenohFrameStorage) -> ZenohPollResult {
+        pollCount += 1
+        guard var entries = queuedPolls[subscription], !entries.isEmpty else { return .result(.queueEmpty) }
+        let entry = entries.removeFirst()
+        queuedPolls[subscription] = entries
+        switch entry {
+        case let .frame(source):
+            let key = source.key
+            let payload = source.payload
+            storage.withMutableBuffers { keyBuffer, payloadBuffer in
+                for (index, byte) in key.enumerated() { keyBuffer[index] = byte }
+                for (index, byte) in payload.enumerated() { payloadBuffer[index] = byte }
+            }
+            storage.setLengths(key: key.count, payload: payload.count)
+            if mutateQueuedBytesAfterPoll {
+                source.key = Array(repeating: 0, count: key.count)
+                source.payload = Array(repeating: 0, count: payload.count)
+            }
+            return .frame(ZenohFrame(keyLength: key.count, payloadLength: payload.count))
+        case let .result(result):
+            return .result(result)
+        }
+    }
 }
 
-private final class FailureRecorder: @unchecked Sendable {
+final class PollFrameSource {
+    var key: [UInt8]
+    var payload: [UInt8]
+
+    init(key: [UInt8], payload: [UInt8]) {
+        self.key = key
+        self.payload = payload
+    }
+}
+
+final class FailureRecorder: @unchecked Sendable {
     private let lock = NSLock()
     private var failures: [RuntimeTransportFailure] = []
 
