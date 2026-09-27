@@ -1,5 +1,8 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
+// Follow-up: split cohesive runtime sections when file-private seams can remain narrow.
+// swiftlint:disable file_length
+
 import AxolotyProtocol
 import AxolotyObjectModel
 import AxolotyWire
