@@ -49,6 +49,8 @@ public func runRuntimeTransportContract(
 ) async throws {
     let received = ContractFrameRecorder()
     let failures = ContractFailureRecorder()
+    let diagnostics = RuntimeTransportDiagnostics()
+    await fixture.transport.setDiagnostics(diagnostics)
     await fixture.transport.setFailureHandler { failures.append($0) }
 
     try await fixture.start { received.append($0) }
@@ -68,6 +70,7 @@ public func runRuntimeTransportContract(
     try await fixture.transport.perform(.externalRouteActivated(transition))
     let activatedExternalRoutes = await fixture.externalSubscriptions()
     #expect(activatedExternalRoutes == [externalRoute])
+    #expect(diagnostics.snapshot().activeExternalSubscriptions == 1)
 
     let outbound = RuntimeOutboundMessage(route: "coaty/3/\(namespace)/ADV/source", payload: [1, 2, 3])
     try await fixture.transport.perform(.publish(outbound))
@@ -90,6 +93,7 @@ public func runRuntimeTransportContract(
     try await fixture.transport.perform(.externalRouteDeactivated(transition))
     let deactivatedExternalRoutes = await fixture.externalUnsubscriptions()
     #expect(deactivatedExternalRoutes == [externalRoute])
+    #expect(diagnostics.snapshot().activeExternalSubscriptions == 0)
     let frameCountAfterDeactivation = received.snapshot().count
     var latePayload = [UInt8(10)]
     await fixture.inject(route: externalRoute, payload: &latePayload)
@@ -99,6 +103,7 @@ public func runRuntimeTransportContract(
     await fixture.reportFailure()
     #expect(failures.snapshot().count == 1)
     #expect(failures.snapshot().first?.code == .brokerUnavailable)
+    #expect(diagnostics.snapshot().sessionFailures == 1)
 
     let profileUnsubscriptionsBeforeStop = await fixture.profileUnsubscriptions()
     await fixture.transport.stop()
@@ -107,6 +112,8 @@ public func runRuntimeTransportContract(
     try await fixture.start { received.append($0) }
     let restartCount = await fixture.startCount()
     #expect(restartCount == 2)
+    #expect(diagnostics.snapshot().sessionOpens == 2)
+    #expect(diagnostics.snapshot().reconnects == 1)
     try await fixture.transport.activateProfileInterest(namespace: namespace)
     let subscriptionsAfterRestart = await fixture.profileSubscriptions()
     #expect(subscriptionsAfterRestart.suffix(2).elementsEqual([

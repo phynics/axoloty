@@ -126,10 +126,17 @@ extension ZenohBinding {
             case let .frame(frame):
                 if let inbound = copyFrame(frame, from: storage, routeState: routeState) {
                     frames.append(inbound)
+                    diagnostics?.recordReceivedFrame()
+                } else {
+                    diagnostics?.recordReceiveDrop()
                 }
             case .result(.queueEmpty):
                 return nil
-            case .result(.queueFull), .result(.frameTooLarge):
+            case .result(.queueFull):
+                diagnostics?.recordReceiveDrop()
+                continue
+            case .result(.frameTooLarge):
+                diagnostics?.recordOversizedSample()
                 continue
             case let .result(result):
                 return ZenohBindingSupport.failure(for: ZenohBindingSupport.error(

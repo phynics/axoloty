@@ -14,6 +14,8 @@ struct ZenohBindingReceivePumpTests {
     func copiesAndClassifiesFrames() async throws {
         let session = RecordingZenohSession()
         let binding = try makeBinding(session: session, clock: { 1234 })
+        let counters = RuntimeTransportDiagnostics()
+        await binding.setDiagnostics(counters)
         let recorder = FrameRecorder()
         try await binding.start { recorder.append($0) }
         try await binding.activateProfileInterest(namespace: "node")
@@ -29,6 +31,7 @@ struct ZenohBindingReceivePumpTests {
         #expect(frames.count == 2)
         #expect(frames.first == .profile(route: profileRoute, payload: [0, 1, 255], nowMS: 1234))
         #expect(frames.last == .externalIo(route: externalRoute, payload: [3, 4], nowMS: 1234))
+        #expect(counters.snapshot().receivedFrames == 2)
         await binding.stop()
     }
 
@@ -36,6 +39,8 @@ struct ZenohBindingReceivePumpTests {
     func consumesDropNotifications() async throws {
         let session = RecordingZenohSession()
         let binding = try makeBinding(session: session)
+        let counters = RuntimeTransportDiagnostics()
+        await binding.setDiagnostics(counters)
         let recorder = FrameRecorder()
         try await binding.start { recorder.append($0) }
         try await binding.activateProfileInterest(namespace: "node")
@@ -46,6 +51,9 @@ struct ZenohBindingReceivePumpTests {
 
         #expect(recorder.snapshot().isEmpty)
         #expect(session.pollCount >= 3)
+        #expect(counters.snapshot().receiveDrops == 1)
+        #expect(counters.snapshot().oversizedSamples == 1)
+        #expect(counters.snapshot().sessionOpens == 1)
         await binding.stop()
     }
 

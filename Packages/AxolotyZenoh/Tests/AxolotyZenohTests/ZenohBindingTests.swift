@@ -37,6 +37,8 @@ struct ZenohBindingTests {
     func publishMapping() async throws {
         let session = RecordingZenohSession()
         let binding = try makeBinding(session: session)
+        let counters = RuntimeTransportDiagnostics()
+        await binding.setDiagnostics(counters)
         try await binding.start { _ in }
         var payload: [UInt8] = [0, 1, 2, 255]
         let message = RuntimeOutboundMessage(route: "coaty/3/node/ADV/source", payload: payload)
@@ -48,6 +50,27 @@ struct ZenohBindingTests {
             Array("coaty/3/node/ADV/source".utf8),
             [0, 1, 2, 255]
         ))
+        #expect(counters.snapshot().publishedFrames == 1)
+        await binding.stop()
+    }
+
+    @Test("counts successful opens, reconnects, and active external subscriptions")
+    func transportLifecycleCounters() async throws {
+        let binding = try makeBinding(session: RecordingZenohSession())
+        let counters = RuntimeTransportDiagnostics()
+        await binding.setDiagnostics(counters)
+
+        try await binding.start { _ in }
+        try await binding.perform(.externalRouteActivated(transition("legacy/value")))
+        #expect(counters.snapshot().sessionOpens == 1)
+        #expect(counters.snapshot().reconnects == 0)
+        #expect(counters.snapshot().activeExternalSubscriptions == 1)
+        await binding.stop()
+        #expect(counters.snapshot().activeExternalSubscriptions == 0)
+
+        try await binding.start { _ in }
+        #expect(counters.snapshot().sessionOpens == 2)
+        #expect(counters.snapshot().reconnects == 1)
         await binding.stop()
     }
 
@@ -229,6 +252,8 @@ struct ZenohBindingTests {
     @Test("forwards owned asynchronous transport failures")
     func failureForwarding() async throws {
         let binding = try makeBinding(session: RecordingZenohSession())
+        let counters = RuntimeTransportDiagnostics()
+        await binding.setDiagnostics(counters)
         let recorder = FailureRecorder()
         await binding.setFailureHandler { recorder.append($0) }
         try await binding.start { _ in }
@@ -237,6 +262,7 @@ struct ZenohBindingTests {
         binding.reportFailure(failure)
 
         #expect(recorder.snapshot() == [failure])
+        #expect(counters.snapshot().sessionFailures == 1)
         await binding.stop()
     }
 

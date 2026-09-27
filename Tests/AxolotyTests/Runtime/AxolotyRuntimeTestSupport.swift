@@ -38,6 +38,7 @@ actor TestTransport: AxolotyRuntimeTransport, RuntimeTransportContractFixture {
     private var receive: (@Sendable (RuntimeInboundFrame) -> Void)?
     private var failure: (@Sendable (RuntimeTransportFailure) -> Void)?
     private var recovery: (@Sendable () -> Void)?
+    private var transportDiagnostics: RuntimeTransportDiagnostics?
     private var sent: [RuntimeOutboundMessage] = []
     private var delivered: [RuntimeOutboundMessage] = []
     private(set) var lifecycle: [String] = []
@@ -64,7 +65,12 @@ actor TestTransport: AxolotyRuntimeTransport, RuntimeTransportContractFixture {
         self.receive = receive
         contractStartCount += 1
         lifecycle.append("start")
-        if failureStage == .start { throw TestTransportFailure() }
+        if failureStage == .start {
+            transportDiagnostics?.recordSessionFailure()
+            throw TestTransportFailure()
+        }
+        if contractStartCount > 1 { transportDiagnostics?.recordReconnect() }
+        transportDiagnostics?.recordSessionOpen()
         guard shouldBlockNextStart else { return }
         shouldBlockNextStart = false
         await withCheckedContinuation { continuation in
@@ -90,6 +96,10 @@ actor TestTransport: AxolotyRuntimeTransport, RuntimeTransportContractFixture {
         recovery = handler
     }
 
+    func setDiagnostics(_ diagnostics: RuntimeTransportDiagnostics) async {
+        transportDiagnostics = diagnostics
+    }
+
     func perform(_ effect: RuntimeTransportEffect) async throws {
         switch effect {
         case .publish(let message):
@@ -102,13 +112,16 @@ actor TestTransport: AxolotyRuntimeTransport, RuntimeTransportContractFixture {
                 throw TestTransportFailure()
             }
             delivered.append(message)
+            transportDiagnostics?.recordPublishedFrame()
         case .externalRouteActivated(let transition):
             let route = String(decoding: transition.route, as: UTF8.self)
             contractExternalRoutes.insert(route)
+            transportDiagnostics?.setActiveExternalSubscriptions(UInt64(contractExternalRoutes.count))
             contractExternalSubscriptions.append(route)
         case .externalRouteDeactivated(let transition):
             let route = String(decoding: transition.route, as: UTF8.self)
             contractExternalRoutes.remove(route)
+            transportDiagnostics?.setActiveExternalSubscriptions(UInt64(contractExternalRoutes.count))
             contractExternalUnsubscriptions.append(route)
         }
     }
@@ -137,6 +150,13 @@ actor TestTransport: AxolotyRuntimeTransport, RuntimeTransportContractFixture {
         contractActiveNamespace = nil
     }
 
+    nonisolated func classifyRoute(_ route: ByteSlice) -> ProtocolRouteClassification {
+        let prefix: [UInt8] = [0x63, 0x6F, 0x61, 0x74, 0x79, 0x2F]
+        let isCoatyRoute = route.length >= prefix.count
+            && prefix.indices.allSatisfy { route.byte(at: $0) == prefix[$0] }
+        return isCoatyRoute ? .coaty : .external
+    }
+
     func profileSubscriptions() async -> [String] { contractProfileSubscriptions }
     func profileUnsubscriptions() async -> [String] { contractProfileUnsubscriptions }
     func externalSubscriptions() async -> [String] { contractExternalSubscriptions }
@@ -146,9 +166,13 @@ actor TestTransport: AxolotyRuntimeTransport, RuntimeTransportContractFixture {
 
     func inject(route: String, payload: inout [UInt8]) async {
         if route.hasPrefix("coaty/3/\(contractActiveNamespace ?? "<inactive>")/") {
+            transportDiagnostics?.recordReceivedFrame()
             receive?(.profile(route: route, payload: payload, nowMS: 0))
         } else if contractExternalRoutes.contains(route) {
+            transportDiagnostics?.recordReceivedFrame()
             receive?(.externalIo(route: route, payload: payload, nowMS: 0))
+        } else {
+            transportDiagnostics?.recordReceiveDrop()
         }
         payload = Array(repeating: 0, count: payload.count)
     }
@@ -156,6 +180,7 @@ actor TestTransport: AxolotyRuntimeTransport, RuntimeTransportContractFixture {
     func drainInbound() async {}
 
     func reportFailure() async {
+        transportDiagnostics?.recordSessionFailure()
         failure?(RuntimeTransportFailure(code: .brokerUnavailable, detail: "contract failure"))
     }
 
@@ -175,10 +200,16 @@ actor TestTransport: AxolotyRuntimeTransport, RuntimeTransportContractFixture {
     /// Simulates a wire frame arriving on the currently installed transport
     /// callback, exactly as a real transport implementation would invoke it.
     func deliver(_ frame: RuntimeInboundFrame) {
+        transportDiagnostics?.recordReceivedFrame()
         receive?(frame)
     }
 
+    func rejectOversizedSample() {
+        transportDiagnostics?.recordOversizedSample()
+    }
+
     func fail(_ error: Error) {
+        transportDiagnostics?.recordSessionFailure()
         let wrapped = error as? AxolotyError ?? AxolotyError.caught(error)
         let code: AxolotyError.RuntimeErrorCode
         if case let .runtime(runtimeCode, _) = wrapped {

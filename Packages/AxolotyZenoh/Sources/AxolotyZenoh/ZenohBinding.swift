@@ -28,6 +28,8 @@ public final class ZenohBinding: AxolotyRuntimeTransport, @unchecked Sendable {
     var receive: (@Sendable (RuntimeInboundFrame) -> Void)?
     var failureHandler: (@Sendable (RuntimeTransportFailure) -> Void)?
     var recoveryHandler: (@Sendable () -> Void)?
+    var diagnostics: RuntimeTransportDiagnostics?
+    var hasOpenedSession = false
     var receivePump: Task<Void, Never>?
     var hasObservedRouter = false
     var routerLossBeganAtNanoseconds: UInt64?
@@ -139,6 +141,11 @@ public final class ZenohBinding: AxolotyRuntimeTransport, @unchecked Sendable {
         Self.sessionRegistryLock.withLock { recoveryHandler = handler }
     }
 
+    /// Stores the runtime-owned transport counter sink.
+    public func setDiagnostics(_ diagnostics: RuntimeTransportDiagnostics) async {
+        Self.sessionRegistryLock.withLock { self.diagnostics = diagnostics }
+    }
+
     /// Applies one resolved publication or exact external-route transition.
     ///
     /// - Parameter effect: A finished runtime transport effect.
@@ -169,6 +176,7 @@ public final class ZenohBinding: AxolotyRuntimeTransport, @unchecked Sendable {
             activeNamespace = nil
             profileSubscriptions.removeAll(keepingCapacity: true)
             externalSubscriptions.removeAll(keepingCapacity: true)
+            diagnostics?.setActiveExternalSubscriptions(0)
             receive = nil
             hasObservedRouter = false
             routerLossBeganAtNanoseconds = nil
@@ -202,7 +210,11 @@ public final class ZenohBinding: AxolotyRuntimeTransport, @unchecked Sendable {
     ///
     /// The receive pump uses this seam for asynchronous façade failures.
     func reportFailure(_ failure: RuntimeTransportFailure) {
-        let handler = Self.sessionRegistryLock.withLock { started && !stopping ? failureHandler : nil }
+        let handler = Self.sessionRegistryLock.withLock { () -> (@Sendable (RuntimeTransportFailure) -> Void)? in
+            guard started && !stopping else { return nil }
+            diagnostics?.recordSessionFailure()
+            return failureHandler
+        }
         handler?(failure)
     }
 
@@ -231,6 +243,7 @@ public final class ZenohBinding: AxolotyRuntimeTransport, @unchecked Sendable {
             subscription: subscription,
             referenceCount: 1
         ))
+        diagnostics?.setActiveExternalSubscriptions(UInt64(externalSubscriptions.count))
     }
 
     private func deactivateExternalRoute(_ route: [UInt8]) throws(AxolotyError) {
@@ -242,6 +255,7 @@ public final class ZenohBinding: AxolotyRuntimeTransport, @unchecked Sendable {
         let result = session.unsubscribe(externalSubscriptions[index].subscription)
         try ZenohBindingSupport.requireSuccess(result, operation: "Zenoh external-route unsubscription")
         externalSubscriptions.remove(at: index)
+        diagnostics?.setActiveExternalSubscriptions(UInt64(externalSubscriptions.count))
     }
 
     private func startLocked(
@@ -253,7 +267,15 @@ public final class ZenohBinding: AxolotyRuntimeTransport, @unchecked Sendable {
             throw AxolotyError.runtime(code: .notStarted, reason: "Zenoh binding is already started")
         }
         let endpoint = Array(configuration.connectEndpoint.utf8)
-        try ZenohBindingSupport.requireSuccess(session.open(endpoint: endpoint), operation: "Zenoh session open")
+        do {
+            try ZenohBindingSupport.requireSuccess(session.open(endpoint: endpoint), operation: "Zenoh session open")
+        } catch {
+            diagnostics?.recordSessionFailure()
+            throw error
+        }
+        if hasOpenedSession { diagnostics?.recordReconnect() }
+        hasOpenedSession = true
+        diagnostics?.recordSessionOpen()
         hasObservedRouter = false
         routerLossBeganAtNanoseconds = nil
         routerLossReported = false
@@ -274,6 +296,7 @@ public final class ZenohBinding: AxolotyRuntimeTransport, @unchecked Sendable {
                 session.publish(route: Array(message.route.utf8), payload: Array(message.payload)),
                 operation: "Zenoh publication"
             )
+            diagnostics?.recordPublishedFrame()
         case let .externalRouteActivated(transition):
             try activateExternalRoute(transition.route)
         case let .externalRouteDeactivated(transition):

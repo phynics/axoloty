@@ -93,6 +93,45 @@ struct MQTTBindingAdapterSeamTests {
         }
     }
 
+    @Test("reports bounded transport counters for admitted, dropped, and published frames")
+    func reportsTransportCounters() async throws {
+        let delegate = RuntimeMQTTDelegate()
+        let client = FakeMQTTClient(delegate: delegate, connectsImmediately: true)
+        let binding = try makeBinding(client: client, delegate: delegate)
+        let counters = RuntimeTransportDiagnostics()
+        await binding.setDiagnostics(counters)
+        await binding.setFailureHandler { _ in }
+        try await binding.start { _ in }
+        try await binding.activateProfileInterest(namespace: "node")
+
+        client.emit(topic: "outside/topic", payload: [1])
+        client.emit(topic: "coaty/3/node/IOV/00000000-0000-4000-8000-000000000001", payload: [2])
+        try await binding.perform(.publish(RuntimeOutboundMessage(route: "out", payload: [3])))
+        let external = transition("outside/topic")
+        try await binding.perform(.externalRouteActivated(external))
+        client.emit(topic: "outside/topic", payload: [4])
+
+        let active = counters.snapshot()
+        #expect(active.sessionOpens == 1)
+        #expect(active.sessionFailures == 0)
+        #expect(active.reconnects == 0)
+        #expect(active.receivedFrames == 2)
+        #expect(active.publishedFrames == 1)
+        #expect(active.receiveDrops == 1)
+        #expect(active.oversizedSamples == 0)
+        #expect(active.activeExternalSubscriptions == 1)
+
+        client.emitFailure(FakeError.connection)
+        #expect(counters.snapshot().sessionFailures == 1)
+        try await binding.perform(.externalRouteDeactivated(external))
+        #expect(counters.snapshot().activeExternalSubscriptions == 0)
+        await binding.stop()
+        try await binding.start { _ in }
+        #expect(counters.snapshot().sessionOpens == 2)
+        #expect(counters.snapshot().reconnects == 1)
+        await binding.stop()
+    }
+
     @Test("publish, subscribe, and unsubscribe failures map to network errors")
     func operationFailuresMapToNetworkErrors() async throws {
         let delegate = RuntimeMQTTDelegate()
