@@ -227,6 +227,8 @@ public struct AxolotyCommandDispatcher: Sendable {
             return checkCommands.run(.integration)
         case .wireCapture:
             return wireCommands.run(.capture)
+        case .zenohLive:
+            return AxolotyZenohLiveIntegration(environment: environment).run()
         case .wireVerify:
             return wireCommands.run(.verifyFixtures)
         case .embeddedConsumerPrepare(let arguments):

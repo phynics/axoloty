@@ -497,9 +497,12 @@ test("validator checks Make ownership when invocation data is supplied", () => {
   assert.ok(errors.includes(`${"selfTest " + pathName}: no Make target invokes it`));
 });
 
-test("the four categories are the whole taxonomy", () => {
+test("the declared tiers are the whole taxonomy", () => {
   const document = JSON.parse(fs.readFileSync(path.join(root, "Tests/Support/test-tiers.json"), "utf8"));
-  assert.deepEqual(document.tiers.map(tier => tier.id), ["ci", "wire", "embedded", "release"]);
+  assert.deepEqual(document.tiers.map(tier => tier.id), ["ci", "wire", "embedded", "release", "zenoh-live"]);
+  assert.equal(document.tiers.find(tier => tier.id === "zenoh-live").attested, true);
+  assert.ok(document.tiers.find(tier => tier.id === "release").nodes.includes("zenoh-live-integration"));
+  assert.ok(!document.tiers.find(tier => tier.id === "ci").nodes.includes("zenoh-live-integration"));
   assert.equal("plans" in document, false);
   assert.equal("releaseGates" in document, false);
   assert.equal("ciRequiredGates" in document, false);
@@ -524,6 +527,22 @@ test("the four categories are the whole taxonomy", () => {
   const errors = validate(partial, base);
   assert.ok(errors.some(error => error.startsWith("release omits wire nodes")));
   assert.ok(errors.some(error => error.startsWith("nodes outside every category")));
+});
+
+test("zenoh-live selects the declared SwiftPM suite and every router scenario", () => {
+  const packageManifest = fs.readFileSync(path.join(root, "Packages/AxolotyZenoh/Package.swift"), "utf8");
+  const liveSuite = fs.readFileSync(path.join(root, "Packages/AxolotyZenoh/Tests/AxolotyZenohTests/ZenohLiveIntegrationTests.swift"), "utf8");
+  const liveRunner = fs.readFileSync(path.join(root, "Tools/AxolotyTooling/Commands/AxolotyZenohLiveIntegration.swift"), "utf8");
+  assert.match(packageManifest, /name: "AxolotyZenohTests"[\s\S]*?path: "Tests\/AxolotyZenohTests"/);
+  assert.match(liveRunner, /"--filter", "ZenohLiveIntegrationTests"/);
+  for (const scenario of [
+    "two Axoloty bindings exchange a profile route through zenohd",
+    "an external IO route is delivered through the real router",
+    "an independent C Zenoh client publishes to Axoloty",
+    "an independent C Zenoh client receives an Axoloty publication",
+    "the runtime enters soft recovery and resumes after router restart",
+    "graceful shutdown closes the router session",
+  ]) assert.ok(liveSuite.includes(scenario), scenario);
 });
 
 test("a hardware node cannot hide in a hardware-forbidden category", () => {

@@ -5,10 +5,9 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-// The four canonical categories. A category says what a run needs: "ci" needs
-// nothing beyond the container, "wire" needs broker infrastructure, "embedded"
-// needs an attached board, and "release" is everything the host can run.
-const expectedTiers = new Set(["ci", "wire", "embedded", "release"]);
+// Canonical tiers declare the runtime boundary a run needs. Live carrier tiers
+// remain separate from ordinary offline verification.
+const expectedTiers = new Set(["ci", "wire", "embedded", "release", "zenoh-live"]);
 const networkModes = new Set(["none", "isolated", "isolated-broker", "isolated-containers"]);
 const brokerModes = new Set(["none", "local", "isolated"]);
 const hardwareModes = new Set(["forbidden", "optional", "required"]);
@@ -325,7 +324,7 @@ export function validate(document, { makeTargets, discoveredSelfTests, invokedSe
   if (typeof document.manifestID !== "string" || !document.manifestID) errors.push("manifestID must be a nonempty string");
   if (!Array.isArray(document.nodes)) errors.push("nodes must be an array");
   if (!Array.isArray(document.requiredGates)) errors.push("requiredGates must be an array");
-  if ("plans" in document) errors.push("plans were replaced by the four categories; remove the plans section");
+  if ("plans" in document) errors.push("plans were replaced by canonical tiers; remove the plans section");
   if ("releaseGates" in document) errors.push("releaseGates was replaced by the release category; remove it");
   if ("ciRequiredGates" in document) errors.push("ciRequiredGates was folded into the ci category; remove it");
 
