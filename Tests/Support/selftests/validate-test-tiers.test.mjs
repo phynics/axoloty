@@ -529,6 +529,22 @@ test("the declared tiers are the whole taxonomy", () => {
   assert.ok(errors.some(error => error.startsWith("nodes outside every category")));
 });
 
+test("zenoh-live selects the declared SwiftPM suite and every router scenario", () => {
+  const packageManifest = fs.readFileSync(path.join(root, "Packages/AxolotyZenoh/Package.swift"), "utf8");
+  const liveSuite = fs.readFileSync(path.join(root, "Packages/AxolotyZenoh/Tests/AxolotyZenohTests/ZenohLiveIntegrationTests.swift"), "utf8");
+  const liveRunner = fs.readFileSync(path.join(root, "Tools/AxolotyTooling/Commands/AxolotyZenohLiveIntegration.swift"), "utf8");
+  assert.match(packageManifest, /name: "AxolotyZenohTests"[\s\S]*?path: "Tests\/AxolotyZenohTests"/);
+  assert.match(liveRunner, /"--filter", "ZenohLiveIntegrationTests"/);
+  for (const scenario of [
+    "two Axoloty bindings exchange a profile route through zenohd",
+    "an external IO route is delivered through the real router",
+    "an independent C Zenoh client publishes to Axoloty",
+    "an independent C Zenoh client receives an Axoloty publication",
+    "the runtime enters soft recovery and resumes after router restart",
+    "graceful shutdown closes the router session",
+  ]) assert.ok(liveSuite.includes(scenario), scenario);
+});
+
 test("a hardware node cannot hide in a hardware-forbidden category", () => {
   const document = JSON.parse(fs.readFileSync(path.join(root, "Tests/Support/test-tiers.json"), "utf8"));
   const smuggled = JSON.parse(JSON.stringify(document));

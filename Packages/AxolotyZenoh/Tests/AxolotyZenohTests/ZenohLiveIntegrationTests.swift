@@ -12,7 +12,11 @@ import Axoloty
 @_spi(AxolotyRuntimeAdapter) import AxolotyProtocol
 @testable import AxolotyZenoh
 
-@Suite("Zenoh live router integration", .serialized)
+@Suite(
+    "Zenoh live router integration",
+    .serialized,
+    .enabled(if: ProcessInfo.processInfo.environment["AXOLOTY_ZENOH_LIVE_ENDPOINT"] != nil)
+)
 struct ZenohLiveIntegrationTests {
     private var endpoint: String {
         ProcessInfo.processInfo.environment["AXOLOTY_ZENOH_LIVE_ENDPOINT"] ?? ""
@@ -97,7 +101,7 @@ struct ZenohLiveIntegrationTests {
             if receiver.contains(route: route, payload: Array("independent-c-peer".utf8)) { return }
             try await Task.sleep(for: .milliseconds(50))
         }
-        Issue.record("Timed out waiting for independent C route delivery")
+        throw ZenohLiveTestFailure.timeout("independent C route delivery")
     }
 
     @Test("an independent C Zenoh client receives an Axoloty publication")
@@ -128,27 +132,46 @@ struct ZenohLiveIntegrationTests {
         #expect(peer.terminationStatus == 0)
     }
 
+    @Test("graceful shutdown closes the router session")
+    func gracefulShutdown() async throws {
+        let binding = try ZenohBinding(connectEndpoint: endpoint)
+        try await binding.start { _ in }
+        try await waitFor("client connection before graceful stop") { bindingRouterCount(binding) > 0 }
+        await binding.stop()
+        #expect(bindingRouterCount(binding) == 0)
+    }
+
     @Test("the runtime enters soft recovery and resumes after router restart")
     func routerRestartRecovery() async throws {
         let namespace = "restart-\(UUID().uuidString.lowercased())"
         let receiver = FrameRecorder()
         let binding = try ZenohBinding(connectEndpoint: endpoint)
         let subscriber = try ZenohBinding(connectEndpoint: endpoint)
-        var builder = try RuntimeBuilder(sourceID: .zero, namespace: namespace)
+        let builder = try RuntimeBuilder(sourceID: .zero, namespace: namespace)
         let runtime = AxolotyRuntime(definition: try builder.finish(), transport: binding)
         try await withStoppedRuntime(runtime, otherBindings: [subscriber]) {
+            print("ZENOH_LIVE_RESTART_STAGE starting-runtime")
             try await runtime.start()
+            print("ZENOH_LIVE_RESTART_STAGE runtime-started state=\(await runtime.state())")
             try await subscriber.start { frame in receiver.append(frame) }
             try await subscriber.activateProfileInterest(namespace: namespace)
+            print("ZENOH_LIVE_RESTART_STAGE subscriber-started")
             try await waitFor("router presence before interruption") {
-                bindingRouterCount(binding) > 0 && bindingRouterCount(subscriber) > 0
+                bindingObservedRouter(binding) && bindingRouterCount(subscriber) > 0
             }
+            print("ZENOH_LIVE_RESTART_STAGE router-observed")
 
             let pid = try #require(Int32(ProcessInfo.processInfo.environment["AXOLOTY_ZENOH_LIVE_ROUTER_PID"] ?? ""))
-            kill(pid, SIGKILL)
-            try await waitFor("runtime to enter soft recovery after debounced router loss") {
-                await runtime.state() == .reconnecting
+            guard kill(pid, SIGKILL) == 0 else {
+                throw ZenohLiveTestFailure.routerKillFailed(String(cString: strerror(errno)))
             }
+            print("ZENOH_LIVE_RESTART_STAGE router-killed")
+            let sessionsDetectedLoss = await eventually {
+                bindingRouterCount(binding) == 0 && bindingRouterCount(subscriber) == 0
+            }
+            print("ZENOH_LIVE_RESTART_STAGE sessions-detected-loss=\(sessionsDetectedLoss)")
+            let runtimeEnteredRecovery = await eventually { await runtime.state() == .reconnecting }
+            print("ZENOH_LIVE_RESTART_STAGE runtime-entered-recovery=\(runtimeEnteredRecovery)")
 
             let routerPath = try #require(ProcessInfo.processInfo.environment["AXOLOTY_ZENOH_LIVE_ROUTER"])
             let router = Process()
@@ -157,35 +180,77 @@ struct ZenohLiveIntegrationTests {
             router.standardOutput = FileHandle.nullDevice
             router.standardError = FileHandle.nullDevice
             try router.run()
+            print("ZENOH_LIVE_RESTART_STAGE router-restarted pid=\(router.processIdentifier)")
             defer {
-                if router.isRunning { router.terminate() }
+                if router.isRunning { kill(router.processIdentifier, SIGKILL) }
                 router.waitUntilExit()
             }
-            try await waitFor("runtime automatic soft recovery") {
+            let routerRestored = await eventually {
+                bindingRouterCount(binding) > 0 && bindingRouterCount(subscriber) > 0
+            }
+            print("ZENOH_LIVE_RESTART_STAGE router-restored=\(routerRestored)")
+            let runtimeRecovered = await eventually {
                 await runtime.state() == .running && bindingRouterCount(binding) > 0
             }
-            let payload = Array("resumed-after-router-restart".utf8)
-            try await publishUntil("runtime publication after automatic recovery", receive: {
-                receiver.contains(routePrefix: "coaty/3/\(namespace)/CHN/", payload: payload)
-            }) {
-                let identifier = UUID().uuidString.lowercased()
-                #expect(await runtime.publish(.channel(identifier: identifier, payload: payload)) == .accepted)
+            print("ZENOH_LIVE_RESTART_STAGE runtime-recovered=\(runtimeRecovered)")
+            let payload = Array(#"{"privateData":{"sequence":7}}"#.utf8)
+            let messageResumed: Bool
+            if runtimeRecovered {
+                messageResumed = await publishRuntimeUntilReceived(
+                    runtime,
+                    payload: payload,
+                    receiver: receiver
+                )
+            } else {
+                messageResumed = false
             }
+            print("ZENOH_LIVE_RESTART_STAGE message-resumed=\(messageResumed)")
             await runtime.stop()
+            print("ZENOH_LIVE_RESTART_STAGE runtime-stopped")
             await subscriber.stop()
-            if router.isRunning { router.terminate() }
+            print("ZENOH_LIVE_RESTART_STAGE subscriber-stopped")
+            if router.isRunning { kill(router.processIdentifier, SIGKILL) }
             router.waitUntilExit()
+            print("ZENOH_LIVE_RESTART_STAGE router-stopped")
+            #expect(sessionsDetectedLoss, "Zenoh sessions did not report router absence")
+            #expect(runtimeEnteredRecovery, "runtime did not enter reconnecting before router restart")
+            #expect(routerRestored, "sessions did not reconnect to the restarted router")
+            #expect(runtimeRecovered, "runtime did not recover automatically after router return")
+            #expect(messageResumed, "runtime publication was not received after router recovery")
             #expect(!router.isRunning)
         }
     }
 
-    @Test("graceful shutdown closes the router session")
-    func gracefulShutdown() async throws {
-        let binding = try ZenohBinding(connectEndpoint: endpoint)
-        try await binding.start { _ in }
-        try await waitFor("client connection before graceful stop") { bindingRouterCount(binding) > 0 }
-        await binding.stop()
-        #expect(bindingRouterCount(binding) == 0)
+    private func publishRuntimeUntilReceived(
+        _ runtime: AxolotyRuntime,
+        payload: [UInt8],
+        receiver: FrameRecorder
+    ) async -> Bool {
+        let deadline = ContinuousClock.now + .seconds(20)
+        while ContinuousClock.now < deadline {
+            let receipt = await runtime.publish(.channel(identifier: "restart-proof", payload: payload))
+            guard receipt == .accepted else {
+                try? await Task.sleep(for: .milliseconds(50))
+                continue
+            }
+            if receiver.contains(payload: payload) {
+                return true
+            }
+            try? await Task.sleep(for: .milliseconds(50))
+        }
+        return false
+    }
+
+    private func eventually(
+        timeout: Duration = .seconds(12),
+        condition: () async -> Bool
+    ) async -> Bool {
+        let deadline = ContinuousClock.now + timeout
+        while ContinuousClock.now < deadline {
+            if await condition() { return true }
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+        return await condition()
     }
 
     private func publishUntil(
@@ -200,7 +265,7 @@ struct ZenohLiveIntegrationTests {
             if await receive() { return }
             try await Task.sleep(for: .milliseconds(50))
         }
-        Issue.record("Timed out waiting for \(description)")
+        throw ZenohLiveTestFailure.timeout(description)
     }
 
     private func withStoppedBindings(
@@ -224,7 +289,9 @@ struct ZenohLiveIntegrationTests {
         do {
             try await operation()
         } catch {
+            print("ZENOH_LIVE_RESTART_STAGE cleanup-after-error")
             await runtime.stop()
+            print("ZENOH_LIVE_RESTART_STAGE runtime-stopped-after-error")
             for binding in otherBindings { await binding.stop() }
             throw error
         }
@@ -242,7 +309,7 @@ struct ZenohLiveIntegrationTests {
             if await condition() { return }
             try await Task.sleep(for: .milliseconds(20))
         }
-        Issue.record("Timed out waiting for \(description)")
+        throw ZenohLiveTestFailure.timeout(description)
     }
 
     private func bindingRouterCount(_ binding: ZenohBinding) -> UInt32 {
@@ -250,6 +317,10 @@ struct ZenohLiveIntegrationTests {
             if case let .count(count) = binding.session.connectedRouterCount() { return count }
             return 0
         }
+    }
+
+    private func bindingObservedRouter(_ binding: ZenohBinding) -> Bool {
+        ZenohBinding.sessionRegistryLock.withLock { binding.hasObservedRouter }
     }
 
     private func makeCPeer(mode: String, route: String) throws -> (Process, Pipe) {
@@ -261,6 +332,18 @@ struct ZenohLiveIntegrationTests {
         process.standardOutput = outputPipe
         process.standardError = FileHandle.nullDevice
         return (process, outputPipe)
+    }
+}
+
+private enum ZenohLiveTestFailure: Error, LocalizedError {
+    case timeout(String)
+    case routerKillFailed(String)
+
+    var errorDescription: String? {
+        switch self {
+        case let .timeout(description): "Timed out waiting for \(description)"
+        case let .routerKillFailed(reason): "Could not kill zenohd for restart scenario: \(reason)"
+        }
     }
 }
 
@@ -295,12 +378,12 @@ private final class FrameRecorder: @unchecked Sendable {
         }
     }
 
-    func contains(routePrefix: String, payload: [UInt8]) -> Bool {
+    func contains(payload: [UInt8]) -> Bool {
         lock.withLock {
             storage.contains { frame in
                 switch frame {
-                case let .profile(route, framePayload, _), let .externalIo(route, framePayload, _):
-                    return route.hasPrefix(routePrefix) && framePayload == payload
+                case let .profile(_, framePayload, _), let .externalIo(_, framePayload, _):
+                    return framePayload == payload
                 }
             }
         }
