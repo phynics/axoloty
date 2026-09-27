@@ -17,6 +17,7 @@ protocol ZenohBindingSession: AnyObject {
     func subscribe(route: [UInt8]) throws(AxolotyError) -> Int
     func unsubscribe(_ subscription: Int) -> ZenohResult
     func poll(_ subscription: Int, into storage: inout ZenohFrameStorage) -> ZenohPollResult
+    func connectedRouterCount() -> ZenohRouterCountResult
 }
 
 /// Couples the move-only Swift session with its opaque façade handles.
@@ -74,6 +75,10 @@ final class ZenohFacadeSession: ZenohBindingSession {
             return .result(.invalidArgument)
         }
         return session.poll(from: subscriptions[index].handle, into: &storage)
+    }
+
+    func connectedRouterCount() -> ZenohRouterCountResult {
+        session.connectedRouterCount()
     }
 
     private func withSlice<R>(_ bytes: [UInt8], _ body: (ByteSlice) -> R) -> R {

@@ -125,6 +125,9 @@ typedef struct axoloty_zenoh_subscription axoloty_zenoh_subscription_t;
 /// On success ``out_session`` receives a handle that must be released with
 /// ``axoloty_zenoh_close``. On every failure ``out_session`` is set to `NULL`
 /// and all partially created state has already been released.
+/// Unicast link opens use a fixed five-second timeout. This bounds an
+/// individual synchronous link attempt while the host binding holds its
+/// process-wide façade lock. An unavailable client endpoint still fails fast.
 ///
 /// - Parameters:
 ///   - config: Borrowed configuration. Must not be `NULL`.

@@ -17,6 +17,8 @@ public final class ZenohBinding: AxolotyRuntimeTransport, @unchecked Sendable {
     let configuration: ZenohBindingConfiguration
     let session: any ZenohBindingSession
     let clock: @Sendable () -> UInt32
+    let monotonicNowNanoseconds: @Sendable () -> UInt64
+    let routerLossDebounceNanoseconds: UInt64
     let receivePumpIntervalNanoseconds: UInt64
     var started = false
     var stopping = false
@@ -25,7 +27,17 @@ public final class ZenohBinding: AxolotyRuntimeTransport, @unchecked Sendable {
     var externalSubscriptions: [ExternalSubscription] = []
     var receive: (@Sendable (RuntimeInboundFrame) -> Void)?
     var failureHandler: (@Sendable (RuntimeTransportFailure) -> Void)?
+    var recoveryHandler: (@Sendable () -> Void)?
     var receivePump: Task<Void, Never>?
+    var hasObservedRouter = false
+    var routerLossBeganAtNanoseconds: UInt64?
+    var routerLossReported = false
+
+    /// A one-second debounce filters short topology changes while remaining
+    /// faster than operational retry windows. It is well above the 10 ms poll
+    /// interval and within the 0.5–2 s recovery-detection budget.
+    static let routerLossDebounceNanoseconds: UInt64 = 1_000_000_000
+    static let routerLossFailureDetail = "Zenoh client session lost all connected routers"
 
     /// Creates a host Zenoh binding.
     ///
@@ -74,12 +86,16 @@ public final class ZenohBinding: AxolotyRuntimeTransport, @unchecked Sendable {
         configuration: ZenohBindingConfiguration,
         session: any ZenohBindingSession,
         clock: @escaping @Sendable () -> UInt32 = ZenohBindingSupport.monotonicNowMS,
-        receivePumpIntervalNanoseconds: UInt64 = ZenohBindingSupport.receivePumpIntervalNanoseconds
+        receivePumpIntervalNanoseconds: UInt64 = ZenohBindingSupport.receivePumpIntervalNanoseconds,
+        monotonicNowNanoseconds: @escaping @Sendable () -> UInt64 = { DispatchTime.now().uptimeNanoseconds },
+        routerLossDebounceNanoseconds: UInt64 = ZenohBinding.routerLossDebounceNanoseconds
     ) {
         self.configuration = configuration
         self.session = session
         self.clock = clock
         self.receivePumpIntervalNanoseconds = receivePumpIntervalNanoseconds
+        self.monotonicNowNanoseconds = monotonicNowNanoseconds
+        self.routerLossDebounceNanoseconds = routerLossDebounceNanoseconds
     }
 
     /// Opens the Zenoh session and starts its bounded receive pump.
@@ -116,6 +132,13 @@ public final class ZenohBinding: AxolotyRuntimeTransport, @unchecked Sendable {
         Self.sessionRegistryLock.withLock { failureHandler = handler }
     }
 
+    /// Stores the callback invoked once when a reported router outage recovers.
+    ///
+    /// - Parameter handler: The runtime's soft-recovery callback.
+    public func setRecoveryHandler(_ handler: @escaping @Sendable () -> Void) async {
+        Self.sessionRegistryLock.withLock { recoveryHandler = handler }
+    }
+
     /// Applies one resolved publication or exact external-route transition.
     ///
     /// - Parameter effect: A finished runtime transport effect.
@@ -147,17 +170,30 @@ public final class ZenohBinding: AxolotyRuntimeTransport, @unchecked Sendable {
             profileSubscriptions.removeAll(keepingCapacity: true)
             externalSubscriptions.removeAll(keepingCapacity: true)
             receive = nil
+            hasObservedRouter = false
+            routerLossBeganAtNanoseconds = nil
+            routerLossReported = false
             _ = session.close()
             stopping = false
         }
     }
 
     /// Declares the two bounded Coaty profile-interest key expressions.
+    ///
+    /// The active namespace cannot be changed in place. If a prior activation
+    /// left retained handles after rollback failed, first deactivate that same
+    /// namespace; a repeated activation with incomplete retained state fails
+    /// rather than silently duplicating or losing subscriptions.
     public func activateProfileInterest(namespace: String) async throws(AxolotyError) {
         try activateProfileInterestLocked(namespace: namespace)
     }
 
     /// Removes exactly the two profile-interest subscriptions for `namespace`.
+    ///
+    /// Deactivation is a no-op when the binding is stopped. Runtime shutdown
+    /// may reach this method after transport startup failed. The runtime's
+    /// reconnect ordering deactivates while started, then stops and starts the
+    /// binding before reactivating its immutable namespace.
     public func deactivateProfileInterest(namespace: String) async throws(AxolotyError) {
         try deactivateProfileInterestLocked(namespace: namespace)
     }
@@ -166,8 +202,13 @@ public final class ZenohBinding: AxolotyRuntimeTransport, @unchecked Sendable {
     ///
     /// The receive pump uses this seam for asynchronous façade failures.
     func reportFailure(_ failure: RuntimeTransportFailure) {
-        let handler = Self.sessionRegistryLock.withLock { failureHandler }
+        let handler = Self.sessionRegistryLock.withLock { started && !stopping ? failureHandler : nil }
         handler?(failure)
+    }
+
+    func reportRecovery() {
+        let handler = Self.sessionRegistryLock.withLock { started && !stopping ? recoveryHandler : nil }
+        handler?()
     }
 
     private func activateExternalRoute(_ route: [UInt8]) throws(AxolotyError) {
@@ -213,6 +254,9 @@ public final class ZenohBinding: AxolotyRuntimeTransport, @unchecked Sendable {
         }
         let endpoint = Array(configuration.connectEndpoint.utf8)
         try ZenohBindingSupport.requireSuccess(session.open(endpoint: endpoint), operation: "Zenoh session open")
+        hasObservedRouter = false
+        routerLossBeganAtNanoseconds = nil
+        routerLossReported = false
         self.receive = receive
         started = true
         startReceivePumpLocked()
@@ -303,9 +347,7 @@ public final class ZenohBinding: AxolotyRuntimeTransport, @unchecked Sendable {
     private func deactivateProfileInterestLocked(namespace: String) throws(AxolotyError) {
         Self.sessionRegistryLock.lock()
         defer { Self.sessionRegistryLock.unlock() }
-        guard started else {
-            throw AxolotyError.runtime(code: .notStarted, reason: "Zenoh binding is not started")
-        }
+        guard started else { return }
         guard activeNamespace == namespace else { return }
 
         var firstError: AxolotyError?

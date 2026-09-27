@@ -217,6 +217,39 @@ extension AxolotyRuntimeTests {
         await runtime.stop()
     }
 
+    @Test("soft transport recovery resumes queued work without restarting the transport")
+    func softTransportRecoveryResumesOfflineOperations() async throws {
+        let transport = TestTransport()
+        let runtime = AxolotyRuntime(definition: try makeDefinition(), transport: transport)
+        try await runtime.start()
+        let initialLifecycle = await transport.lifecycle
+        let initialStarts = initialLifecycle.filter { $0 == "start" }.count
+        let initialStops = initialLifecycle.filter { $0 == "stop" }.count
+
+        await transport.fail(TestTransportFailure())
+        try await waitUntil("runtime to enter reconnecting state") {
+            await runtime.state() == .reconnecting
+        }
+        let receipt = await runtime.publish(.advertise(
+            Array(#"{"object":{"objectId":"66666666-6666-4666-8666-666666666666","coreType":"CoatyObject","objectType":"com.coaty.test.WireQueuedFixture","name":"soft-recovery"}}"#.utf8)
+        ))
+        #expect(receipt == .accepted)
+        #expect(await transport.sentCount() == 0)
+
+        await transport.recover()
+        try await waitUntil("soft recovery to resume and flush queued operations") {
+            let state = await runtime.state()
+            let sentCount = await transport.sentCount()
+            return state == .running && sentCount == 2
+        }
+
+        let recoveredLifecycle = await transport.lifecycle
+        #expect(recoveredLifecycle.filter { $0 == "start" }.count == initialStarts)
+        #expect(recoveredLifecycle.filter { $0 == "stop" }.count == initialStops)
+        #expect(await transport.sentCount() == 2)
+        await runtime.stop()
+    }
+
     @Test("runtime stop waits for an in-flight transport send")
     func stopDrainsOutboundPump() async throws {
         let definition = try makeDefinition()

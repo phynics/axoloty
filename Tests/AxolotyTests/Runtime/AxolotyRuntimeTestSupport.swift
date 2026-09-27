@@ -35,11 +35,17 @@ enum SetupFailureStage: String, CaseIterable, Sendable {
 actor TestTransport: AxolotyRuntimeTransport {
     private var receive: (@Sendable (RuntimeInboundFrame) -> Void)?
     private var failure: (@Sendable (RuntimeTransportFailure) -> Void)?
+    private var recovery: (@Sendable () -> Void)?
     private var sent: [RuntimeOutboundMessage] = []
+    private var delivered: [RuntimeOutboundMessage] = []
     private(set) var lifecycle: [String] = []
     private(set) var lastWills: [RuntimeTransportLastWill?] = []
     private(set) var stopObservedCancellation = false
     private let failureStage: SetupFailureStage?
+    private var shouldFailNextPublication = false
+    private var shouldBlockNextStart = false
+    private var isWaitingForStart = false
+    private var startWaiter: CheckedContinuation<Void, Never>?
 
     init(failing failureStage: SetupFailureStage? = nil) {
         self.failureStage = failureStage
@@ -49,6 +55,13 @@ actor TestTransport: AxolotyRuntimeTransport {
         self.receive = receive
         lifecycle.append("start")
         if failureStage == .start { throw TestTransportFailure() }
+        guard shouldBlockNextStart else { return }
+        shouldBlockNextStart = false
+        await withCheckedContinuation { continuation in
+            isWaitingForStart = true
+            startWaiter = continuation
+        }
+        isWaitingForStart = false
     }
 
     func start(
@@ -63,6 +76,10 @@ actor TestTransport: AxolotyRuntimeTransport {
         failure = handler
     }
 
+    func setRecoveryHandler(_ handler: @escaping @Sendable () -> Void) async {
+        recovery = handler
+    }
+
     func perform(_ effect: RuntimeTransportEffect) async throws {
         let message: RuntimeOutboundMessage
         switch effect {
@@ -70,9 +87,14 @@ actor TestTransport: AxolotyRuntimeTransport {
         default: return
         }
         sent.append(message)
+        if shouldFailNextPublication {
+            shouldFailNextPublication = false
+            throw TestTransportFailure()
+        }
         if failureStage == .advertisement, isAdvertiseRoute(message.route) {
             throw TestTransportFailure()
         }
+        delivered.append(message)
     }
 
     func stop() async {
@@ -90,6 +112,15 @@ actor TestTransport: AxolotyRuntimeTransport {
     func sentCount() -> Int { sent.count }
     func firstSent() -> RuntimeOutboundMessage? { sent.first }
     func lastSent() -> RuntimeOutboundMessage? { sent.last }
+    func deliveredMessages() -> [RuntimeOutboundMessage] { delivered }
+
+    func failNextPublication() { shouldFailNextPublication = true }
+    func blockNextStart() { shouldBlockNextStart = true }
+    func waitingForStart() -> Bool { isWaitingForStart }
+    func releaseStart() {
+        startWaiter?.resume()
+        startWaiter = nil
+    }
 
     /// Simulates a wire frame arriving on the currently installed transport
     /// callback, exactly as a real transport implementation would invoke it.
@@ -107,6 +138,8 @@ actor TestTransport: AxolotyRuntimeTransport {
         }
         failure?(RuntimeTransportFailure(code: code, detail: wrapped.userFriendlyMessage))
     }
+
+    func recover() { recovery?() }
 }
 
 struct TestTransportFailure: Error, Sendable {}
