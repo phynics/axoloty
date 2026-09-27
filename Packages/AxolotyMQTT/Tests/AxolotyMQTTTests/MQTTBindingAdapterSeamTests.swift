@@ -126,9 +126,14 @@ struct MQTTBindingAdapterSeamTests {
         try await binding.perform(.externalRouteDeactivated(external))
         #expect(counters.snapshot().activeExternalSubscriptions == 0)
         await binding.stop()
+        client.emitFailure(FakeError.connection)
+        #expect(counters.snapshot().sessionFailures == 1)
+
         try await binding.start { _ in }
         #expect(counters.snapshot().sessionOpens == 2)
         #expect(counters.snapshot().reconnects == 1)
+        client.emitFailure(FakeError.connection)
+        #expect(counters.snapshot().sessionFailures == 2)
         await binding.stop()
     }
 
