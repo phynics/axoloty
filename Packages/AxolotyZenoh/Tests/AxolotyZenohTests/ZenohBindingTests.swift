@@ -517,6 +517,27 @@ final class RecordingZenohSession: ZenohBindingSession {
         queuedPolls[subscription, default: []].append(entry)
     }
 
+    func enqueuePublication(route: String, payload: [UInt8]) {
+        ZenohBinding.sessionRegistryLock.withLock {
+            let key = Array(route.utf8)
+            for operation in operations {
+                guard case let .subscribe(filterBytes, id) = operation else { continue }
+                let filter = String(decoding: filterBytes, as: UTF8.self)
+                guard Self.matches(filter: filter, route: route) else { continue }
+                enqueue(.frame(PollFrameSource(key: key, payload: payload)), for: id)
+            }
+        }
+    }
+
+    private static func matches(filter: String, route: String) -> Bool {
+        let filterLevels = filter.split(separator: "/")
+        let routeLevels = route.split(separator: "/")
+        guard filterLevels.count == routeLevels.count else { return false }
+        return zip(filterLevels, routeLevels).allSatisfy { filter, route in
+            filter == "*" || filter == route
+        }
+    }
+
     func poll(_ subscription: Int, into storage: inout ZenohFrameStorage) -> ZenohPollResult {
         pollCount += 1
         guard var entries = queuedPolls[subscription], !entries.isEmpty else { return .result(.queueEmpty) }

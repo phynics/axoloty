@@ -320,13 +320,18 @@ enum ProtocolTraceCorpus {
 
     private static func incompatibleExternalRouteTrace(seed: FixtureSeed) -> ProtocolTrace {
         let state = TraceState()
+        let profileRoute = "coaty/3/trace/IOV/00000000-0000-4000-8000-000000000001"
+        let coatyAssociation = seed.externalRoute.replacingOccurrences(
+            of: "external/wire-compat-v1/io-external-1",
+            with: profileRoute
+        )
         let input = TraceInput(
             family: .associate,
             direction: .inbound,
             fixtureID: fixtureID(.associate, "externalRoute"),
-            fixturePayload: String(seed.externalRoute.dropLast()) + ",\"isExternalRoute\":true}",
+            fixturePayload: String(coatyAssociation.dropLast()) + ",\"isExternalRoute\":true}",
             objectID: "invalid-route-001",
-            associatingRoute: "external/wire-compat-v1/io-external-1",
+            associatingRoute: profileRoute,
             routeClassification: .coaty,
             isExternalRoute: true
         )

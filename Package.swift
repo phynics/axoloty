@@ -52,19 +52,26 @@ let package = Package(
             name: "AxolotyStaticRuntime",
             targets: ["AxolotyStaticRuntime"]
         ),
-        // Verification infrastructure, not a shipped product: an in-process
-        // MQTT 3.1.1 broker so broker-backed checks need no container, no
-        // fixed port, and no Mosquitto. No shipped product may depend on it.
-        .library(
-            name: "AxolotyTestBroker",
-            targets: ["AxolotyTestBroker"]
-        ),
+        // Host-only verification products used by root and sibling adapter
+        // test targets. Firmware consumer manifests do not expose these.
         // Host-only shared assertions for sibling transport adapters. This
         // product contains no firmware-facing API and lives outside Tests so
         // the separate Zenoh package can reuse the exact same suite.
         .library(
             name: "AxolotyTransportContractTestSupport",
             targets: ["AxolotyTransportContractTestSupport"]
+        ),
+        // Shared deterministic protocol traces for host transport parity.
+        // This host-only support product keeps one corpus and comparison
+        // harness available to the sibling Zenoh package without adding Zenoh
+        // to the root package graph.
+        .library(
+            name: "AxolotyProtocolTraceTestSupport",
+            targets: ["AxolotyProtocolTraceTestSupport"]
+        ),
+        .library(
+            name: "AxolotyTestBroker",
+            targets: ["AxolotyTestBroker"]
         ),
     ],
     dependencies: [
@@ -226,6 +233,17 @@ let package = Package(
             dependencies: ["Axoloty", "AxolotyProtocol"],
             path: "Packages/AxolotyTransportContractTestSupport/Sources/AxolotyTransportContractTestSupport"
         ),
+        .target(
+            name: "AxolotyProtocolTraceTestSupport",
+            dependencies: [
+                "Axoloty", "AxolotyObjectModel", "AxolotyProtocol", "AxolotyStaticRuntime", "AxolotyWire",
+            ],
+            path: "Packages/AxolotyProtocolTraceTestSupport/Sources/AxolotyProtocolTraceTestSupport",
+            resources: [
+                .copy("trace.schema.json"),
+                .copy("Fixtures/family-seeds.json"),
+            ]
+        ),
         // In-process MQTT 3.1.1 broker for hardware-free, container-free
         // end-to-end tests. It depends on NIO only, so it adds no new
         // dependency to the package. It is deliberately outside every shipped
@@ -237,7 +255,7 @@ let package = Package(
                 .product(name: "NIOPosix", package: "swift-nio"),
                 .product(name: "NIOConcurrencyHelpers", package: "swift-nio"),
             ],
-            path: "Tests/AxolotyTestBroker"
+            path: "Packages/AxolotyTestBroker/Sources/AxolotyTestBroker"
         ),
         .testTarget(
             name: "AxolotyTestBrokerTests",
@@ -259,12 +277,11 @@ let package = Package(
                 "AxolotyStaticRuntime",
                 "AxolotyTestSupport",
                 "AxolotyTransportContractTestSupport",
+                "AxolotyProtocolTraceTestSupport",
                 .product(name: "ErrorKit", package: "ErrorKit"),
             ],
             path: "Tests/AxolotyTests",
             resources: [
-                .copy("ProtocolTrace/trace.schema.json"),
-                .copy("ProtocolTrace/Fixtures/family-seeds.json"),
                 .process("WireCompatibility/Fixtures"),
             ]
         ),
