@@ -329,6 +329,66 @@ extension AxolotyRuntimeTests {
         await runtime.stop()
     }
 
+    @Test("reconnect drains offline publications after replay frees dispatch capacity")
+    func reconnectDrainsOfflinePublicationsAfterReplayFreesCapacity() async throws {
+        let definition = try RuntimeBuilder(
+            sourceID: .zero,
+            namespace: "test",
+            capacities: try RuntimeCapacities(dispatch: 1)
+        ).finish()
+        let transport = TestTransport()
+        let runtime = AxolotyRuntime(definition: definition, transport: transport)
+        try await runtime.start()
+        await transport.failNextPublication()
+
+        let firstPayload = Array(#"{"privateData":{"publication":1}}"#.utf8)
+        #expect(await runtime.publish(.channel(identifier: "first", payload: firstPayload)) == .accepted)
+        try await waitUntil("failed publication to enter reconnecting state") {
+            await runtime.state() == .reconnecting
+        }
+
+        let secondPayload = Array(#"{"privateData":{"publication":2}}"#.utf8)
+        #expect(await runtime.publish(.channel(identifier: "second", payload: secondPayload)) == .accepted)
+        await runtime.reconnect()
+
+        try await waitUntil("replay and offline publication to be delivered") {
+            await transport.deliveredMessages().count == 2
+        }
+        #expect(await transport.deliveredMessages().map(\.payload) == [firstPayload, secondPayload])
+        await runtime.stop()
+    }
+
+    @Test("soft recovery drains offline publications after replay frees dispatch capacity")
+    func softRecoveryDrainsOfflinePublicationsAfterReplayFreesCapacity() async throws {
+        let definition = try RuntimeBuilder(
+            sourceID: .zero,
+            namespace: "test",
+            capacities: try RuntimeCapacities(dispatch: 1)
+        ).finish()
+        let transport = TestTransport()
+        let runtime = AxolotyRuntime(definition: definition, transport: transport)
+        try await runtime.start()
+        await transport.failNextPublication()
+
+        let firstPayload = Array(#"{"privateData":{"publication":1}}"#.utf8)
+        #expect(await runtime.publish(.channel(identifier: "first", payload: firstPayload)) == .accepted)
+        try await waitUntil("failed publication to enter reconnecting state") {
+            await runtime.state() == .reconnecting
+        }
+
+        let secondPayload = Array(#"{"privateData":{"publication":2}}"#.utf8)
+        #expect(await runtime.publish(.channel(identifier: "second", payload: secondPayload)) == .accepted)
+        await transport.recover()
+
+        try await waitUntil("soft recovery replay and offline publication to be delivered") {
+            let state = await runtime.state()
+            let deliveredCount = await transport.deliveredMessages().count
+            return state == .running && deliveredCount == 2
+        }
+        #expect(await transport.deliveredMessages().map(\.payload) == [firstPayload, secondPayload])
+        await runtime.stop()
+    }
+
     @Test("runtime stop waits for an in-flight transport send")
     func stopDrainsOutboundPump() async throws {
         let definition = try makeDefinition()

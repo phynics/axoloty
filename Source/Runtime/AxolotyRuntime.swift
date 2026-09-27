@@ -56,6 +56,7 @@ actor ProtocolExecutor {
     /// This queue is bounded by the dispatch capacity and is replayed in
     /// publication order after a successful reconnect.
     private var offlineOperations: [RuntimeOperation] = []
+    private var flushingOfflineOperations = false
     var state: RuntimeLifecycleState = .stopped
     private var terminationWaiter: CheckedContinuation<RuntimeLifecycleState, Never>?
     private var hasStarted = false
@@ -486,11 +487,13 @@ actor ProtocolExecutor {
             decrementOutbound()
         case let .typedIoPublication(_, token: typedToken):
             decrementOutbound()
-            guard typedIoState.completeTransportPublication(typedToken) else { return }
-            flushPendingIo(at: typedToken.slot, nowMS: monotonicNowMS())
+            if typedIoState.completeTransportPublication(typedToken) {
+                flushPendingIo(at: typedToken.slot, nowMS: monotonicNowMS())
+            }
         case .externalRouteActivated, .externalRouteDeactivated:
             break
         }
+        flushOfflineOperations(nowMS: monotonicNowMS())
     }
 
     private func installOutboundPump() {
@@ -600,6 +603,9 @@ actor ProtocolExecutor {
     }
 
     private func flushOfflineOperations(nowMS: UInt32) {
+        guard state == .running, !offlineOperations.isEmpty, !flushingOfflineOperations else { return }
+        flushingOfflineOperations = true
+        defer { flushingOfflineOperations = false }
         while let operation = offlineOperations.first {
             let receipt = publish(operation, nowMS: nowMS)
             switch receipt {
