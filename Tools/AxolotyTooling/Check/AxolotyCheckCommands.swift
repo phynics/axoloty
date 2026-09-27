@@ -142,28 +142,39 @@ struct AxolotyCheckCommands: Sendable {
         }
         do {
             let resolver = try planResolver.get()
-            let command: AxolotyCommandPlan
-            if let repetition {
-                command = try resolver.command(.testOne(filter: filter, repetition: repetition))
-            } else {
-                command = try resolver.command(.testOneOrNode(
-                    value: filter,
-                    platform: AxolotyCheckPlan.currentPlatform
-                ))
-            }
-            if let failure = contextValidator.failureResult(validating: [command]) {
-                return AxolotyCommandFamilySupport.commandResult(failure)
-            }
-            let result = execute(command, context: AxolotyCommandRunContext(node: "test-one", stage: "check"))
-            let check = AxolotyCheckResult(
-                name: "test-one",
-                status: result.exitCode == 0 ? .passed : .failed,
-                command: result
+            let commands = try resolver.testOneCommands(
+                filter: filter,
+                repetition: repetition,
+                platform: AxolotyCheckPlan.currentPlatform
             )
-            return AxolotyCommandFamilySupport.manifestResult(
-                AxolotyCheckManifest(results: [check]),
-                outputMode: outputMode,
-                exitCode: result.exitCode == 0 ? 0 : 1
+            var searchedPackages: [String] = []
+            var lastEmptyResult: AxolotyCheckCommandResult?
+            for command in commands {
+                searchedPackages.append(Self.packageLabel(of: command))
+                if let failure = contextValidator.failureResult(validating: [command]) {
+                    return AxolotyCommandFamilySupport.commandResult(failure)
+                }
+                let result = execute(command, context: AxolotyCommandRunContext(node: "test-one", stage: "check"))
+                guard result.exitCode == FoundationCommandExecution.emptyTestRunExitCode else {
+                    return Self.testOneResult(result, outputMode: outputMode)
+                }
+                lastEmptyResult = result
+            }
+            // Every candidate compiled and ran, but none selected a test. Say
+            // which packages were searched instead of leaving only the last
+            // package's empty Swift Testing output.
+            let searched = searchedPackages.joined(separator: ", ")
+            let diagnostic = "error: no tests matched FILTER=\"\(filter)\" in any searched package: \(searched)\n"
+            let result = AxolotyCheckCommandResult(
+                exitCode: FoundationCommandExecution.emptyTestRunExitCode,
+                standardOutput: lastEmptyResult?.standardOutput ?? "",
+                standardError: diagnostic
+            )
+            let wrapped = Self.testOneResult(result, outputMode: outputMode)
+            return AxolotyCommandResult(
+                standardOutput: wrapped.standardOutput,
+                standardError: wrapped.standardError + diagnostic,
+                exitCode: wrapped.exitCode
             )
         } catch {
             return AxolotyCommandResult(
@@ -171,6 +182,32 @@ struct AxolotyCheckCommands: Sendable {
                 exitCode: 70
             )
         }
+    }
+
+    /// Wraps one finished `test-one` command as a one-node manifest result.
+    private static func testOneResult(
+        _ result: AxolotyCheckCommandResult,
+        outputMode: AxolotyCommandOutputMode
+    ) -> AxolotyCommandResult {
+        let check = AxolotyCheckResult(
+            name: "test-one",
+            status: result.exitCode == 0 ? .passed : .failed,
+            command: result
+        )
+        return AxolotyCommandFamilySupport.manifestResult(
+            AxolotyCheckManifest(results: [check]),
+            outputMode: outputMode,
+            exitCode: result.exitCode == 0 ? 0 : 1
+        )
+    }
+
+    /// The package a candidate command targets, for the no-match diagnostic.
+    private static func packageLabel(of command: AxolotyCommandPlan) -> String {
+        guard let index = command.arguments.firstIndex(of: "--package-path"),
+              command.arguments.index(after: index) < command.arguments.endIndex else {
+            return "root (.)"
+        }
+        return command.arguments[command.arguments.index(after: index)]
     }
 
     private func testTierResult(tier: String, ci: Bool) -> AxolotyCommandResult {

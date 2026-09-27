@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
 import Foundation
+import Synchronization
 
 /// A stable lifecycle event emitted while a check plan executes.
 public struct AxolotyCheckExecutionEvent: Codable, Equatable, Sendable {
@@ -84,34 +85,36 @@ protocol AxolotyOverrunScheduling: Sendable {
     func schedule(after seconds: TimeInterval, action: @escaping @Sendable () -> Void) -> any AxolotyOverrunCancellation
 }
 
+// @unchecked: GCD does not mark dispatch sources Sendable; the timer is exclusively owned by the cancellation state.
+private struct DispatchTimer: @unchecked Sendable {
+    let source: DispatchSourceTimer
+}
+
+// @unchecked: the dispatch timer is exclusively transferred through this mutex.
 private final class DispatchOverrunCancellation: AxolotyOverrunCancellation, @unchecked Sendable {
-    private let lock = NSLock()
-    private var source: DispatchSourceTimer?
+    private let source: Mutex<DispatchTimer?>
 
     init(seconds: TimeInterval, action: @escaping @Sendable () -> Void) {
         let source = DispatchSource.makeTimerSource(queue: DispatchQueue.global(qos: .utility))
-        self.source = source
+        self.source = Mutex(DispatchTimer(source: source))
         source.setEventHandler { [weak self] in self?.fire(action) }
         source.schedule(deadline: .now() + max(0, seconds), leeway: .milliseconds(10))
         source.resume()
     }
 
     func cancel() {
-        lock.lock()
-        let source = source
-        self.source = nil
-        lock.unlock()
+        let source = self.source.withLock { source -> DispatchSourceTimer? in
+            defer { source = nil }
+            return source?.source
+        }
         source?.cancel()
     }
 
     private func fire(_ action: @escaping @Sendable () -> Void) {
-        lock.lock()
-        guard let source else {
-            lock.unlock()
-            return
-        }
-        self.source = nil
-        lock.unlock()
+        guard let source = source.withLock({ source -> DispatchSourceTimer? in
+            defer { source = nil }
+            return source?.source
+        }) else { return }
         source.cancel()
         action()
     }

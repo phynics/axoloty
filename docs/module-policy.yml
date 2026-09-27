@@ -267,7 +267,8 @@
         "AxolotyProtocol",
         "AxolotySensorThingsModel",
         "AxolotyWire",
-        "ErrorKit"
+        "ErrorKit",
+        "Synchronization"
       ],
       "forbiddenImports": [
         "MQTTNIO",
@@ -358,7 +359,8 @@
         "AxolotyVersion",
         "Darwin",
         "Foundation",
-        "Glibc"
+        "Glibc",
+        "Synchronization"
       ],
       "forbiddenImports": [
         "Axoloty",

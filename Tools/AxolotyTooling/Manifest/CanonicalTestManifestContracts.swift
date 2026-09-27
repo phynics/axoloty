@@ -263,8 +263,18 @@ public struct AxolotyCanonicalTestTier: Codable, Equatable, Sendable {
 
 /// The reusable command interface for `test-one`.
 public struct AxolotyCanonicalTestInterface: Codable, Equatable, Sendable {
-    /// The command template.
+    /// The primary command template, bound to the root package.
     public let command: AxolotyCanonicalTestCommand
+    /// Additional package-scoped command templates `test-one` may try after the
+    /// primary command.
+    ///
+    /// The root package builds the portable `Packages/*` test targets through
+    /// explicit paths, but it does not build `Tools` or `Apps`. Each alternate
+    /// carries its own `--package-path` so a filter that only exists in a
+    /// separate package still resolves. A `test-one` invocation runs candidates
+    /// in order and stops at the first one that runs a test, so a filter the
+    /// manifest already places in another package never pays for a root build.
+    public let alternates: [AxolotyCanonicalTestCommand]?
     /// Hard deadline in seconds.
     public let timeoutSeconds: TimeInterval
     /// Expected duration in seconds.
@@ -285,8 +295,21 @@ public struct AxolotyCanonicalTestInterface: Codable, Equatable, Sendable {
     public let artifacts: [String]
 
     /// Creates the reusable test-one interface.
+    ///
+    /// - Parameters:
+    ///   - command: The primary root-package command template.
+    ///   - alternates: Additional package-scoped command templates.
+    ///   - timeoutSeconds: Hard deadline in seconds.
+    ///   - expectedDurationSeconds: Expected duration in seconds.
+    ///   - network: The network policy.
+    ///   - broker: The broker policy.
+    ///   - hardware: The hardware policy.
+    ///   - resources: Resources owned by the invocation.
+    ///   - isolation: The required process isolation mode.
+    ///   - artifacts: Artifact names retained by the invocation.
     public init(
         command: AxolotyCanonicalTestCommand,
+        alternates: [AxolotyCanonicalTestCommand]? = nil,
         timeoutSeconds: TimeInterval,
         expectedDurationSeconds: TimeInterval,
         network: AxolotyTestNetworkPolicy,
@@ -297,6 +320,7 @@ public struct AxolotyCanonicalTestInterface: Codable, Equatable, Sendable {
         artifacts: [String] = []
     ) {
         self.command = command
+        self.alternates = alternates
         self.timeoutSeconds = timeoutSeconds
         self.expectedDurationSeconds = expectedDurationSeconds
         self.network = network

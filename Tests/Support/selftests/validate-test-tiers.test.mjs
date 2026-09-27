@@ -420,6 +420,39 @@ test("filter alternatives expand through top-level and grouped alternation", () 
   assert.deepEqual(expandFilterAlternatives(null), []);
 });
 
+test("validator requires testOne alternates to select an explicit package", () => {
+  const base = {
+    makeTargets: parseMakeTargets(path.join(root, "Makefile")),
+    discoveredSelfTests: [],
+    exists: () => true,
+  };
+  const document = JSON.parse(fs.readFileSync(path.join(root, "Tests/Support/test-tiers.json"), "utf8"));
+  assert.deepEqual(validate(document, base), []);
+
+  const tools = structuredClone(document.testOne.alternates[0]);
+  const noWarnings = { executable: "swift", arguments: ["test", "--package-path", "Tools"], filterFlag: "--filter" };
+  const noPackage = { executable: "swift", arguments: ["test", "-warnings-as-errors"], filterFlag: "--filter" };
+  const rootPackage = { executable: "swift", arguments: ["test", "-warnings-as-errors", "--package-path", "."], filterFlag: "--filter" };
+  const cases = [
+    ["non-array", () => ({}), "testOne.alternates must be a nonempty array when present"],
+    ["empty", () => [], "testOne.alternates must be a nonempty array when present"],
+    ["no-package", () => [noPackage], "testOne.alternates\\[0\\] must declare --package-path"],
+    ["root-package", () => [rootPackage], "testOne.alternates\\[0\\] duplicates the primary root package"],
+    ["duplicate", () => [tools, tools], "testOne.alternates\\[1\\] repeats package"],
+    ["no-warnings", () => [noWarnings], "testOne.alternates\\[0\\] must compile with -warnings-as-errors"],
+  ];
+
+  for (const [name, alternates, expected] of cases) {
+    const fixture = structuredClone(document);
+    fixture.testOne.alternates = alternates();
+    const errors = validate(fixture, base);
+    assert.ok(
+      errors.some(error => new RegExp(expected).test(error)),
+      `${name}: expected ${expected} in ${JSON.stringify(errors)}`
+    );
+  }
+});
+
 test("validator rejects a test filter branch that selects nothing", () => {
   // Swift Testing ignores a filter branch matching no test: the run still
   // exits 0 on the branches that did match, so a decayed gate stays green.

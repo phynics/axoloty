@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
 import Foundation
+import Synchronization
 import AxolotyProcessLauncher
 #if canImport(Glibc)
 import Glibc
@@ -90,12 +91,14 @@ public protocol AxolotyManagedProcessRunning: Sendable {
 }
 
 /// Coordinates shutdown of the child processes owned by one service runner.
-final class ManagedProcessSupervisor: @unchecked Sendable {
+final class ManagedProcessSupervisor: Sendable {
     private let shutdownTimeout: TimeInterval
-    private let lock = NSLock()
-    private let shutdownLock = NSLock()
-    private var runners: [any AxolotyManagedProcessRunning] = []
-    private var stopping = false
+    private struct State: Sendable {
+        var runners: [any AxolotyManagedProcessRunning] = []
+        var stopping = false
+    }
+    private let state = Mutex(State())
+    private let shutdownLock = Mutex(())
 
     init(shutdownTimeout: TimeInterval = 5.0, reapTimeout: TimeInterval = 2.0) {
         self.shutdownTimeout = shutdownTimeout
@@ -105,10 +108,10 @@ final class ManagedProcessSupervisor: @unchecked Sendable {
     private let reapTimeout: TimeInterval
 
     func register(_ runner: any AxolotyManagedProcessRunning) {
-        lock.lock()
-        runners.append(runner)
-        let shouldTerminate = stopping
-        lock.unlock()
+        let shouldTerminate = state.withLock { state -> Bool in
+            state.runners.append(runner)
+            return state.stopping
+        }
 
         if shouldTerminate {
             runner.terminate()
@@ -123,8 +126,7 @@ final class ManagedProcessSupervisor: @unchecked Sendable {
     }
 
     func terminateAndWait() -> ManagedProcessCleanupReport {
-        shutdownLock.lock()
-        defer { shutdownLock.unlock() }
+        shutdownLock.withLock { _ in
 
         let activeRunners = markStoppingAndSnapshot()
         for runner in activeRunners where runner.isRunning {
@@ -163,13 +165,14 @@ final class ManagedProcessSupervisor: @unchecked Sendable {
             }
         }
         return ManagedProcessCleanupReport(failures: failures)
+        }
     }
 
     private func markStoppingAndSnapshot() -> [any AxolotyManagedProcessRunning] {
-        lock.lock()
-        defer { lock.unlock() }
-        stopping = true
-        return runners
+        state.withLock { state in
+            state.stopping = true
+            return state.runners
+        }
     }
 }
 
@@ -188,9 +191,9 @@ func urlAuthorityHost(_ host: String) -> String {
 }
 
 /// Foundation ``Process``-backed implementation of ``AxolotyManagedProcessRunning``.
+// @unchecked: Foundation Process is non-Sendable; its reference is published and read under this mutex.
 public final class FoundationProcessRunner: AxolotyManagedProcessRunning, @unchecked Sendable {
-    private var process: Process?
-    private let lock = NSLock()
+    private let processState = Mutex<Process?>(nil)
 
     public init() {}
 
@@ -202,15 +205,11 @@ public final class FoundationProcessRunner: AxolotyManagedProcessRunning, @unche
             proc.environment = ProcessInfo.processInfo.environment.merging(env) { _, new in new }
         }
         try proc.run()
-        lock.lock()
-        process = proc
-        lock.unlock()
+        processState.withLock { $0 = proc }
     }
 
     public func waitForExit(timeoutSeconds: TimeInterval) -> ManagedProcessExit? {
-        lock.lock()
-        let proc = process
-        lock.unlock()
+        let proc = processState.withLock { $0 }
         guard let proc = proc else {
             return ManagedProcessExit(exitCode: -1)
         }
@@ -229,38 +228,30 @@ public final class FoundationProcessRunner: AxolotyManagedProcessRunning, @unche
     }
 
     public var processDescription: String {
-        lock.lock()
-        defer { lock.unlock() }
-        guard let process else { return "unstarted process" }
-        return process.executableURL?.path ?? "managed process"
+        processState.withLock { process in
+            guard let process else { return "unstarted process" }
+            return process.executableURL?.path ?? "managed process"
+        }
     }
 
     public func terminate() {
-        lock.lock()
-        let proc = process
-        lock.unlock()
+        let proc = processState.withLock { $0 }
         proc?.terminate()
     }
 
     public func forceKill() {
-        lock.lock()
-        let proc = process
-        lock.unlock()
+        let proc = processState.withLock { $0 }
         if let pid = proc?.processIdentifier {
             kill(pid, SIGKILL)
         }
     }
 
     public var processIdentifier: Int32? {
-        lock.lock()
-        defer { lock.unlock() }
-        return process?.processIdentifier
+        processState.withLock { $0?.processIdentifier }
     }
 
     public var isRunning: Bool {
-        lock.lock()
-        let proc = process
-        lock.unlock()
+        let proc = processState.withLock { $0 }
         guard let proc = proc else { return false }
         return proc.isRunning
     }
@@ -346,12 +337,15 @@ protocol ServiceSignalHandlerFactory: Sendable {
 }
 
 /// A signal handler that records and reports SIGINT or SIGTERM interruptions.
+// @unchecked: signal sources and saved POSIX disposition pointers live behind this mutex.
 public final class ServiceSignalHandler: ServiceSignalHandling, @unchecked Sendable {
-    private var interrupted = false
-    private let lock = NSLock()
-    private var sources: [DispatchSourceSignal] = []
+    private struct State {
+        var interrupted = false
+        var sources: [DispatchSourceSignal] = []
+        var savedDispositions: (int: UnsafeMutableRawPointer?, term: UnsafeMutableRawPointer?)?
+    }
+    private let state = Mutex(State())
     private let onInterrupt: (@Sendable () -> Void)?
-    private var savedDispositions: (int: UnsafeMutableRawPointer?, term: UnsafeMutableRawPointer?)?
 
     /// Creates a signal handler.
     ///
@@ -362,18 +356,13 @@ public final class ServiceSignalHandler: ServiceSignalHandling, @unchecked Senda
     }
 
     public var isInterrupted: Bool {
-        lock.lock()
-        defer { lock.unlock() }
-        return interrupted
+        state.withLock { $0.interrupted }
     }
 
     public func install() {
-        lock.lock()
-        guard sources.isEmpty else {
-            lock.unlock()
-            return
-        }
-        savedDispositions = (
+        state.withLock { state in
+        guard state.sources.isEmpty else { return }
+        state.savedDispositions = (
             axoloty_capture_signal_disposition(SIGINT),
             axoloty_capture_signal_disposition(SIGTERM)
         )
@@ -383,23 +372,37 @@ public final class ServiceSignalHandler: ServiceSignalHandling, @unchecked Senda
         let sigint = DispatchSource.makeSignalSource(signal: SIGINT, queue: DispatchQueue.global())
         sigint.setEventHandler { self.setInterrupted() }
         sigint.resume()
-        sources.append(sigint)
+        state.sources.append(sigint)
 
         let sigterm = DispatchSource.makeSignalSource(signal: SIGTERM, queue: DispatchQueue.global())
         sigterm.setEventHandler { self.setInterrupted() }
         sigterm.resume()
-        sources.append(sigterm)
-        lock.unlock()
+        state.sources.append(sigterm)
+        }
     }
 
     public func uninstall() {
-        lock.lock()
-        let currentSources = sources
-        sources.removeAll()
-        let savedDispositions = self.savedDispositions
-        self.savedDispositions = nil
-        lock.unlock()
-        currentSources.forEach { $0.cancel() }
+        let (currentSources, savedDispositions) = state.withLock { state in
+            let currentSources = state.sources
+            state.sources.removeAll()
+            let savedDispositions = state.savedDispositions
+            state.savedDispositions = nil
+            return (currentSources, savedDispositions)
+        }
+        // Cancelling a dispatch signal source releases libdispatch's own
+        // handler asynchronously. Restoring the saved dispositions before that
+        // teardown finishes lets libdispatch reinstall SIG_DFL afterwards, so
+        // the restored disposition is lost. A cancel handler runs only after
+        // cancellation has completed, so wait for every source to enter one.
+        if !currentSources.isEmpty {
+            let teardown = DispatchGroup()
+            for source in currentSources {
+                teardown.enter()
+                source.setCancelHandler { teardown.leave() }
+                source.cancel()
+            }
+            teardown.wait()
+        }
         if let savedDispositions {
             _ = axoloty_restore_signal_disposition(SIGINT, savedDispositions.int)
             _ = axoloty_restore_signal_disposition(SIGTERM, savedDispositions.term)
@@ -409,10 +412,11 @@ public final class ServiceSignalHandler: ServiceSignalHandling, @unchecked Senda
     }
 
     private func setInterrupted() {
-        lock.lock()
-        let shouldNotify = !interrupted
-        interrupted = true
-        lock.unlock()
+        let shouldNotify = state.withLock { state -> Bool in
+            let shouldNotify = !state.interrupted
+            state.interrupted = true
+            return shouldNotify
+        }
 
         if shouldNotify {
             onInterrupt?()

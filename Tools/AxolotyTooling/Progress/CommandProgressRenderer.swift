@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
 import Foundation
+import Synchronization
 
 /// Formats progress state transitions for one output destination.
 ///
@@ -73,7 +74,7 @@ public protocol AxolotyCommandProgressRendering: AnyObject, Sendable {
 
 /// Renders append-only progress lines for non-interactive destinations such
 /// as CI logs. The renderer never emits ANSI control sequences.
-public final class AxolotyContinuousProgressRenderer: AxolotyCommandProgressRendering, @unchecked Sendable {
+public final class AxolotyContinuousProgressRenderer: AxolotyCommandProgressRendering {
     /// Creates a continuous, append-only progress renderer.
     public init() {}
 
@@ -163,18 +164,17 @@ public final class AxolotyContinuousProgressRenderer: AxolotyCommandProgressRend
 /// once. The renderer degrades by design when the destination is not a
 /// terminal: every mutable update begins with a carriage return and a clear
 /// escape, so a redirected capture shows flat lines instead of fragments.
-public final class AxolotyInteractiveProgressRenderer: AxolotyCommandProgressRendering, @unchecked Sendable {
-    private let lock = NSLock()
-    private var hasActiveStatus = false
+public final class AxolotyInteractiveProgressRenderer: AxolotyCommandProgressRendering {
+    private let hasActiveStatus = Mutex(false)
 
     /// Creates an interactive progress renderer.
     public init() {}
 
     /// Prints the permanent node header.
     public func commandStarted(node: String?, stage: String, command: String) -> String? {
-        lock.lock()
-        defer { lock.unlock() }
+        hasActiveStatus.withLock { _ in
         return Self.ensureTrailingNewline("● \(Self.label(node: node, stage: stage)) \(command)")
+        }
     }
 
     /// Overwrites the active status line in place.
@@ -225,17 +225,15 @@ public final class AxolotyInteractiveProgressRenderer: AxolotyCommandProgressRen
     }
 
     private func clearActive() -> String {
-        lock.lock()
-        defer { lock.unlock() }
-        guard hasActiveStatus else { return "" }
-        hasActiveStatus = false
-        return "\r\u{1B}[2K"
+        hasActiveStatus.withLock { active in
+            guard active else { return "" }
+            active = false
+            return "\r\u{1B}[2K"
+        }
     }
 
     private func active(_ text: String) -> String {
-        lock.lock()
-        hasActiveStatus = true
-        lock.unlock()
+        hasActiveStatus.withLock { $0 = true }
         return "\r\u{1B}[2K\(text)"
     }
 

@@ -57,11 +57,10 @@ extension AxolotyResourceLeaseError: LocalizedError {
     }
 }
 
-private final class FoundationResourceLease: AxolotyResourceLease, @unchecked Sendable {
+private final class FoundationResourceLease: AxolotyResourceLease {
     private let descriptor: Int32
     private let ownerURL: URL
     private let ownerRecord: String
-    private var released = false
 
     init(descriptor: Int32, ownerURL: URL, ownerRecord: String) {
         self.descriptor = descriptor
@@ -74,8 +73,6 @@ private final class FoundationResourceLease: AxolotyResourceLease, @unchecked Se
     }
 
     private func release() {
-        guard !released else { return }
-        released = true
         // Remove the record while the advisory lock is still held. This keeps
         // a successor from observing or deleting a new owner's metadata.
         if let current = try? String(contentsOf: ownerURL, encoding: .utf8), current == ownerRecord {

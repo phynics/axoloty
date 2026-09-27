@@ -43,6 +43,7 @@ protocol RuntimeMQTTClientAdapter: AnyObject, Sendable {
 /// This type owns only the broker socket and copies publish data at the
 /// synchronous MQTT callback boundary. Protocol parsing and lifecycle policy
 /// remain in ``AxolotyRuntime``.
+// @unchecked: MQTTClient and EventLoopGroup provide their own cross-thread lifecycle guarantees.
 final class RuntimeMQTTClient: RuntimeMQTTClientAdapter, @unchecked Sendable {
     private let lock = NIOLock()
     private let delegate: RuntimeMQTTClientDelegate
