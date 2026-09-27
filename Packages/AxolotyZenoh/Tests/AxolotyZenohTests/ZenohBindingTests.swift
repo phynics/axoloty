@@ -16,7 +16,10 @@ struct ZenohBindingTests {
         let session = RecordingZenohSession()
         let binding = try makeBinding(session: session)
 
-        try await binding.start { _ in }
+        try await binding.start(
+            receive: { _ in },
+            lastWill: RuntimeTransportLastWill(topic: "will", payload: [1])
+        )
         await binding.stop()
 
         #expect(session.operations == [.open(Array("tcp/127.0.0.1:7447".utf8)), .close])
@@ -102,8 +105,12 @@ struct ZenohBindingTests {
         session.subscribeFailureOnAttempt = 2
         session.unsubscribeResult = .transportError
 
-        await #expect(throws: AxolotyError.self) {
+        do {
             try await binding.activateProfileInterest(namespace: "node")
+            Issue.record("expected profile subscription failure")
+        } catch {
+            #expect(error.userFriendlyMessage.contains("injected subscribe failure"))
+            #expect(error.userFriendlyMessage.contains("rollback failed"))
         }
         session.unsubscribeResult = .success
         try await binding.deactivateProfileInterest(namespace: "node")
@@ -139,8 +146,8 @@ struct ZenohBindingTests {
         #expect(classify(profileRoute, with: binding) == .unrelated)
     }
 
-    @Test("forwards owned failures to the registered runtime handler")
-    func failureForwarding() async throws {
+    @Test("ignores close failures during an intentional stop")
+    func stopDoesNotReportCloseFailure() async throws {
         let session = RecordingZenohSession()
         let binding = try makeBinding(session: session)
         let recorder = FailureRecorder()
@@ -150,9 +157,77 @@ struct ZenohBindingTests {
 
         await binding.stop()
 
-        #expect(recorder.snapshot() == [
-            RuntimeTransportFailure(code: .brokerUnavailable, detail: "Zenoh session close failed in the Zenoh transport"),
-        ])
+        #expect(recorder.snapshot().isEmpty)
+    }
+
+    @Test("forwards owned asynchronous transport failures")
+    func failureForwarding() async throws {
+        let binding = try makeBinding(session: RecordingZenohSession())
+        let recorder = FailureRecorder()
+        await binding.setFailureHandler { recorder.append($0) }
+        let failure = RuntimeTransportFailure(code: .brokerUnavailable, detail: "session lost")
+
+        binding.reportFailure(failure)
+
+        #expect(recorder.snapshot() == [failure])
+    }
+
+    @Test("maps façade capacity errors through the transport boundary")
+    func capacityErrorMapping() async throws {
+        let session = RecordingZenohSession()
+        let binding = try makeBinding(session: session)
+        try await binding.start { _ in }
+        session.publishResult = .capacityExceeded
+
+        do {
+            try await binding.perform(.publish(RuntimeOutboundMessage(route: "key", payload: [])))
+            Issue.record("expected Zenoh capacity failure")
+        } catch {
+            guard case let .runtime(code, _) = error else {
+                Issue.record("expected runtime capacity error, got \(error)")
+                return
+            }
+            #expect(code == .capacityExceeded)
+        }
+
+        await binding.stop()
+    }
+
+    @Test("maps invalid-argument, closed-session, and transport failures")
+    func otherFacadeErrorMappings() async throws {
+        let session = RecordingZenohSession()
+        let binding = try makeBinding(session: session)
+        try await binding.start { _ in }
+
+        for (result, expectedCode) in [
+            (ZenohResult.notOpen, AxolotyError.RuntimeErrorCode.notStarted),
+            (.transportError, .brokerUnavailable),
+        ] {
+            session.publishResult = result
+            do {
+                try await binding.perform(.publish(RuntimeOutboundMessage(route: "key", payload: [])))
+                Issue.record("expected mapped failure for \(result)")
+            } catch {
+                guard case let .runtime(code, _) = error else {
+                    Issue.record("expected runtime error for \(result), got \(error)")
+                    continue
+                }
+                #expect(code == expectedCode)
+            }
+        }
+
+        session.publishResult = .invalidArgument
+        do {
+            try await binding.perform(.publish(RuntimeOutboundMessage(route: "key", payload: [])))
+            Issue.record("expected invalid-argument failure")
+        } catch {
+            guard case .invalidArgument = error else {
+                Issue.record("expected invalid-argument error, got \(error)")
+                return
+            }
+        }
+
+        await binding.stop()
     }
 
     @Test("rejects transport effects before start with a runtime error")
@@ -200,6 +275,7 @@ private final class RecordingZenohSession: ZenohBindingSession {
     private(set) var operations: [Operation] = []
     private var nextID = 0
     var closeResult: ZenohResult = .success
+    var publishResult: ZenohResult = .success
     var unsubscribeResult: ZenohResult = .success
     var subscribeFailureOnAttempt: Int?
 
@@ -215,7 +291,7 @@ private final class RecordingZenohSession: ZenohBindingSession {
 
     func publish(route: [UInt8], payload: [UInt8]) -> ZenohResult {
         operations.append(.publish(route, payload))
-        return .success
+        return publishResult
     }
 
     func subscribe(route: [UInt8]) throws(AxolotyError) -> Int {

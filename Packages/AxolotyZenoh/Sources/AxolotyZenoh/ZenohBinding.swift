@@ -74,10 +74,30 @@ public final class ZenohBinding: AxolotyRuntimeTransport, @unchecked Sendable {
 
     /// Opens the Zenoh session and retains the copied-frame callback for the
     /// receive pump added by the host receive workstream.
+    ///
+    /// - Note: The `lastWill` overload intentionally ignores its last-will
+    ///   argument because Zenoh's v1 client profile has no broker last-will.
     public func start(
         receive: @escaping @Sendable (RuntimeInboundFrame) -> Void
     ) async throws(AxolotyError) {
         try startLocked(receive: receive)
+    }
+
+    /// Starts the binding and ignores the MQTT-compatible last-will value.
+    ///
+    /// Zenoh's v1 client profile has no broker last-will. The value is accepted
+    /// to satisfy the runtime transport port and is intentionally unused.
+    ///
+    /// - Parameters:
+    ///   - receive: Callback for copied inbound frames.
+    ///   - lastWill: A runtime last-will value unsupported by Zenoh.
+    /// - Throws: ``AxolotyError`` when the Zenoh session cannot start.
+    public func start(
+        receive: @escaping @Sendable (RuntimeInboundFrame) -> Void,
+        lastWill: RuntimeTransportLastWill?
+    ) async throws(AxolotyError) {
+        _ = lastWill
+        try await start(receive: receive)
     }
 
     /// Stores the callback for failures reported by the receive pump.
@@ -97,20 +117,18 @@ public final class ZenohBinding: AxolotyRuntimeTransport, @unchecked Sendable {
     }
 
     /// Closes the session and releases subscription and callback state.
+    ///
+    /// A close error during an intentional stop is ignored. Shutdown must not
+    /// report a transport failure that could request reconnect handling.
     public func stop() async {
-        let closeResult = Self.sessionRegistryLock.withLock { () -> ZenohResult? in
-            guard started else { return nil }
+        Self.sessionRegistryLock.withLock {
+            guard started else { return }
             started = false
             activeNamespace = nil
             profileSubscriptions.removeAll(keepingCapacity: true)
             externalSubscriptions.removeAll(keepingCapacity: true)
             receive = nil
-            return session.close()
-        }
-        if let closeResult, closeResult != .success {
-            reportFailure(ZenohBindingSupport.failure(
-                for: ZenohBindingSupport.error(for: closeResult, operation: "Zenoh session close")
-            ))
+            _ = session.close()
         }
     }
 
@@ -262,7 +280,11 @@ public final class ZenohBinding: AxolotyRuntimeTransport, @unchecked Sendable {
                 if let rollbackError {
                     profileSubscriptions = remaining
                     activeNamespace = remaining.isEmpty ? nil : namespace
-                    throw rollbackError
+                    throw AxolotyError.runtime(
+                        code: .subscriptionFailed,
+                        reason: "Profile subscription failed: \(error.userFriendlyMessage); " +
+                            "rollback failed: \(rollbackError.userFriendlyMessage)"
+                    )
                 }
                 throw error
             }
