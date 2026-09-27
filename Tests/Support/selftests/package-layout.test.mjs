@@ -40,6 +40,7 @@ test("test targets have explicit ownership and no per-file root selection", () =
   const ordinary = targetBlock("testTarget", "AxolotyTests");
   assert.match(ordinary, /path: "Tests\/AxolotyTests"/);
   assert.doesNotMatch(ordinary, /\b(?:sources|exclude):\s*\[/);
+  assert.match(ordinary, /"AxolotyProtocolTraceTestSupport"/);
   assert.doesNotMatch(ordinary, /(?:trace\.schema\.json|family-seeds\.json)/);
   assert.match(ordinary, /\.process\("WireCompatibility\/Fixtures"\)/);
 
