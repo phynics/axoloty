@@ -272,7 +272,7 @@ struct MQTTBindingAdapterSeamTests {
     }
 }
 
-enum FakeError: Error, Equatable {
+private enum FakeError: Error, Equatable {
     case publish, subscribe, unsubscribe, connection
 }
 
@@ -304,7 +304,7 @@ private final class ErrorRecorder: @unchecked Sendable {
     }
 }
 
-final class FakeMQTTClient: RuntimeMQTTClientAdapter, @unchecked Sendable {
+private final class FakeMQTTClient: RuntimeMQTTClientAdapter, @unchecked Sendable {
     private let lock = NSLock()
     private let delegate: RuntimeMQTTDelegate
     private let connectsImmediately: Bool
