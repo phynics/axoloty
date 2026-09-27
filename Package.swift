@@ -59,6 +59,13 @@ let package = Package(
             name: "AxolotyTestBroker",
             targets: ["AxolotyTestBroker"]
         ),
+        // Host-only shared assertions for sibling transport adapters. This
+        // product contains no firmware-facing API and lives outside Tests so
+        // the separate Zenoh package can reuse the exact same suite.
+        .library(
+            name: "AxolotyTransportContractTestSupport",
+            targets: ["AxolotyTransportContractTestSupport"]
+        ),
     ],
     dependencies: [
         .package(url: "https://github.com/swift-server-community/mqtt-nio.git", from: "2.13.0"),
@@ -201,12 +208,23 @@ let package = Package(
         ),
         .testTarget(
             name: "AxolotyMQTTTests",
-            dependencies: ["AxolotyMQTT", "Axoloty", "AxolotyProtocol", "AxolotyWire"],
+            dependencies: [
+                "AxolotyMQTT",
+                "Axoloty",
+                "AxolotyProtocol",
+                "AxolotyWire",
+                "AxolotyTransportContractTestSupport",
+            ],
             path: "Packages/AxolotyMQTT/Tests/AxolotyMQTTTests"
         ),
         .target(
             name: "AxolotyTestSupport",
             path: "Tests/AxolotyTestSupport"
+        ),
+        .target(
+            name: "AxolotyTransportContractTestSupport",
+            dependencies: ["Axoloty", "AxolotyProtocol"],
+            path: "Packages/AxolotyTransportContractTestSupport/Sources/AxolotyTransportContractTestSupport"
         ),
         // In-process MQTT 3.1.1 broker for hardware-free, container-free
         // end-to-end tests. It depends on NIO only, so it adds no new
@@ -240,6 +258,7 @@ let package = Package(
                 "AxolotyProtocol",
                 "AxolotyStaticRuntime",
                 "AxolotyTestSupport",
+                "AxolotyTransportContractTestSupport",
                 .product(name: "ErrorKit", package: "ErrorKit"),
             ],
             path: "Tests/AxolotyTests",

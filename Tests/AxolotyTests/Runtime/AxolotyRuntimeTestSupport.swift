@@ -4,6 +4,7 @@ import Testing
 @testable import Axoloty
 import AxolotyObjectModel
 import AxolotyProtocol
+import AxolotyTransportContractTestSupport
 import AxolotyTestSupport
 import AxolotyWire
 
@@ -32,13 +33,18 @@ enum SetupFailureStage: String, CaseIterable, Sendable {
     }
 }
 
-actor TestTransport: AxolotyRuntimeTransport {
+actor TestTransport: AxolotyRuntimeTransport, RuntimeTransportContractFixture {
+    nonisolated var transport: any AxolotyRuntimeTransport { self }
     private var receive: (@Sendable (RuntimeInboundFrame) -> Void)?
     private var failure: (@Sendable (RuntimeTransportFailure) -> Void)?
     private var recovery: (@Sendable () -> Void)?
     private var sent: [RuntimeOutboundMessage] = []
     private var delivered: [RuntimeOutboundMessage] = []
     private(set) var lifecycle: [String] = []
+    private(set) var contractProfileSubscriptions: [String] = []
+    private(set) var contractProfileUnsubscriptions: [String] = []
+    private(set) var contractExternalSubscriptions: [String] = []
+    private(set) var contractExternalUnsubscriptions: [String] = []
     private(set) var lastWills: [RuntimeTransportLastWill?] = []
     private(set) var stopObservedCancellation = false
     private let failureStage: SetupFailureStage?
@@ -46,6 +52,9 @@ actor TestTransport: AxolotyRuntimeTransport {
     private var shouldBlockNextStart = false
     private var isWaitingForStart = false
     private var startWaiter: CheckedContinuation<Void, Never>?
+    private var contractActiveNamespace: String?
+    private var contractExternalRoutes: Set<String> = []
+    private var contractStartCount = 0
 
     init(failing failureStage: SetupFailureStage? = nil) {
         self.failureStage = failureStage
@@ -53,6 +62,7 @@ actor TestTransport: AxolotyRuntimeTransport {
 
     func start(receive: @escaping @Sendable (RuntimeInboundFrame) -> Void) async throws {
         self.receive = receive
+        contractStartCount += 1
         lifecycle.append("start")
         if failureStage == .start { throw TestTransportFailure() }
         guard shouldBlockNextStart else { return }
@@ -81,20 +91,26 @@ actor TestTransport: AxolotyRuntimeTransport {
     }
 
     func perform(_ effect: RuntimeTransportEffect) async throws {
-        let message: RuntimeOutboundMessage
         switch effect {
-        case .publish(let value): message = value
-        default: return
+        case .publish(let message):
+            sent.append(message)
+            if shouldFailNextPublication {
+                shouldFailNextPublication = false
+                throw TestTransportFailure()
+            }
+            if failureStage == .advertisement, isAdvertiseRoute(message.route) {
+                throw TestTransportFailure()
+            }
+            delivered.append(message)
+        case .externalRouteActivated(let transition):
+            let route = String(decoding: transition.route, as: UTF8.self)
+            contractExternalRoutes.insert(route)
+            contractExternalSubscriptions.append(route)
+        case .externalRouteDeactivated(let transition):
+            let route = String(decoding: transition.route, as: UTF8.self)
+            contractExternalRoutes.remove(route)
+            contractExternalUnsubscriptions.append(route)
         }
-        sent.append(message)
-        if shouldFailNextPublication {
-            shouldFailNextPublication = false
-            throw TestTransportFailure()
-        }
-        if failureStage == .advertisement, isAdvertiseRoute(message.route) {
-            throw TestTransportFailure()
-        }
-        delivered.append(message)
     }
 
     func stop() async {
@@ -105,9 +121,43 @@ actor TestTransport: AxolotyRuntimeTransport {
 
     func activateProfileInterest(namespace: String) async throws {
         lifecycle.append("activate")
+        contractActiveNamespace = namespace
+        contractProfileSubscriptions.append(contentsOf: [
+            "coaty/3/\(namespace)/*/*",
+            "coaty/3/\(namespace)/*/*/*",
+        ])
         if failureStage == .subscriptions { throw TestTransportFailure() }
     }
-    func deactivateProfileInterest(namespace: String) async throws { lifecycle.append("deactivate") }
+    func deactivateProfileInterest(namespace: String) async throws {
+        lifecycle.append("deactivate")
+        contractProfileUnsubscriptions.append(contentsOf: [
+            "coaty/3/\(namespace)/*/*",
+            "coaty/3/\(namespace)/*/*/*",
+        ])
+        contractActiveNamespace = nil
+    }
+
+    func profileSubscriptions() async -> [String] { contractProfileSubscriptions }
+    func profileUnsubscriptions() async -> [String] { contractProfileUnsubscriptions }
+    func externalSubscriptions() async -> [String] { contractExternalSubscriptions }
+    func externalUnsubscriptions() async -> [String] { contractExternalUnsubscriptions }
+    func publications() async -> [RuntimeOutboundMessage] { delivered }
+    func startCount() async -> Int { contractStartCount }
+
+    func inject(route: String, payload: inout [UInt8]) async {
+        if route.hasPrefix("coaty/3/\(contractActiveNamespace ?? "<inactive>")/") {
+            receive?(.profile(route: route, payload: payload, nowMS: 0))
+        } else if contractExternalRoutes.contains(route) {
+            receive?(.externalIo(route: route, payload: payload, nowMS: 0))
+        }
+        payload = Array(repeating: 0, count: payload.count)
+    }
+
+    func drainInbound() async {}
+
+    func reportFailure() async {
+        failure?(RuntimeTransportFailure(code: .brokerUnavailable, detail: "contract failure"))
+    }
 
     func sentCount() -> Int { sent.count }
     func firstSent() -> RuntimeOutboundMessage? { sent.first }

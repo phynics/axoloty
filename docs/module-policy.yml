@@ -370,6 +370,26 @@
       ]
     },
     {
+      "name": "AxolotyTransportContractTestSupport",
+      "role": "tooling",
+      "platformClass": "tooling",
+      "path": "Packages/AxolotyTransportContractTestSupport/Sources/AxolotyTransportContractTestSupport",
+      "allowedImports": [
+        "Axoloty",
+        "AxolotyProtocol",
+        "Foundation",
+        "Testing"
+      ],
+      "forbiddenImports": [
+        "MQTTNIO",
+        "NIO",
+        "CZenohC",
+        "AxolotyMQTT",
+        "AxolotyZenoh"
+      ],
+      "note": "Host-only test support product. Shared behavioral assertions live outside Tests so sibling adapter packages can reuse them; firmware consumer manifests do not expose this product."
+    },
+    {
       "name": "AxolotyVersion",
       "role": "tooling",
       "platformClass": "tooling",
