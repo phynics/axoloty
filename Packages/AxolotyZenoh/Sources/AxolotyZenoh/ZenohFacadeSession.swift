@@ -16,6 +16,7 @@ protocol ZenohBindingSession: AnyObject {
     func publish(route: [UInt8], payload: [UInt8]) -> ZenohResult
     func subscribe(route: [UInt8]) throws(AxolotyError) -> Int
     func unsubscribe(_ subscription: Int) -> ZenohResult
+    func poll(_ subscription: Int, into storage: inout ZenohFrameStorage) -> ZenohPollResult
 }
 
 /// Couples the move-only Swift session with its opaque façade handles.
@@ -66,6 +67,13 @@ final class ZenohFacadeSession: ZenohBindingSession {
         let result = session.unsubscribe(subscriptions[index].handle)
         if result == .success { subscriptions.remove(at: index) }
         return result
+    }
+
+    func poll(_ subscription: Int, into storage: inout ZenohFrameStorage) -> ZenohPollResult {
+        guard let index = subscriptions.firstIndex(where: { $0.id == subscription }) else {
+            return .result(.invalidArgument)
+        }
+        return session.poll(from: subscriptions[index].handle, into: &storage)
     }
 
     private func withSlice<R>(_ bytes: [UInt8], _ body: (ByteSlice) -> R) -> R {

@@ -8,21 +8,24 @@ import Foundation
 
 /// The host runtime transport backed by one serialized Zenoh façade session.
 ///
-/// This binding owns publication and subscription lifecycle. The receive pump
-/// is intentionally separate; it will poll the per-subscription queues in the
-/// follow-up host receive workstream.
+/// This binding owns publication, subscription lifecycle, and one bounded
+/// receive pump for the façade's per-subscription queues.
 public final class ZenohBinding: AxolotyRuntimeTransport, @unchecked Sendable {
     // The C façade has one process-wide fixed session registry, so serialize
     // calls across binding instances as well as within each session.
-    private static let sessionRegistryLock = NSLock()
-    private let configuration: ZenohBindingConfiguration
-    private let session: any ZenohBindingSession
-    private var started = false
-    private var activeNamespace: String?
-    private var profileSubscriptions: [Int] = []
-    private var externalSubscriptions: [ExternalSubscription] = []
-    private var receive: (@Sendable (RuntimeInboundFrame) -> Void)?
-    private var failureHandler: (@Sendable (RuntimeTransportFailure) -> Void)?
+    static let sessionRegistryLock = NSLock()
+    let configuration: ZenohBindingConfiguration
+    let session: any ZenohBindingSession
+    let clock: @Sendable () -> UInt32
+    let receivePumpIntervalNanoseconds: UInt64
+    var started = false
+    var stopping = false
+    var activeNamespace: String?
+    var profileSubscriptions: [Int] = []
+    var externalSubscriptions: [ExternalSubscription] = []
+    var receive: (@Sendable (RuntimeInboundFrame) -> Void)?
+    var failureHandler: (@Sendable (RuntimeTransportFailure) -> Void)?
+    var receivePump: Task<Void, Never>?
 
     /// Creates a host Zenoh binding.
     ///
@@ -67,13 +70,19 @@ public final class ZenohBinding: AxolotyRuntimeTransport, @unchecked Sendable {
         self.init(configuration: configuration)
     }
 
-    init(configuration: ZenohBindingConfiguration, session: any ZenohBindingSession) {
+    init(
+        configuration: ZenohBindingConfiguration,
+        session: any ZenohBindingSession,
+        clock: @escaping @Sendable () -> UInt32 = ZenohBindingSupport.monotonicNowMS,
+        receivePumpIntervalNanoseconds: UInt64 = ZenohBindingSupport.receivePumpIntervalNanoseconds
+    ) {
         self.configuration = configuration
         self.session = session
+        self.clock = clock
+        self.receivePumpIntervalNanoseconds = receivePumpIntervalNanoseconds
     }
 
-    /// Opens the Zenoh session and retains the copied-frame callback for the
-    /// receive pump added by the host receive workstream.
+    /// Opens the Zenoh session and starts its bounded receive pump.
     ///
     /// - Note: The `lastWill` overload intentionally ignores its last-will
     ///   argument because Zenoh's v1 client profile has no broker last-will.
@@ -116,19 +125,30 @@ public final class ZenohBinding: AxolotyRuntimeTransport, @unchecked Sendable {
         try performLocked(effect)
     }
 
-    /// Closes the session and releases subscription and callback state.
+    /// Stops and joins the receive pump, then closes the session and releases
+    /// subscription and callback state.
     ///
     /// A close error during an intentional stop is ignored. Shutdown must not
     /// report a transport failure that could request reconnect handling.
     public func stop() async {
-        Self.sessionRegistryLock.withLock {
-            guard started else { return }
+        let pump = Self.sessionRegistryLock.withLock { () -> Task<Void, Never>? in
+            guard started else { return nil }
             started = false
+            stopping = true
+            let pump = receivePump
+            receivePump = nil
+            return pump
+        }
+        guard let pump else { return }
+        pump.cancel()
+        await pump.value
+        Self.sessionRegistryLock.withLock {
             activeNamespace = nil
             profileSubscriptions.removeAll(keepingCapacity: true)
             externalSubscriptions.removeAll(keepingCapacity: true)
             receive = nil
             _ = session.close()
+            stopping = false
         }
     }
 
@@ -140,19 +160,6 @@ public final class ZenohBinding: AxolotyRuntimeTransport, @unchecked Sendable {
     /// Removes exactly the two profile-interest subscriptions for `namespace`.
     public func deactivateProfileInterest(namespace: String) async throws(AxolotyError) {
         try deactivateProfileInterestLocked(namespace: namespace)
-    }
-
-    /// Classifies a route using the active namespace and binding bounds.
-    ///
-    /// - Parameter route: A borrowed route valid only for this call.
-    /// - Returns: `.coaty`, `.external`, or `.unrelated` for this binding.
-    public func classifyRoute(_ route: ByteSlice) -> ProtocolRouteClassification {
-        let namespace = Self.sessionRegistryLock.withLock { activeNamespace }
-        return ZenohBindingSupport.classify(
-            route,
-            activeNamespace: namespace,
-            maximumProfileKeyLength: configuration.maximumProfileKeyBytes
-        )
     }
 
     /// Forwards one owned transport failure to the runtime callback.
@@ -201,13 +208,14 @@ public final class ZenohBinding: AxolotyRuntimeTransport, @unchecked Sendable {
     ) throws(AxolotyError) {
         Self.sessionRegistryLock.lock()
         defer { Self.sessionRegistryLock.unlock() }
-        guard !started else {
+        guard !started, !stopping else {
             throw AxolotyError.runtime(code: .notStarted, reason: "Zenoh binding is already started")
         }
         let endpoint = Array(configuration.connectEndpoint.utf8)
         try ZenohBindingSupport.requireSuccess(session.open(endpoint: endpoint), operation: "Zenoh session open")
         self.receive = receive
         started = true
+        startReceivePumpLocked()
     }
 
     private func performLocked(_ effect: RuntimeTransportEffect) throws(AxolotyError) {
