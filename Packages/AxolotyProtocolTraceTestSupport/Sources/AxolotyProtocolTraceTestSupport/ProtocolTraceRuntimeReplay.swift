@@ -16,6 +16,22 @@ private final class LargeStackResultBox<Value>: @unchecked Sendable {
     var error: Error?
 }
 
+private final class RuntimeEventReceiptQueue: @unchecked Sendable {
+    private let lock = NSLock()
+    private var iterator: AsyncStream<RuntimeEvent>.Iterator
+
+    init(stream: AsyncStream<RuntimeEvent>) {
+        iterator = stream.makeAsyncIterator()
+    }
+
+    func next() async -> RuntimeEvent? {
+        var current = lock.withLock { iterator }
+        let event = await current.next()
+        lock.withLock { iterator = current }
+        return event
+    }
+}
+
 struct HostTraceReplayAdapter: TraceReplayAdapter {
     func replay(_ trace: ProtocolTrace) async throws -> TraceRun {
         try await RuntimeTraceReplayAdapter(makeTransport: { HostTraceTransport() }).replay(trace)
@@ -106,7 +122,9 @@ private final class HostTraceTransport: RuntimeTraceCarrier, @unchecked Sendable
 
     func setOutboundEffectsEnabled(_ enabled: Bool) { _ = enabled }
 
-    func inject(_ frame: RuntimeInboundFrame) async throws {
+    func inject(_ frame: RuntimeInboundFrame, traceID: String, sequence: Int) async throws {
+        _ = traceID
+        _ = sequence
         let callback = lock.withLock { receive }
         callback?(frame)
     }
@@ -126,7 +144,7 @@ private struct HostRuntimeTraceReplay: RuntimeTraceDriver {
     private var driverState = TraceState()
     private var driverLabels = TraceLabels()
     private var driverStarted = false
-    private var eventIterator: AsyncStream<RuntimeEvent>.Iterator?
+    private var eventReceipts: RuntimeEventReceiptQueue?
 
     init(trace: ProtocolTrace, transport: any RuntimeTraceCarrier = HostTraceTransport()) throws {
         self.trace = trace
@@ -154,7 +172,7 @@ private struct HostRuntimeTraceReplay: RuntimeTraceDriver {
     }
 
     mutating func start() async throws {
-        eventIterator = await runtime.events().makeAsyncIterator()
+        eventReceipts = RuntimeEventReceiptQueue(stream: await runtime.events())
         try await runtime.start()
         _ = await runtime.conformanceObservation()
         driverStarted = true
@@ -192,7 +210,7 @@ private struct HostRuntimeTraceReplay: RuntimeTraceDriver {
         guard trace.schemaVersion == ProtocolTrace.schemaVersion else {
             throw TraceReplayError.schemaVersion(trace.schemaVersion)
         }
-        eventIterator = await runtime.events().makeAsyncIterator()
+        eventReceipts = RuntimeEventReceiptQueue(stream: await runtime.events())
         transport.setOutboundEffectsEnabled(false)
         try await runtime.start()
         _ = await runtime.conformanceObservation()
@@ -312,12 +330,28 @@ private struct HostRuntimeTraceReplay: RuntimeTraceDriver {
         _ frame: RuntimeInboundFrame,
         sequence: Int = 0
     ) async throws -> RuntimeReceipt {
-        try await transport.inject(frame)
+        try await transport.inject(frame, traceID: trace.id, sequence: sequence)
         return try await nextRuntimeReceipt(sequence: sequence)
     }
 
     private mutating func nextRuntimeReceipt(sequence: Int) async throws -> RuntimeReceipt {
-        guard let event = await eventIterator?.next(), case let .transition(receipt) = event else {
+        guard let eventReceipts else {
+            throw TraceReplayError.missingRuntimeReceipt(traceID: trace.id, sequence: sequence)
+        }
+        let traceID = trace.id
+        let event = try await withThrowingTaskGroup(of: RuntimeEvent?.self) { group in
+            group.addTask { await eventReceipts.next() }
+            group.addTask {
+                try await Task.sleep(for: .seconds(10))
+                throw TraceReplayError.missingRuntimeReceipt(traceID: traceID, sequence: sequence)
+            }
+            guard let result = try await group.next() else {
+                throw TraceReplayError.missingRuntimeReceipt(traceID: traceID, sequence: sequence)
+            }
+            group.cancelAll()
+            return result
+        }
+        guard case let .transition(receipt) = event else {
             throw TraceReplayError.missingRuntimeReceipt(traceID: trace.id, sequence: sequence)
         }
         return receipt

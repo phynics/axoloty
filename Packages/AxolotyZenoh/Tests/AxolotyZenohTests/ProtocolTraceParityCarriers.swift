@@ -23,39 +23,90 @@ private struct InjectedFrameKey: Hashable, Sendable {
 }
 
 private final class FrameDeliverySignal: @unchecked Sendable {
-    private let lock = NSLock()
-    private var pending: [InjectedFrameKey: [CheckedContinuation<Void, Never>]] = [:]
-    private var delivered: [InjectedFrameKey: Int] = [:]
+    private struct Waiter {
+        let id: UUID
+        let continuation: CheckedContinuation<Void, Error>
+    }
 
-    func wait(for frame: RuntimeInboundFrame) async {
+    private let lock = NSLock()
+    private var pending: [InjectedFrameKey: [Waiter]] = [:]
+    private var delivered: [InjectedFrameKey: Int] = [:]
+    private var timeoutTasks: [UUID: Task<Void, Never>] = [:]
+
+    func wait(for frame: RuntimeInboundFrame, traceID: String, sequence: Int) async throws {
         let key = InjectedFrameKey(frame)
-        await withCheckedContinuation { continuation in
+        let waiterID = UUID()
+        try await withCheckedThrowingContinuation { continuation in
             var resumeNow = false
             lock.lock()
             if let count = delivered[key], count > 0 {
                 delivered[key] = count - 1
                 resumeNow = true
             } else {
-                pending[key, default: []].append(continuation)
+                pending[key, default: []].append(Waiter(id: waiterID, continuation: continuation))
             }
             lock.unlock()
             if resumeNow { continuation.resume() }
+            else {
+                let timeoutTask = Task { [weak self] in
+                    do { try await Task.sleep(for: .seconds(10)) }
+                    catch { return }
+                    self?.expire(
+                        key,
+                        waiterID: waiterID,
+                        traceID: traceID,
+                        sequence: sequence
+                    )
+                }
+                lock.withLock {
+                    if pending[key]?.contains(where: { $0.id == waiterID }) == true {
+                        timeoutTasks[waiterID] = timeoutTask
+                    } else {
+                        timeoutTask.cancel()
+                    }
+                }
+            }
         }
     }
 
     func record(_ frame: RuntimeInboundFrame) {
         let key = InjectedFrameKey(frame)
-        let continuation: CheckedContinuation<Void, Never>?
+        let waiter: Waiter?
+        let timeoutTask: Task<Void, Never>?
         lock.lock()
         if var waiters = pending[key], !waiters.isEmpty {
-            continuation = waiters.removeFirst()
+            let firstWaiter = waiters.removeFirst()
+            waiter = firstWaiter
             pending[key] = waiters
+            timeoutTask = timeoutTasks.removeValue(forKey: firstWaiter.id)
         } else {
             delivered[key, default: 0] += 1
-            continuation = nil
+            waiter = nil
+            timeoutTask = nil
         }
         lock.unlock()
-        continuation?.resume()
+        timeoutTask?.cancel()
+        waiter?.continuation.resume()
+    }
+
+    private func expire(
+        _ key: InjectedFrameKey,
+        waiterID: UUID,
+        traceID: String,
+        sequence: Int
+    ) {
+        let waiter: Waiter? = lock.withLock {
+            guard var waiters = pending[key],
+                  let index = waiters.firstIndex(where: { $0.id == waiterID }) else { return nil }
+            let expired = waiters.remove(at: index)
+            pending[key] = waiters
+            timeoutTasks.removeValue(forKey: waiterID)
+            return expired
+        }
+        waiter?.continuation.resume(throwing: TraceReplayError.missingRuntimeReceipt(
+            traceID: traceID,
+            sequence: sequence
+        ))
     }
 }
 
@@ -80,15 +131,15 @@ final class MQTTTraceCarrier: RuntimeTraceCarrier, @unchecked Sendable {
         }
     }
 
-    func inject(_ frame: RuntimeInboundFrame) async throws {
+    func inject(_ frame: RuntimeInboundFrame, traceID: String, sequence: Int) async throws {
         guard case let .profile(route, payload, nowMS) = frame else {
             throw AxolotyError.invalidArgument(argument: "trace frame", reason: "expected a profile route")
         }
         let key = InjectedFrameKey(frame)
         lock.withLock { injectedTimes[key] = nowMS }
-        let waiter = Task { await signal.wait(for: frame) }
+        let waiter = Task { try await signal.wait(for: frame, traceID: traceID, sequence: sequence) }
         broker.injectPublication(topic: route, payload: payload)
-        await waiter.value
+        try await waiter.value
     }
 
     func setFailureHandler(_ handler: @escaping @Sendable (RuntimeTransportFailure) -> Void) async {
@@ -148,15 +199,15 @@ final class ZenohTraceCarrier: RuntimeTraceCarrier, @unchecked Sendable {
         }
     }
 
-    func inject(_ frame: RuntimeInboundFrame) async throws {
+    func inject(_ frame: RuntimeInboundFrame, traceID: String, sequence: Int) async throws {
         guard case let .profile(route, payload, nowMS) = frame else {
             throw AxolotyError.invalidArgument(argument: "trace frame", reason: "expected a profile route")
         }
         clock.set(nowMS)
-        let waiter = Task { await signal.wait(for: frame) }
+        let waiter = Task { try await signal.wait(for: frame, traceID: traceID, sequence: sequence) }
         session.enqueuePublication(route: route, payload: payload)
         _ = binding.drainReceiveQueues()
-        await waiter.value
+        try await waiter.value
     }
 
     func setFailureHandler(_ handler: @escaping @Sendable (RuntimeTransportFailure) -> Void) async {

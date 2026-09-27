@@ -320,6 +320,9 @@ enum ProtocolTraceCorpus {
 
     private static func incompatibleExternalRouteTrace(seed: FixtureSeed) -> ProtocolTrace {
         let state = TraceState()
+        // Use a Coaty route so the binding classifies it as Coaty. If this
+        // fixture kept an external route with `isExternalRoute: true`, both
+        // values would agree and the protocol would accept the association.
         let profileRoute = "coaty/3/trace/IOV/00000000-0000-4000-8000-000000000001"
         let coatyAssociation = seed.externalRoute.replacingOccurrences(
             of: "external/wire-compat-v1/io-external-1",

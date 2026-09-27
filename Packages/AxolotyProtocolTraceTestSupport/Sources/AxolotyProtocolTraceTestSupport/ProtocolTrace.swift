@@ -196,7 +196,7 @@ protocol TraceReplayAdapter: Sendable {
 
 /// A runtime transport with a deterministic inbound-frame injection seam.
 protocol RuntimeTraceCarrier: AxolotyRuntimeTransport {
-    func inject(_ frame: RuntimeInboundFrame) async throws
+    func inject(_ frame: RuntimeInboundFrame, traceID: String, sequence: Int) async throws
     func setOutboundEffectsEnabled(_ enabled: Bool)
 }
 

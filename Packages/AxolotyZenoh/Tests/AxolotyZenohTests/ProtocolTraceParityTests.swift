@@ -13,12 +13,16 @@ import Testing
 
 @Suite("MQTT and Zenoh protocol trace parity")
 struct ProtocolTraceParityTests {
+    // See ../../CONFORMANCE.md for the transport-limit trace rationale.
+    private static let tracesExcludedFromCarrierParity: Set<String> = ["negative-payload-limit"]
+
     @Test("the shared corpus has identical normalized observations on both carriers")
     func carrierTraceParity() async throws {
         let storedCorpus = try ProtocolTraceCorpus.load()
-        let corpus = storedCorpus.filter { $0.id != "negative-payload-limit" }
+        let corpus = storedCorpus.filter { !Self.tracesExcludedFromCarrierParity.contains($0.id) }
         #expect(storedCorpus.count == 35)
         #expect(corpus.count == 34)
+        #expect(Set(storedCorpus.map(\.id)).subtracting(Set(corpus.map(\.id))) == Self.tracesExcludedFromCarrierParity)
         let broker = TestMQTTBroker(configuration: .init(excludesPublisherFromDelivery: true))
         let port = try broker.start()
         defer { broker.stop() }
@@ -46,6 +50,8 @@ struct ProtocolTraceParityTests {
         #expect(mqttRuns == zenohRuns)
         #expect(mqttRuns.count == corpus.count)
         #expect(Set(mqttRuns.map(\.traceID)) == Set(corpus.map(\.id)))
+        expectEveryFamilyCovered(by: mqttRuns)
+        expectEveryFamilyCovered(by: zenohRuns)
         #expect(mqttRuns.first { $0.traceID == "multi-step-duplicate" }?.observations.count == 2)
         #expect(mqttRuns.first { $0.traceID == "negative-deadline" }?.observations.first?.rejection?.code == .deadlineExpired)
         #expect(mqttRuns.first { $0.traceID == "negative-duplicate" }?.observations.first?.rejection?.code == .duplicate)
@@ -112,6 +118,14 @@ struct ProtocolTraceParityTests {
             runs.append(try await adapter.replay(trace))
         }
         return runs
+    }
+
+    private func expectEveryFamilyCovered(by runs: [TraceRun]) {
+        let traceIDs = Set(runs.map(\.traceID))
+        for family in TraceEventFamily.allCases {
+            #expect(traceIDs.contains("positive-\(family.rawValue)"))
+            #expect(traceIDs.contains("malformed-\(family.rawValue)"))
+        }
     }
 
     private func classify(_ bytes: [UInt8], using transport: any AxolotyRuntimeTransport) -> ProtocolRouteClassification {
