@@ -336,7 +336,11 @@ axoloty_zenoh_result_t axoloty_zenoh_connected_router_count(const axoloty_zenoh_
         z_session_loan(&slot->zenoh_session),
         z_closure_zid_move(&callback)
     );
-    return result == Z_OK ? AXOLOTY_ZENOH_OK : AXOLOTY_ZENOH_TRANSPORT_ERROR;
+    if (result != Z_OK) {
+        *out_count = 0;
+        return AXOLOTY_ZENOH_TRANSPORT_ERROR;
+    }
+    return AXOLOTY_ZENOH_OK;
 }
 
 axoloty_zenoh_result_t axoloty_zenoh_publish(const axoloty_zenoh_session_t *session,
