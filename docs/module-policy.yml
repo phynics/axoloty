@@ -14,6 +14,113 @@
     "tooling": "Host platforms only; never compiled into a runtime profile."
   },
   "forbiddenEverywhere": [],
+  "targetExemptions": [
+    {
+      "manifest": "Package.swift",
+      "name": "AxolotyStaticRuntimeMacrosImplementation",
+      "reason": "SwiftSyntax macro implementation is compiler tooling, not a runtime module."
+    },
+    {
+      "manifest": "Package.swift",
+      "name": "AxolotyTestSupport",
+      "reason": "Root-only test helper is outside the shipped module boundaries."
+    },
+    {
+      "manifest": "Package.swift",
+      "name": "AxolotyMQTTTests",
+      "reason": "Test target dependencies are verified by their test suites, not module policy."
+    },
+    {
+      "manifest": "Package.swift",
+      "name": "AxolotyTestBrokerTests",
+      "reason": "Test target dependencies are verified by their test suites, not module policy."
+    },
+    {
+      "manifest": "Package.swift",
+      "name": "AxolotyTests",
+      "reason": "Test target dependencies are verified by their test suites, not module policy."
+    },
+    {
+      "manifest": "Package.swift",
+      "name": "AxolotyLiveWireTests",
+      "reason": "Test target dependencies are verified by their test suites, not module policy."
+    },
+    {
+      "manifest": "Package.swift",
+      "name": "AxolotyWireTests",
+      "reason": "Test target dependencies are verified by their test suites, not module policy."
+    },
+    {
+      "manifest": "Package.swift",
+      "name": "AxolotyProtocolTests",
+      "reason": "Test target dependencies are verified by their test suites, not module policy."
+    },
+    {
+      "manifest": "Package.swift",
+      "name": "AxolotyObjectModelTests",
+      "reason": "Test target dependencies are verified by their test suites, not module policy."
+    },
+    {
+      "manifest": "Package.swift",
+      "name": "AxolotyCoatyModelsTests",
+      "reason": "Test target dependencies are verified by their test suites, not module policy."
+    },
+    {
+      "manifest": "Package.swift",
+      "name": "AxolotyIoRoutingTests",
+      "reason": "Test target dependencies are verified by their test suites, not module policy."
+    },
+    {
+      "manifest": "Package.swift",
+      "name": "AxolotySensorThingsTests",
+      "reason": "Test target dependencies are verified by their test suites, not module policy."
+    },
+    {
+      "manifest": "Package.swift",
+      "name": "AxolotyStaticRuntimeTests",
+      "reason": "Test target dependencies are verified by their test suites, not module policy."
+    },
+    {
+      "manifest": "Package.swift",
+      "name": "AxolotyWireConsumer",
+      "reason": "Build-only benchmark consumer is not part of a shipped module graph."
+    },
+    {
+      "manifest": "Package.swift",
+      "name": "AxolotyConsumer",
+      "reason": "Build-only benchmark consumer is not part of a shipped module graph."
+    },
+    {
+      "manifest": "Package.swift",
+      "name": "CommunicationConsumer",
+      "reason": "Build-only benchmark consumer is not part of a shipped module graph."
+    },
+    {
+      "manifest": "Package.swift",
+      "name": "IoRoutingConsumer",
+      "reason": "Build-only benchmark consumer is not part of a shipped module graph."
+    },
+    {
+      "manifest": "Package.swift",
+      "name": "SensorThingsConsumer",
+      "reason": "Build-only benchmark consumer is not part of a shipped module graph."
+    },
+    {
+      "manifest": "Package.swift",
+      "name": "WireBenchmark",
+      "reason": "Build-only benchmark consumer is not part of a shipped module graph."
+    },
+    {
+      "manifest": "Package.swift",
+      "name": "WireAllocation",
+      "reason": "Build-only benchmark consumer is not part of a shipped module graph."
+    },
+    {
+      "manifest": "Package.swift",
+      "name": "StaticIoOwnershipAllocation",
+      "reason": "Build-only benchmark consumer is not part of a shipped module graph."
+    }
+  ],
   "targets": [
     {
       "name": "AxolotyWire",

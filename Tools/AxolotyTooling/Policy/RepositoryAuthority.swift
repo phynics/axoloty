@@ -253,6 +253,8 @@ public struct AxolotyRepositoryAuthorityValidator: Sendable {
         let platformClasses = Set((object["platformClasses"] as? [String: Any])?.keys.map { $0 } ?? [])
         let forbiddenEverywhere = Set((object["forbiddenEverywhere"] as? [Any])?.compactMap { nonEmptyString($0) } ?? [])
         var names = Set<String>()
+        var policyPaths: [String: String] = [:]
+        let exemptions = moduleTargetExemptions(object["targetExemptions"], path: path, findings: &findings)
 
         for (index, rawTarget) in rawTargets.enumerated() {
             let prefix = "targets[" + String(index) + "]"
@@ -269,6 +271,7 @@ public struct AxolotyRepositoryAuthorityValidator: Sendable {
             if !names.insert(name).inserted {
                 findings.append(.init(rule: "modules.duplicate", path: path, message: "duplicate target " + name))
             }
+            policyPaths[name] = relativePath
             if let role = nonEmptyString(target["role"]), !roles.isEmpty, !roles.contains(role) {
                 findings.append(.init(rule: "modules.role", path: path, message: name + " declares unknown role " + role))
             }
@@ -308,6 +311,147 @@ public struct AxolotyRepositoryAuthorityValidator: Sendable {
                 findings.append(.init(rule: "modules.unused", path: relativePath, message: name + " allows " + module + " but no source imports it"))
             }
         }
+        validateManifestTargetCoverage(
+            policyNames: names,
+            policyPaths: policyPaths,
+            exemptions: exemptions,
+            findings: &findings
+        )
+    }
+
+    /// Reads explicit non-module exceptions for targets in the two manifests
+    /// governed by ADR 0007. Every exception is tied to one manifest and must
+    /// remain live; system-library targets are included when a policy entry is
+    /// appropriate, rather than being silently skipped by target type.
+    private func moduleTargetExemptions(
+        _ rawExemptions: Any?,
+        path: String,
+        findings: inout [AxolotyRepositoryAuthorityFinding]
+    ) -> Set<String> {
+        guard let rawExemptions else { return [] }
+        guard let entries = rawExemptions as? [Any] else {
+            findings.append(.init(rule: "modules.exemptions.schema", path: path, message: "targetExemptions must be an array"))
+            return []
+        }
+        var exemptions = Set<String>()
+        for (index, rawEntry) in entries.enumerated() {
+            let prefix = "targetExemptions[" + String(index) + "]"
+            guard let entry = rawEntry as? [String: Any],
+                  let manifest = nonEmptyString(entry["manifest"]),
+                  let name = nonEmptyString(entry["name"]),
+                  nonEmptyString(entry["reason"]) != nil,
+                  ["Package.swift", "Packages/AxolotyZenoh/Package.swift"].contains(manifest) else {
+                findings.append(.init(rule: "modules.exemptions.schema", path: path, message: prefix + " requires a supported manifest, target name, and reason"))
+                continue
+            }
+            let key = manifest + "::" + name
+            if !exemptions.insert(key).inserted {
+                findings.append(.init(rule: "modules.exemptions.duplicate", path: path, message: "duplicate target exemption " + key))
+            }
+        }
+        return exemptions
+    }
+
+    /// Compares module-policy declarations with the root and Zenoh SwiftPM
+    /// target inventories. Target names are read from literal `name:` arguments
+    /// in the target declarations, so validation does not resolve dependencies,
+    /// invoke a build, or require Zenoh's native package to be installed.
+    private func validateManifestTargetCoverage(
+        policyNames: Set<String>,
+        policyPaths: [String: String],
+        exemptions: Set<String>,
+        findings: inout [AxolotyRepositoryAuthorityFinding]
+    ) {
+        let manifests = ["Package.swift", "Packages/AxolotyZenoh/Package.swift"]
+        let targetPattern = #"\.(?:target|testTarget|executableTarget|systemLibrary|macro)\s*\(\s*name\s*:\s*"([^"]+)""#
+        var inventory = Set<String>()
+
+        for manifest in manifests {
+            guard let source = read(manifest) else {
+                findings.append(.init(rule: "modules.manifest", path: manifest, message: "SwiftPM manifest is missing or unreadable"))
+                continue
+            }
+            let uncommentedSource = removingSwiftComments(from: source)
+            for name in regexCaptures(targetPattern, in: uncommentedSource) {
+                let key = manifest + "::" + name
+                inventory.insert(key)
+                let policyMatchesManifest = policyNames.contains(name)
+                    && (manifest == "Package.swift" || policyPaths[name]?.hasPrefix("Packages/AxolotyZenoh/") == true)
+                guard !policyMatchesManifest, !exemptions.contains(key) else { continue }
+                findings.append(.init(
+                    rule: "modules.target.uncovered",
+                    path: manifest,
+                    message: "SwiftPM target " + name + " has no module-policy entry or explicit targetExemptions entry"
+                ))
+            }
+        }
+
+        for (name, path) in policyPaths where path.hasPrefix("Packages/AxolotyZenoh/") {
+            let key = "Packages/AxolotyZenoh/Package.swift::" + name
+            if !inventory.contains(key) {
+                findings.append(.init(
+                    rule: "modules.target.stale",
+                    path: path,
+                    message: "module-policy target " + name + " is not declared by Packages/AxolotyZenoh/Package.swift"
+                ))
+            }
+        }
+
+        for key in exemptions.subtracting(inventory).sorted() {
+            findings.append(.init(
+                rule: "modules.exemptions.stale",
+                path: "docs/module-policy.yml",
+                message: "target exemption does not match a target in its manifest: " + key
+            ))
+        }
+    }
+
+    /// Removes Swift line and nested block comments while preserving string
+    /// contents, so commented-out target examples do not enter the inventory.
+    private func removingSwiftComments(from source: String) -> String {
+        let characters = Array(source)
+        var output = ""
+        var index = 0
+        var blockDepth = 0
+        var inString = false
+        var escaped = false
+
+        while index < characters.count {
+            let character = characters[index]
+            let next = index + 1 < characters.count ? characters[index + 1] : "\0"
+            if blockDepth > 0 {
+                if character == "/", next == "*" {
+                    blockDepth += 1
+                    index += 2
+                } else if character == "*", next == "/" {
+                    blockDepth -= 1
+                    index += 2
+                } else {
+                    if character == "\n" { output.append("\n") }
+                    index += 1
+                }
+            } else if inString {
+                output.append(character)
+                if escaped {
+                    escaped = false
+                } else if character == "\\" {
+                    escaped = true
+                } else if character == "\"" {
+                    inString = false
+                }
+                index += 1
+            } else if character == "/", next == "/" {
+                while index < characters.count, characters[index] != "\n" { index += 1 }
+            } else if character == "/", next == "*" {
+                blockDepth = 1
+                index += 2
+            } else {
+                output.append(character)
+                if character == "\"" { inString = true }
+                index += 1
+            }
+        }
+        return output
     }
 
     /// Every Swift source under a target directory, recursively.
