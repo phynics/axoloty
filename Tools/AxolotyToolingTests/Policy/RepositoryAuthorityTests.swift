@@ -412,6 +412,53 @@ func modulePolicyMustBePresent() throws {
     #expect(report.findings.contains { $0.rule == "modules.read" })
 }
 
+/// Manifest coverage checks a declared target and rejects an inventory entry
+/// that has neither a policy record nor a documented exemption.
+@Test
+func modulePolicyCoversSwiftPMManifestTargets() throws {
+    let declaredFixture = try makeAuthorityFixture()
+    defer { try? FileManager.default.removeItem(at: declaredFixture) }
+
+    let declaredReport = AxolotyRepositoryAuthorityValidator(root: declaredFixture).validate()
+    #expect(declaredReport.status == "passed", "\(declaredReport.findings)")
+
+    let undeclaredFixture = try makeAuthorityFixture()
+    defer { try? FileManager.default.removeItem(at: undeclaredFixture) }
+    let rootManifest = undeclaredFixture.appendingPathComponent("Package.swift")
+    try """
+    let package = Package(
+        targets: [
+            .target(name: "FixtureWire"),
+            .target(name: "UnlistedTarget")
+        ]
+    )
+    // .target(name: "CommentedTarget") is not a manifest declaration.
+    """.write(to: rootManifest, atomically: true, encoding: .utf8)
+    try """
+    let package = Package(
+        targets: [.target(name: "ZenohUnlistedTarget")]
+    )
+    """.write(
+        to: undeclaredFixture.appendingPathComponent("Packages/AxolotyZenoh/Package.swift"),
+        atomically: true,
+        encoding: .utf8
+    )
+
+    let undeclaredReport = AxolotyRepositoryAuthorityValidator(root: undeclaredFixture).validate()
+    #expect(undeclaredReport.status == "failed")
+    #expect(undeclaredReport.findings.contains {
+        $0.rule == "modules.target.uncovered"
+            && $0.path == "Package.swift"
+            && $0.message.contains("UnlistedTarget")
+    })
+    #expect(undeclaredReport.findings.contains {
+        $0.rule == "modules.target.uncovered"
+            && $0.path == "Packages/AxolotyZenoh/Package.swift"
+            && $0.message.contains("ZenohUnlistedTarget")
+    })
+    #expect(!undeclaredReport.findings.contains { $0.message.contains("CommentedTarget") })
+}
+
 /// A declared target whose directory is gone is a finding, so a renamed or
 /// deleted target cannot quietly drop out of policy coverage.
 @Test
@@ -441,6 +488,8 @@ private func makeAuthorityFixture(
         .appendingPathComponent("axoloty-authority-" + UUID().uuidString)
     try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
     let files: [String: String] = [
+        "Package.swift": "let package = Package(targets: [.target(name: \"FixtureWire\")])\n",
+        "Packages/AxolotyZenoh/Package.swift": "let package = Package(targets: [])\n",
         "VERSION": version + "\n",
         "README.md": "# Axoloty\n.package(url: \"https://example.invalid\", from: \"\(version)\")\n",
         "Source/Axoloty.docc/GettingStarted.md": "# Getting Started\n.package(url: \"https://example.invalid\", from: \"\(version)\")\n",

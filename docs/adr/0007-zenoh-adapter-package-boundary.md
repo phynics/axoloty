@@ -66,6 +66,10 @@ Zenoh installed" true rather than assumed.
   discovered by depending on `Axoloty` alone.
 - `docs/module-policy.yml` gains entries for the subpackage targets with paths
   under `Packages/AxolotyZenoh/`, and `axoloty-tool repository validate` must
-  enumerate targets across both packages.
+  enumerate targets across both packages. Targets that do not need module
+  import policy require a manifest-scoped `targetExemptions` entry with a
+  reason. This includes developer-only tests and measurement executables;
+  system-library and C targets are inventoried too and are not implicitly
+  exempt.
 - Promoting the adapter to a root product once Zenoh is validated is a new
   decision, not a variation of this one.
