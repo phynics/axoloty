@@ -271,10 +271,10 @@ func canonicalManifestDefinesVerifyRootsAndBoundedTestOne() throws {
     let manifest = resolver.manifest
     #expect(manifest.schemaVersion == 2)
     #expect(manifest.requiredGates.allSatisfy { gate in manifest.nodes.contains { $0.id == gate } })
-    // requiredGates is the ci category, and releaseGates is derived from the
-    // declared categories rather than stored beside them.
+    // requiredGates is the ci category, and releaseGates includes every
+    // declared non-release category, including zenoh-live.
     #expect(Set(manifest.requiredGates).isSubset(of: Set(manifest.tiers.first { $0.id == "ci" }?.nodes ?? [])))
-    #expect(manifest.releaseGates == ["ci", "wire", "embedded"])
+    #expect(manifest.releaseGates == ["ci", "wire", "embedded", "zenoh-live"])
     #expect(manifest.toolContainerEnv?.allowlist(for: "release-checkpoint")?.contains("AXOLOTY_GIT_TREE") == true)
     #expect(manifest.toolContainerEnv?.allowlist(for: "release-unknown") == nil)
     #expect(try resolver.command(.testOne(
@@ -602,7 +602,7 @@ func checkpointManifestRecordsAllRequiredReleaseGatesInOrder() throws {
     let manifest = try JSONDecoder().decode(AxolotyCheckpointManifest.self, from: Data(result.standardOutput.utf8))
 
     #expect(manifest.schemaVersion == 3)
-    #expect(manifest.releaseGates.map(\.id) == ["ci", "wire", "embedded", "swiftpm-sbom"])
+    #expect(manifest.releaseGates.map(\.id) == ["ci", "wire", "embedded", "zenoh-live", "swiftpm-sbom"])
     #expect(manifest.releaseGates.first { $0.id == "integration" } == nil)
 }
 
