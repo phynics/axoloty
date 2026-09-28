@@ -712,6 +712,7 @@
       "allowedImports": [
         "Axoloty",
         "AxolotyMQTT",
+        "AxolotyObjectModel",
         "AxolotyProtocol",
         "AxolotyProtocolTraceTestSupport",
         "AxolotyTestBroker",
