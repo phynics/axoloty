@@ -24,6 +24,8 @@ enum AxolotyCommandInvocation: Equatable, Sendable {
     case integration
     case wireVerify
     case wireCapture
+    case zenohLive
+    case zenohOffline
     case embeddedConsumerPrepare(arguments: [String])
     case release(ReleaseCommand)
 }
@@ -35,6 +37,12 @@ struct AxolotyCommandParser: Sendable {
     func parse(_ arguments: [String]) -> AxolotyCommandInvocation {
         if arguments.first == "serve" {
             return .serve(arguments: Array(arguments.dropFirst()))
+        }
+        if arguments == ["zenoh", "live"] {
+            return .zenohLive
+        }
+        if arguments == ["zenoh", "offline"] {
+            return .zenohOffline
         }
         if arguments.count >= 2, arguments[0] == "measure", arguments[1] == "timing" {
             return .timing(arguments: Array(arguments.dropFirst(2)))

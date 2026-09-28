@@ -130,7 +130,7 @@ private actor IoWireRecordingTransport: AxolotyRuntimeTransport {
         }
     }
     func stop() async {}
-    func installSubscriptions(namespace: String) async throws {}
-    func removeSubscriptions(namespace: String) async throws {}
+    func activateProfileInterest(namespace: String) async throws {}
+    func deactivateProfileInterest(namespace: String) async throws {}
     func publications() -> [RuntimeOutboundMessage] { sent }
 }

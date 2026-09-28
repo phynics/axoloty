@@ -2,6 +2,7 @@
 
 import Foundation
 import Testing
+@testable import AxolotyProtocolTraceTestSupport
 
 @Suite("G6 profile trace corpus")
 struct ProtocolTraceTests {
@@ -104,7 +105,7 @@ struct ProtocolTraceTests {
 
     @Test("the checked-in JSON schema names the complete trace contract")
     func schemaContract() throws {
-        let schemaURL = try #require(Bundle.module.url(forResource: "trace.schema", withExtension: "json"))
+        let schemaURL = try #require(ProtocolTraceResources.schemaURL)
         let schema = try #require(JSONSerialization.jsonObject(with: Data(contentsOf: schemaURL)) as? [String: Any])
         #expect(schema["$schema"] as? String == "https://json-schema.org/draft/2020-12/schema")
         #expect(schema["title"] as? String == "Axoloty G6 Profile Protocol Trace")

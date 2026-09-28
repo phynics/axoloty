@@ -49,8 +49,9 @@ The delivered outcomes are:
   rejected atomically;
 - SensorThings supports Thing-driven observation through a bounded registry;
 - typed IO state is concentrated behind the executor that owns it;
-- the canonical test taxonomy is four categories, and an attested category is
-  proved from recorded evidence rather than executed.
+- canonical test tiers declare their execution boundaries; live Zenoh is an
+  opt-in router-backed tier, separate from ordinary verification; attested
+  tier nodes run only when their owning tier is selected.
 
 [Epic #781](https://github.com/phynics/axoloty/issues/781) then made the
 transport a declared, enforced boundary: MQTT behind an adapter product, a

@@ -1,0 +1,55 @@
+{
+  "contractVersion": "2.1.0",
+  "vectors": {
+    "roundTrip": {
+      "key": "axoloty/contract/round-trip",
+      "payload": [0, 65, 128, 255]
+    },
+    "multipleSubscribers": {
+      "key": "axoloty/contract/multiple-subscribers",
+      "payload": [17, 0, 255]
+    },
+    "multiSubscription": {
+      "profileFourSegments": {
+        "key": "coaty/3/contracts/ADV/source",
+        "payload": [34, 68]
+      },
+      "profileFiveSegments": {
+        "key": "coaty/3/contracts/ADV/source/value",
+        "payload": [51, 85]
+      },
+      "exactExternalRoute": {
+        "key": "coaty/3/contracts/external/route",
+        "payload": [102, 119]
+      },
+      "maximumSubscribers": 8
+    },
+    "queueOverflow": {
+      "key": "axoloty/contract/queue-overflow",
+      "acceptedPayloads": [[0], [1], [2], [3]],
+      "overflowPayload": [4],
+      "expectedDroppedFrameCount": 1
+    },
+    "keyOverflow": {
+      "keyLength": 257,
+      "payloadLength": 1,
+      "fillByte": 120
+    },
+    "payloadOverflow": {
+      "keyLength": 24,
+      "payloadLength": 2049,
+      "fillByte": 90
+    },
+    "sessionFailure": {
+      "endpoint": "tcp/127.0.0.1:1"
+    },
+    "routerPresence": {
+      "peerModeCount": 0,
+      "openResult": "OK",
+      "closedResult": "NOT_OPEN",
+      "nullSessionResult": "INVALID_ARGUMENT",
+      "foreignSessionResult": "INVALID_ARGUMENT",
+      "nullOutputResult": "INVALID_ARGUMENT"
+    }
+  }
+}

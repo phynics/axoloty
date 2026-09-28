@@ -27,7 +27,7 @@ public struct MQTTBindingConfiguration: Sendable, Equatable {
     /// forever. A broker that disappears without resetting the connection --
     /// a restarted broker whose socket is left half-open -- then wedges any
     /// operation awaiting an acknowledgement, including the
-    /// `removeSubscriptions(namespace:)` that opens a reconnect. That hang is
+    /// `deactivateProfileInterest(namespace:)` that opens a reconnect. That hang is
     /// unrecoverable: no reconnect can run while it is pending.
     ///
     /// - Note: MQTTNIO applies one timeout to every acknowledged exchange, so
@@ -129,6 +129,8 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
     private var activeNamespace: String?
     private var transportEpoch: UInt64 = 0
     private var externalRoutes: [ExternalRouteRecord] = []
+    private var diagnostics: RuntimeTransportDiagnostics?
+    private var hasOpenedSession = false
 
     /// Creates a binding backed by the repository's MQTTNIO implementation.
     public init(configuration: MQTTBindingConfiguration) throws {
@@ -185,6 +187,9 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
                     continuation.resume(throwing: AxolotyError.runtime(code: .notStarted, reason: "MQTT binding is already started"))
                     return
                 }
+                if let diagnostics = lock.withLock({ diagnostics }) {
+                    delegate.setFailureObserver { diagnostics.recordSessionFailure() }
+                }
                 delegate.setReceive { [weak self] topic, payload, nowMS in
                     self?.admitInbound(topic: topic, payload: payload, nowMS: nowMS, receive: receive)
                 }
@@ -192,7 +197,16 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
                 delegate.armStartTimeout(milliseconds: connectionTimeoutMS)
                 client.connect(will: lastWill)
             }
+            let (sink, isReconnect) = lock.withLock { () -> (RuntimeTransportDiagnostics?, Bool) in
+                let reconnect = hasOpenedSession
+                hasOpenedSession = true
+                return (diagnostics, reconnect)
+            }
+            sink?.recordSessionOpen()
+            if isReconnect { sink?.recordReconnect() }
         } catch {
+            let sink = lock.withLock { diagnostics }
+            sink?.recordSessionFailure()
             lock.withLock {
                 started = false
                 transportEpoch &+= 1
@@ -201,20 +215,34 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
             }
             await client.disconnect()
             delegate.clearReceive()
+            delegate.clearFailureObserver()
             throw error
         }
     }
 
     /// Forwards post-start transport failures to the owning runtime.
+    ///
+    /// - Parameter handler: The runtime's transport-failure callback.
     public func setFailureHandler(_ handler: @escaping @Sendable (RuntimeTransportFailure) -> Void) async {
         delegate.setFailureHandler(handler)
+    }
+
+    /// Stores the runtime-owned transport counter sink.
+    ///
+    /// - Parameter diagnostics: Shared fixed-size counter sink. The binding
+    ///   also records MQTT session failures into it.
+    public func setDiagnostics(_ diagnostics: RuntimeTransportDiagnostics) async {
+        lock.withLock { self.diagnostics = diagnostics }
+        delegate.setFailureObserver { diagnostics.recordSessionFailure() }
     }
 
     /// Applies one transport effect in the order produced by the protocol.
     ///
     /// - Parameter effect: A finished publication, or an exact external-route
     ///   lifecycle effect. The route arrives resolved.
-    /// - Throws: A transport error when the effect cannot be applied.
+    /// - Throws: ``AxolotyError/runtime(code:reason:)`` when the binding is not
+    ///   started, or an ``AxolotyError`` wrapping the MQTT failure when the
+    ///   publication or subscription change fails.
     public func perform(_ effect: RuntimeTransportEffect) async throws {
         guard lock.withLock({ started }) else {
             throw AxolotyError.runtime(code: .notStarted, reason: "MQTT binding is not started")
@@ -223,12 +251,16 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
         case .publish(let message):
             do {
                 try await client.publish(topic: message.route, payload: message.payload)
+                let sink = lock.withLock { diagnostics }
+                sink?.recordPublishedFrame()
             } catch {
                 throw AxolotyError.network(error: error, reason: "MQTT publication failed")
             }
         case .externalRouteActivated(let transition):
+            try Self.validateExternalRoute(transition.route)
             try await activateExternalRoute(transition.route)
         case .externalRouteDeactivated(let transition):
+            try Self.validateExternalRoute(transition.route)
             try await deactivateExternalRoute(transition.route)
         }
     }
@@ -240,14 +272,19 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
             transportEpoch &+= 1
             activeNamespace = nil
             externalRoutes.removeAll(keepingCapacity: true)
+            diagnostics?.setActiveExternalSubscriptions(0)
         }
         delegate.failStart(AxolotyError.runtime(code: .cancelled, reason: "MQTT binding stopped while connecting"))
         await client.disconnect()
         delegate.clearReceive()
+        delegate.clearFailureObserver()
     }
 
-    /// Installs bounded wildcard subscriptions for the closed profile.
-    public func installSubscriptions(namespace: String) async throws {
+    /// Activates the closed profile's bounded MQTT wildcard subscriptions.
+    ///
+    /// - Parameter namespace: The runtime's immutable Coaty namespace.
+    /// - Throws: ``AxolotyError/network(error:reason:)`` when a subscription fails.
+    public func activateProfileInterest(namespace: String) async throws {
         lock.withLock { activeNamespace = namespace }
         do {
             try await client.subscribe(RuntimeTopicBuilder.subscribeAllOneWayTopics(namespace: namespace))
@@ -267,13 +304,17 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
         }
     }
 
-    /// Removes the same profile subscriptions during shutdown/reconnect.
-    public func removeSubscriptions(namespace: String) async throws {
+    /// Deactivates the profile's MQTT subscriptions during shutdown/reconnect.
+    ///
+    /// - Parameter namespace: The namespace previously activated.
+    /// - Throws: ``AxolotyError/network(error:reason:)`` when an unsubscribe fails.
+    public func deactivateProfileInterest(namespace: String) async throws {
         let routes = lock.withLock { () -> [String] in
             transportEpoch &+= 1
             activeNamespace = nil
             let routes = externalRoutes.map(\.topic)
             externalRoutes.removeAll(keepingCapacity: true)
+            diagnostics?.setActiveExternalSubscriptions(0)
             return routes
         }
         var firstError: Error?
@@ -298,6 +339,29 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
             activeNamespace: namespace,
             maximumProfileTopicLength: maximumProfileTopicBytes
         )
+    }
+
+    /// Applies MQTT's wildcard restrictions on top of ``ExternalIoRoute``'s
+    /// portable grammar, which already rejects quotes and backslashes. The
+    /// portable value can contain `+` and `#` for carriers that allow them;
+    /// Axoloty's MQTT adapter retains its existing route policy at use time.
+    ///
+    /// - Parameter route: UTF-8 bytes for an exact external MQTT topic.
+    /// - Throws: ``AxolotyError/invalidArgument(argument:reason:)`` if the
+    ///   bytes are not a bounded, exact route admitted by this MQTT adapter.
+    private static func validateExternalRoute(_ route: [UInt8]) throws(AxolotyError) {
+        guard let string = String(bytes: route, encoding: .utf8) else {
+            throw AxolotyError.invalidArgument(argument: "route", reason: "must be valid UTF-8")
+        }
+        _ = try ExternalIoRoute(string)
+        for byte in route {
+            guard byte != 0x22, byte != 0x23, byte != 0x2B, byte != 0x5C else {
+                throw AxolotyError.invalidArgument(
+                    argument: "route",
+                    reason: "is not admissible by the MQTT external-route policy"
+                )
+            }
+        }
     }
 
     /// Determines what ``activateExternalRoute(_:)`` must do for one exact
@@ -372,10 +436,12 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
                 guard resolved.epoch == transportEpoch,
                       let index = externalRoutes.firstIndex(where: { $0.topic == topic && $0.epoch == resolved.epoch }) else { return }
                 externalRoutes[index].state = .subscribed
+                diagnostics?.setActiveExternalSubscriptions(UInt64(externalRoutes.filter { $0.state == .subscribed }.count))
             }
         } catch {
             lock.withLock {
                 externalRoutes.removeAll { $0.topic == topic && $0.epoch == resolved.epoch }
+                diagnostics?.setActiveExternalSubscriptions(UInt64(externalRoutes.filter { $0.state == .subscribed }.count))
             }
             throw AxolotyError.network(error: error, reason: "MQTT external route subscription failed")
         }
@@ -399,6 +465,7 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
             lock.withLock {
                 guard action.epoch == transportEpoch else { return }
                 externalRoutes.removeAll { $0.topic == topic && $0.epoch == action.epoch }
+                diagnostics?.setActiveExternalSubscriptions(UInt64(externalRoutes.filter { $0.state == .subscribed }.count))
             }
         } catch {
             lock.withLock {
@@ -418,18 +485,30 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
         receive: @escaping @Sendable (RuntimeInboundFrame) -> Void
     ) {
         let frame = lock.withLock { () -> RuntimeInboundFrame? in
-            guard started else { return nil }
+            guard started else {
+                diagnostics?.recordReceiveDrop()
+                return nil
+            }
             let bytes = Array(topic.utf8)
+            if bytes.count > maximumProfileTopicBytes, bytes.starts(with: "coaty/3/".utf8) {
+                diagnostics?.recordOversizedSample()
+                return nil
+            }
             if Self.isActiveProfile(
                 bytes,
                 namespace: activeNamespace,
                 maximumTopicLength: maximumProfileTopicBytes
             ) {
+                diagnostics?.recordReceivedFrame()
                 return .profile(route: topic, payload: payload, nowMS: nowMS)
             }
             guard externalRoutes.contains(where: {
                 $0.state == .subscribed && $0.epoch == transportEpoch && $0.topic == topic
-            }) else { return nil }
+            }) else {
+                diagnostics?.recordReceiveDrop()
+                return nil
+            }
+            diagnostics?.recordReceivedFrame()
             return .externalIo(route: topic, payload: payload, nowMS: nowMS)
         }
         if let frame { receive(frame) }
@@ -565,10 +644,20 @@ final class RuntimeMQTTDelegate: RuntimeMQTTClientDelegate, @unchecked Sendable 
         lock.withLock { failure = handler }
     }
 
+    func setFailureObserver(_ observer: @escaping @Sendable () -> Void) {
+        lock.withLock { failureObserver = observer }
+    }
+
+    func clearFailureObserver() {
+        lock.withLock { failureObserver = nil }
+    }
+
     private var failure: (@Sendable (RuntimeTransportFailure) -> Void)?
+    private var failureObserver: (@Sendable () -> Void)?
 
     private func emitFailure(_ error: Error) {
-        let callback = lock.withLock { failure }
+        let (callback, observer) = lock.withLock { (failure, failureObserver) }
+        observer?()
         let wrapped = error as? AxolotyError ?? AxolotyError.caught(error)
         let code: AxolotyError.RuntimeErrorCode
         if case let .runtime(runtimeCode, _) = wrapped {

@@ -1,0 +1,75 @@
+name: Zenoh offline
+
+# Runs the hardware-free, router-free zenoh-offline tier. It provisions the
+# pinned zenoh-c archive through axoloty-tool and never starts zenohd; the
+# zenohd-backed suite stays in the opt-in zenoh-live workflows. The path list
+# covers every input the tier builds: the separate Zenoh package, the root
+# package it depends on, the tooling that provisions zenoh-c, and the
+# container.
+on:
+  push:
+    branches: [main, exploration/zenoh]
+    paths:
+      - "Package.swift"
+      - "Package.resolved"
+      - "Packages/**"
+      - "Source/**"
+      - "Tools/AxolotyTooling/**"
+      - "Tests/Support/test-tiers.json"
+      - "Tests/Support/checks/check-embedded-swift-zenoh-core.sh"
+      - "docs/embedded-consumer-contract.json"
+      - ".github/workflows/zenoh-offline.yml"
+      - ".github/actions/setup-container/**"
+      - ".devcontainer/**"
+      - "Makefile"
+  pull_request:
+    branches: [main, exploration/zenoh]
+    paths:
+      - "Package.swift"
+      - "Package.resolved"
+      - "Packages/**"
+      - "Source/**"
+      - "Tools/AxolotyTooling/**"
+      - "Tests/Support/test-tiers.json"
+      - "Tests/Support/checks/check-embedded-swift-zenoh-core.sh"
+      - "docs/embedded-consumer-contract.json"
+      - ".github/workflows/zenoh-offline.yml"
+      - ".github/actions/setup-container/**"
+      - ".devcontainer/**"
+      - "Makefile"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: zenoh-offline-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  zenoh-offline:
+    name: Offline Zenoh package and Embedded core
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup container image
+        uses: ./.github/actions/setup-container
+        with:
+          runtime: podman
+          require-current-build-inputs: "true"
+          content-tag-prefix: swift-6.4
+          candidate-tag-prefix: ${{ github.event_name == 'pull_request' && format('swift-6.4-pr-{0}', github.event.pull_request.number) || 'swift-6.4' }}
+
+      - name: Run offline Zenoh tier
+        env:
+          CONTAINER_CREATE_TIMEOUT_SECONDS: "300"
+        run: >-
+          CONTAINER_NETWORK=host make test-tier TIER=zenoh-offline
+          CONTAINER_RUNTIME=podman BUILD_DIR=.build BUILD_LOCK=0
+          SPM_CACHE_DIR=.swiftpm-cache

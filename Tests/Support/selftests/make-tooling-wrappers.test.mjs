@@ -236,7 +236,7 @@ test("release targets fail closed when the container env allowlist is unavailabl
   assert.equal(missing.stdout, "");
 });
 
-test("the four categories are the only test entry points", () => {
+test("canonical tiers are the only test entry points", () => {
   const makefile = fs.readFileSync("Makefile", "utf8");
   // Per-subject aliases were replaced by `make test-tier TIER=<category>`;
   // a single suite is reached with `make test-one FILTER=...`.
@@ -247,5 +247,5 @@ test("the four categories are the only test entry points", () => {
     assert.match(makefile, new RegExp(`^${kept}:`, "m"), `${kept} must remain a Make target`);
   }
   const document = JSON.parse(fs.readFileSync("Tests/Support/test-tiers.json", "utf8"));
-  assert.deepEqual(document.tiers.map(tier => tier.id), ["ci", "wire", "embedded", "release"]);
+  assert.deepEqual(document.tiers.map(tier => tier.id), ["ci", "wire", "embedded", "release", "zenoh-live", "zenoh-offline"]);
 });

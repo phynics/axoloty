@@ -247,8 +247,8 @@ private actor BlockingPublicationTransport: AxolotyRuntimeTransport {
 
     func start(receive: @escaping @Sendable (RuntimeInboundFrame) -> Void) async throws {}
     func setFailureHandler(_ handler: @escaping @Sendable (RuntimeTransportFailure) -> Void) async {}
-    func installSubscriptions(namespace: String) async throws {}
-    func removeSubscriptions(namespace: String) async throws {}
+    func activateProfileInterest(namespace: String) async throws {}
+    func deactivateProfileInterest(namespace: String) async throws {}
     func stop() async {}
 
     func perform(_ effect: RuntimeTransportEffect) async throws {
@@ -293,8 +293,8 @@ private actor RecordingPublicationTransport: AxolotyRuntimeTransport {
     func setFailureHandler(_ handler: @escaping @Sendable (RuntimeTransportFailure) -> Void) async {}
     func perform(_ effect: RuntimeTransportEffect) async throws {}
     func stop() async {}
-    func installSubscriptions(namespace: String) async throws {}
-    func removeSubscriptions(namespace: String) async throws {}
+    func activateProfileInterest(namespace: String) async throws {}
+    func deactivateProfileInterest(namespace: String) async throws {}
 }
 
 private func runtimeIoSourceMetadata(_ id: String) throws -> Object<IoSourceMetadata> {

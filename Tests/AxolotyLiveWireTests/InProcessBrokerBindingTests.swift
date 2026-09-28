@@ -45,10 +45,10 @@ struct InProcessBrokerBindingTests {
                 try await peer.start { frame in Task { await peerInbox.append(frame) } }
             }
             try await withTimeout("subject profile subscriptions", timeout: timeout) {
-                try await subject.installSubscriptions(namespace: namespace)
+                try await subject.activateProfileInterest(namespace: namespace)
             }
             try await withTimeout("peer profile subscriptions", timeout: timeout) {
-                try await peer.installSubscriptions(namespace: namespace)
+                try await peer.activateProfileInterest(namespace: namespace)
             }
 
             let profileRoute = "coaty/3/\(namespace)/ADV:Identity/\(Self.peerIDString)"
@@ -111,11 +111,11 @@ struct InProcessBrokerBindingTests {
             try replacement.start()
             try await withTimeout("peer MQTTBinding restart", timeout: timeout) {
                 try await peer.start { frame in Task { await peerInbox.append(frame) } }
-                try await peer.installSubscriptions(namespace: namespace)
+                try await peer.activateProfileInterest(namespace: namespace)
             }
             try await withTimeout("subject MQTTBinding restart", timeout: timeout) {
                 try await subject.start { frame in Task { await subjectInbox.append(frame) } }
-                try await subject.installSubscriptions(namespace: namespace)
+                try await subject.activateProfileInterest(namespace: namespace)
             }
             let resumedRoute = "coaty/3/\(namespace)/ADV:Identity/\(Self.peerIDString)"
             try await peer.perform(.publish(RuntimeOutboundMessage(route: resumedRoute, payload: profilePayload)))

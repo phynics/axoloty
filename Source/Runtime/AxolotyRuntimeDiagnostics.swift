@@ -11,6 +11,22 @@ public struct RuntimeDiagnostics: Sendable, Equatable {
     public var expiredRequests = 0
     public var malformedFrames = 0
     public var transportFailures = 0
+    /// Transport frames admitted to the runtime receive callback.
+    public var receivedFrames: UInt64 = 0
+    /// Successful outbound transport publications.
+    public var publishedFrames: UInt64 = 0
+    /// Inbound transport samples discarded before the runtime callback.
+    public var receiveDrops: UInt64 = 0
+    /// Inbound transport samples rejected because route or payload capacity was exceeded.
+    public var oversizedSamples: UInt64 = 0
+    /// Successful transport-session opens.
+    public var sessionOpens: UInt64 = 0
+    /// Failed session opens or failures reported by an open session.
+    public var sessionFailures: UInt64 = 0
+    /// Successful transport-session opens after the first successful open.
+    public var transportReconnects: UInt64 = 0
+    /// Current number of distinct active external subscriptions.
+    public var activeExternalSubscriptions: UInt64 = 0
 
     /// Creates an empty diagnostics snapshot.
     public init() {}

@@ -153,6 +153,13 @@ their names. MQTT implements them as server-side wildcard subscriptions, which
 is a broker capability rather than a concept every carrier shares; both default
 to no-ops, so an adapter without the concept simply does not implement them.
 
+The paragraph above records the 0.7 migration contract. The port methods were
+later renamed to `activateProfileInterest(namespace:)` and
+`deactivateProfileInterest(namespace:)` for the second-transport vocabulary
+([#800](https://github.com/phynics/axoloty/issues/800)). MQTT still implements
+them with its server-side wildcard subscriptions; sequencing and default no-op
+behavior are unchanged.
+
 ## `MQTTExternalIoRoute` is `ExternalIoRoute`
 
 The type validating an exact external IO route lost its carrier prefix, and its
@@ -167,6 +174,14 @@ The accepted grammar is unchanged: bounded UTF-8, no empty segments, and none
 of the characters MQTT reserves for wildcards or quoting. That rule is
 deliberately no laxer than the validated transport requires, so a route
 accepted here stays publishable if a future carrier permits more.
+
+The paragraph above records the 0.7 migration contract. The current portable
+`ExternalIoRoute` contract was later generalized for multiple carriers
+([#799](https://github.com/phynics/axoloty/issues/799)): bounded UTF-8, no
+control scalars, and no empty slash-separated segments. Carrier-specific
+restrictions now apply when a transport uses the route; `MQTTBinding` retains
+its earlier exclusions, while another adapter can accept those characters if
+its key syntax permits them.
 
 Diagnostic text and documentation that described "MQTT topic separators" or
 "MQTT topic levels" now say "route separators" and "route segments". The

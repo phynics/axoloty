@@ -1,9 +1,43 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
+// Splitting this file is tracked by epic #796
+// (https://github.com/phynics/axoloty/issues/796), per the PR #956 review.
+// swiftlint:disable file_length
+
 import AxolotyProtocol
 import AxolotyObjectModel
 import AxolotyWire
 import Foundation
+
+/// Routes transport callbacks into the current bounded ingress stream.
+///
+/// A transport may retain its receive callback across a soft recovery, while
+/// each runtime ingress pump belongs to one transport epoch.
+private final class RuntimeTransportIngressRelay: @unchecked Sendable {
+    private let lock = NSLock()
+    private let overflowGate = RuntimeOverflowGate()
+    private var continuation: AsyncStream<RuntimeInboundFrame>.Continuation?
+
+    func install(_ continuation: AsyncStream<RuntimeInboundFrame>.Continuation) {
+        lock.withLock {
+            self.continuation = continuation
+            overflowGate.reset()
+        }
+    }
+
+    func finish() {
+        lock.withLock {
+            continuation?.finish()
+            continuation = nil
+        }
+    }
+
+    func yield(_ frame: RuntimeInboundFrame) -> Bool {
+        let result = lock.withLock { continuation?.yield(frame) }
+        guard case .dropped? = result else { return false }
+        return overflowGate.claim()
+    }
+}
 
 // The executor deliberately keeps lifecycle, ingress, dispatch, and handler
 // supervision in one serialized owner. Keep this suppression scoped to the
@@ -26,6 +60,7 @@ actor ProtocolExecutor {
     /// This queue is bounded by the dispatch capacity and is replayed in
     /// publication order after a successful reconnect.
     private var offlineOperations: [RuntimeOperation] = []
+    private var flushingOfflineOperations = false
     var state: RuntimeLifecycleState = .stopped
     private var terminationWaiter: CheckedContinuation<RuntimeLifecycleState, Never>?
     private var hasStarted = false
@@ -36,7 +71,10 @@ actor ProtocolExecutor {
     var handlerTasks: [UInt64: Task<Void, Never>] = [:]
     private var terminalFailureValue: (AxolotyError.RuntimeErrorCode, String)?
     private var failureTeardownScheduled = false
-    private let ingressOverflowGate = RuntimeOverflowGate()
+    private let transportIngressRelay = RuntimeTransportIngressRelay()
+    private var recoveryArrivedBeforeFailure = false
+    private var softRecoveryConsumed = false
+    private var softRecoveryInProgress = false
     private var transportEpoch: UInt64 = 0
     private var transportIngressContinuation: AsyncStream<RuntimeInboundFrame>.Continuation?
     private var transportIngressTask: Task<Void, Never>?
@@ -53,7 +91,16 @@ actor ProtocolExecutor {
     /// Bounded by `definition.capacities.dispatch`, mirroring
     /// `queuedTransportEffects`.
     private var pendingOutboundEffects: [RuntimeQueuedTransportEffect] = []
+    /// Exact external routes the transport has confirmed as active.
+    ///
+    /// `processor.resetTransport()` forgets their associations on failure,
+    /// but a soft recovery keeps the transport session and its subscriptions.
+    /// `transportRecovered()` releases these routes before peers re-associate.
+    /// Bounded by the processor's association capacity; cleared whenever the
+    /// transport is stopped.
+    private var transportExternalRoutes: [OwnedExternalRouteTransition] = []
     var diagnosticsSnapshotValue = RuntimeDiagnostics()
+    private let transportDiagnostics = RuntimeTransportDiagnostics()
     var typedIoState: RuntimeTypedIoState
     var pendingTypedIoToken: RuntimeTypedIoPublicationToken? = nil
     var typedIoFlushAttempts = 0
@@ -106,20 +153,12 @@ actor ProtocolExecutor {
             break
         }
         hasStarted = true
+        recoveryArrivedBeforeFailure = false
+        softRecoveryConsumed = false
         state = .starting
         transportEpoch &+= 1
         let epoch = transportEpoch
-        let ingressPipe = AsyncStream<RuntimeInboundFrame>.makeStream(
-            bufferingPolicy: .bufferingOldest(definition.capacities.ingress)
-        )
-        ingressOverflowGate.reset()
-        transportIngressContinuation = ingressPipe.continuation
-        transportIngressTask = Task { [weak self, stream = ingressPipe.stream] in
-            for await frame in stream {
-                guard !Task.isCancelled else { break }
-                await self?.receiveTransport(frame, epoch: epoch)
-            }
-        }
+        installTransportIngressPump(epoch: epoch)
         outboundContinuation?.finish()
         outboundTask?.cancel()
         outboundContinuation = nil
@@ -129,26 +168,25 @@ actor ProtocolExecutor {
         installOutboundPump()
         do {
             let lastWill = try makeTransportLastWill()
+            await transport.setDiagnostics(transportDiagnostics)
             await transport.setFailureHandler { [weak self] failure in
                 Task { await self?.transportFailed(failure.detail) }
             }
+            await transport.setRecoveryHandler { [weak self] in
+                Task { await self?.transportRecovered() }
+            }
             try await transport.start(
-                receive: { [weak self, continuation = ingressPipe.continuation, overflowGate = ingressOverflowGate] frame in
-                    let result = continuation.yield(frame)
-                    if case .dropped = result, overflowGate.claim() {
-                        Task { await self?.ingressOverflow() }
-                    }
-                },
+                receive: transportReceiveHandler(),
                 lastWill: lastWill
             )
             guard state == .starting, transportEpoch == epoch else {
                 await transport.stop()
                 return (.notStarted, "runtime start was superseded by another lifecycle transition")
             }
-            try await transport.installSubscriptions(namespace: definition.namespace)
+            try await transport.activateProfileInterest(namespace: definition.namespace)
             guard state == .starting, transportEpoch == epoch else {
                 await transport.stop()
-                return (.notStarted, "runtime start was superseded while installing subscriptions")
+                return (.notStarted, "runtime start was superseded while activating profile interest")
             }
             try await publishLifecycleAdvertisement(nowMS: monotonicNowMS())
             try await publishIoAdvertisements(nowMS: monotonicNowMS())
@@ -200,11 +238,12 @@ actor ProtocolExecutor {
                 await drainOutboundPump()
             }
             do {
-                try await transport.removeSubscriptions(namespace: definition.namespace)
+                try await transport.deactivateProfileInterest(namespace: definition.namespace)
             } catch {
                 emit(.init(kind: .transportFailed, detail: runtimeErrorDetail(error)))
             }
             await transport.stop()
+            transportExternalRoutes.removeAll()
             if !hasLifecycleEffects {
                 await drainOutboundPump()
             }
@@ -232,59 +271,38 @@ actor ProtocolExecutor {
     func reconnect() async {
         guard state == .running || state == .reconnecting else { return }
         state = .reconnecting
+        recoveryArrivedBeforeFailure = false
+        softRecoveryConsumed = false
         transportEpoch &+= 1
         let epoch = transportEpoch
         processor.resetTransport()
         clearIoTransportState()
         diagnosticsSnapshotValue.reconnects += 1
-        transportIngressContinuation?.finish()
-        transportIngressTask?.cancel()
-        let ingressPipe = AsyncStream<RuntimeInboundFrame>.makeStream(
-            bufferingPolicy: .bufferingOldest(definition.capacities.ingress)
-        )
-        ingressOverflowGate.reset()
-        transportIngressContinuation = ingressPipe.continuation
-        transportIngressTask = Task { [weak self, stream = ingressPipe.stream] in
-            for await frame in stream {
-                guard !Task.isCancelled else { break }
-                await self?.receiveTransport(frame, epoch: epoch)
-            }
-        }
+        cancelIngressPump()
+        installTransportIngressPump(epoch: epoch)
         do {
             let lastWill = try makeTransportLastWill()
             await stopOutboundPump()
             // A broker-side close can race this explicit reconnect.  The
             // binding may therefore already have lost its subscription
-            // session; removal is best-effort in that path and a fresh
-            // subscription installation below is authoritative.
-            try? await transport.removeSubscriptions(namespace: definition.namespace)
+            // session; deactivation is best-effort in that path and fresh
+            // profile-interest activation below is authoritative.
+            try? await transport.deactivateProfileInterest(namespace: definition.namespace)
             await transport.stop()
+            transportExternalRoutes.removeAll()
             installOutboundPump()
             await transport.setFailureHandler { [weak self] failure in
                 Task { await self?.transportFailed(failure.detail) }
             }
+            await transport.setRecoveryHandler { [weak self] in
+                Task { await self?.transportRecovered() }
+            }
             try await transport.start(
-                receive: { [weak self, continuation = ingressPipe.continuation, overflowGate = ingressOverflowGate] frame in
-                    let result = continuation.yield(frame)
-                    if case .dropped = result, overflowGate.claim() {
-                        Task { await self?.ingressOverflow() }
-                    }
-                },
+                receive: transportReceiveHandler(),
                 lastWill: lastWill
             )
             guard state == .reconnecting, transportEpoch == epoch else { return }
-            try await transport.installSubscriptions(namespace: definition.namespace)
-            guard state == .reconnecting, transportEpoch == epoch else { return }
-            try await publishLifecycleAdvertisement(nowMS: monotonicNowMS())
-            try await publishIoAdvertisements(nowMS: monotonicNowMS())
-            guard state == .reconnecting, transportEpoch == epoch else { return }
-            state = .running
-            await startRuntimeModules(restarting: true)
-            // Replay effects that were already accepted before the last
-            // transport failure ahead of operations accepted while
-            // reconnecting, preserving publication order.
-            replayQueuedOutboundEffects()
-            flushOfflineOperations(nowMS: monotonicNowMS())
+            try await finishTransportRecovery(epoch: epoch, activateProfileInterest: true)
         } catch {
             guard state == .reconnecting, transportEpoch == epoch else { return }
             // A transport failure while recovering is no more terminal than one
@@ -308,6 +326,86 @@ actor ProtocolExecutor {
             detail: "transport ingress queue is full",
             diagnostic: .capacityExceeded
         )
+    }
+
+    private func installTransportIngressPump(epoch: UInt64) {
+        let ingressPipe = AsyncStream<RuntimeInboundFrame>.makeStream(
+            bufferingPolicy: .bufferingOldest(definition.capacities.ingress)
+        )
+        transportIngressContinuation = ingressPipe.continuation
+        transportIngressRelay.install(ingressPipe.continuation)
+        transportIngressTask = Task { [weak self, stream = ingressPipe.stream] in
+            for await frame in stream {
+                guard !Task.isCancelled else { break }
+                await self?.receiveTransport(frame, epoch: epoch)
+            }
+        }
+    }
+
+    private func transportReceiveHandler() -> @Sendable (RuntimeInboundFrame) -> Void {
+        { [weak self, ingressRelay = transportIngressRelay] frame in
+            if ingressRelay.yield(frame) {
+                Task { await self?.ingressOverflow() }
+            }
+        }
+    }
+
+    private func finishTransportRecovery(epoch: UInt64, activateProfileInterest: Bool) async throws {
+        guard state == .reconnecting, transportEpoch == epoch else { return }
+        if activateProfileInterest {
+            try await transport.activateProfileInterest(namespace: definition.namespace)
+            guard state == .reconnecting, transportEpoch == epoch else { return }
+        }
+        try await publishLifecycleAdvertisement(nowMS: monotonicNowMS())
+        try await publishIoAdvertisements(nowMS: monotonicNowMS())
+        guard state == .reconnecting, transportEpoch == epoch else { return }
+        state = .running
+        softRecoveryConsumed = true
+        await startRuntimeModules(restarting: true)
+        // Replay effects that were accepted before failure ahead of work
+        // accepted while reconnecting, preserving publication order.
+        replayQueuedOutboundEffects()
+        flushOfflineOperations(nowMS: monotonicNowMS())
+    }
+
+    private func transportRecovered() async {
+        guard state == .running || state == .reconnecting else { return }
+        guard state == .reconnecting else {
+            guard !softRecoveryConsumed, !recoveryArrivedBeforeFailure else { return }
+            recoveryArrivedBeforeFailure = true
+            return
+        }
+        guard !softRecoveryConsumed, !softRecoveryInProgress else { return }
+        softRecoveryInProgress = true
+        defer { softRecoveryInProgress = false }
+        let epoch = transportEpoch
+        await cancelAndDrainIngressPump()
+        await stopOutboundPump()
+        guard state == .reconnecting, transportEpoch == epoch else { return }
+        installTransportIngressPump(epoch: epoch)
+        installOutboundPump()
+        do {
+            try await releaseRetainedExternalRoutes(epoch: epoch)
+            try await finishTransportRecovery(epoch: epoch, activateProfileInterest: false)
+        } catch {
+            guard state == .reconnecting, transportEpoch == epoch else { return }
+            diagnosticsSnapshotValue.transportFailures += 1
+            emit(.init(kind: .transportFailed, detail: runtimeErrorDetail(error)))
+        }
+    }
+
+    /// Releases exact external routes that a soft-recovered transport still
+    /// holds after `processor.resetTransport()` forgot their associations.
+    ///
+    /// Without this, each recovery episode would leave one subscription (or
+    /// reference) per active route behind, and repeated recoveries would
+    /// exhaust the transport's bounded external-route table.
+    private func releaseRetainedExternalRoutes(epoch: UInt64) async throws {
+        while let transition = transportExternalRoutes.last {
+            try await transport.perform(.externalRouteDeactivated(transition))
+            guard state == .reconnecting, transportEpoch == epoch else { return }
+            transportExternalRoutes.removeLast()
+        }
     }
 
     func lifecycleState() -> RuntimeLifecycleState { state }
@@ -371,7 +469,19 @@ actor ProtocolExecutor {
     func events() -> AsyncStream<RuntimeEvent> { eventStream }
 
     func diagnostics() -> AsyncStream<RuntimeDiagnostic> { diagnosticStream }
-    func diagnosticsSnapshot() -> RuntimeDiagnostics { diagnosticsSnapshotValue }
+    func diagnosticsSnapshot() -> RuntimeDiagnostics {
+        var snapshot = diagnosticsSnapshotValue
+        let transport = transportDiagnostics.snapshot()
+        snapshot.receivedFrames = transport.receivedFrames
+        snapshot.publishedFrames = transport.publishedFrames
+        snapshot.receiveDrops = transport.receiveDrops
+        snapshot.oversizedSamples = transport.oversizedSamples
+        snapshot.sessionOpens = transport.sessionOpens
+        snapshot.sessionFailures = transport.sessionFailures
+        snapshot.transportReconnects = transport.reconnects
+        snapshot.activeExternalSubscriptions = transport.activeExternalSubscriptions
+        return snapshot
+    }
 
     func terminalFailure() -> (AxolotyError.RuntimeErrorCode, String)? { terminalFailureValue }
 
@@ -405,11 +515,17 @@ actor ProtocolExecutor {
             decrementOutbound()
         case let .typedIoPublication(_, token: typedToken):
             decrementOutbound()
-            guard typedIoState.completeTransportPublication(typedToken) else { return }
-            flushPendingIo(at: typedToken.slot, nowMS: monotonicNowMS())
-        case .externalRouteActivated, .externalRouteDeactivated:
-            break
+            if typedIoState.completeTransportPublication(typedToken) {
+                flushPendingIo(at: typedToken.slot, nowMS: monotonicNowMS())
+            }
+        case let .externalRouteActivated(transition):
+            if delivered { transportExternalRoutes.append(transition) }
+        case let .externalRouteDeactivated(transition):
+            if delivered, let index = transportExternalRoutes.firstIndex(of: transition) {
+                transportExternalRoutes.remove(at: index)
+            }
         }
+        flushOfflineOperations(nowMS: monotonicNowMS())
     }
 
     private func installOutboundPump() {
@@ -519,6 +635,9 @@ actor ProtocolExecutor {
     }
 
     private func flushOfflineOperations(nowMS: UInt32) {
+        guard state == .running, !offlineOperations.isEmpty, !flushingOfflineOperations else { return }
+        flushingOfflineOperations = true
+        defer { flushingOfflineOperations = false }
         while let operation = offlineOperations.first {
             let receipt = publish(operation, nowMS: nowMS)
             switch receipt {
@@ -918,13 +1037,20 @@ actor ProtocolExecutor {
     }
 
     private func cancelIngressPump() {
+        transportIngressRelay.finish()
         transportIngressContinuation?.finish()
         transportIngressContinuation = nil
         transportIngressTask?.cancel()
         transportIngressTask = nil
     }
 
-    private func transportFailed(_ detail: String) {
+    private func cancelAndDrainIngressPump() async {
+        let task = transportIngressTask
+        cancelIngressPump()
+        await task?.value
+    }
+
+    private func transportFailed(_ detail: String) async {
         diagnosticsSnapshotValue.transportFailures += 1
         guard state == .running || state == .reconnecting || state == .starting else { return }
         emit(.init(kind: .transportFailed, detail: detail))
@@ -932,22 +1058,27 @@ actor ProtocolExecutor {
         // terminal runtime failure.  Leave the executor in an explicit
         // reconnecting state so the caller can restore the network path and
         // invoke `reconnect()` without losing the immutable definition.
-        guard state == .running else { return }
+        guard state == .running else {
+            if state == .reconnecting { softRecoveryConsumed = false }
+            return
+        }
         state = .reconnecting
+        softRecoveryConsumed = false
         transportEpoch &+= 1
         processor.resetTransport()
         clearIoTransportState()
         diagnosticsSnapshotValue.reconnects += 1
-        transportIngressContinuation?.finish()
-        transportIngressTask?.cancel()
-        transportIngressContinuation = nil
-        transportIngressTask = nil
+        cancelIngressPump()
         outboundContinuation?.finish()
         outboundTask?.cancel()
         outboundContinuation = nil
         outboundTask = nil
         outboundQueued = 0
         queuedTransportEffects = 0
+        if recoveryArrivedBeforeFailure {
+            recoveryArrivedBeforeFailure = false
+            await transportRecovered()
+        }
     }
 
     func failRuntime(

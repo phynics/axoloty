@@ -1,0 +1,11 @@
+// Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
+
+// SwiftPM system-library module for the pinned prebuilt zenoh-c archive.
+// Include and link flags come from `pkgConfig: "zenohc"`; the module only
+// names the library SwiftPM must link. Only CAxolotyZenoh may import this
+// module; no other Axoloty target sees Zenoh's C API.
+module CZenohC [system] {
+    header "shim.h"
+    link "zenohc"
+    export *
+}
