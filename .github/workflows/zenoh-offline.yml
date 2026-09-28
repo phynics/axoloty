@@ -70,6 +70,6 @@ jobs:
         env:
           CONTAINER_CREATE_TIMEOUT_SECONDS: "300"
         run: >-
-          make test-tier TIER=zenoh-offline
+          CONTAINER_NETWORK=host make test-tier TIER=zenoh-offline
           CONTAINER_RUNTIME=podman BUILD_DIR=.build BUILD_LOCK=0
           SPM_CACHE_DIR=.swiftpm-cache
