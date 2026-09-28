@@ -64,7 +64,7 @@ struct AxolotyZenohLiveIntegration {
         }
 
         try waitForRouter(process: router, port: port)
-        print("ZENOH_LIVE_ROUTER_READY version=1.10.0 endpoint=\(endpoint)")
+        FileHandle.standardError.write(Data("ZENOH_LIVE_ROUTER_READY version=1.10.0 endpoint=\(endpoint)\n".utf8))
         var childEnvironment = zenohC.environment(extending: environment)
         childEnvironment["AXOLOTY_ZENOH_LIVE_ENDPOINT"] = endpoint
         childEnvironment["AXOLOTY_ZENOH_LIVE_ROUTER_PID"] = String(router.processIdentifier)

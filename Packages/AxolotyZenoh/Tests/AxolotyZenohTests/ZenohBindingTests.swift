@@ -539,6 +539,11 @@ final class RecordingZenohSession: ZenohBindingSession {
         return unsubscribeResult
     }
 
+    /// Reads recorded operations under the binding's serialization lock.
+    func withOperations<Result>(_ body: ([Operation]) -> Result) -> Result {
+        ZenohBinding.sessionRegistryLock.withLock { body(operations) }
+    }
+
     func enqueue(_ entry: PollEntry, for subscription: Int) {
         queuedPolls[subscription, default: []].append(entry)
     }

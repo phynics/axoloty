@@ -534,9 +534,15 @@ test("the declared tiers are the whole taxonomy", () => {
   const document = JSON.parse(fs.readFileSync(path.join(root, "Tests/Support/test-tiers.json"), "utf8"));
   assert.deepEqual(document.tiers.map(tier => tier.id), ["ci", "wire", "embedded", "release", "zenoh-live", "zenoh-offline"]);
   assert.equal(document.tiers.find(tier => tier.id === "zenoh-live").attested, true);
+  // The live node downloads the pinned zenohd and zenoh-c releases.
+  assert.equal(document.tiers.find(tier => tier.id === "zenoh-live").network, "external");
+  assert.equal(document.nodes.find(node => node.id === "zenoh-live-integration").network, "external");
   assert.ok(document.tiers.find(tier => tier.id === "release").nodes.includes("zenoh-live-integration"));
   assert.ok(!document.tiers.find(tier => tier.id === "ci").nodes.includes("zenoh-live-integration"));
   assert.equal(document.tiers.find(tier => tier.id === "zenoh-offline").attested, false);
+  // The offline package node downloads the pinned zenoh-c release.
+  assert.equal(document.tiers.find(tier => tier.id === "zenoh-offline").network, "external");
+  assert.equal(document.nodes.find(node => node.id === "zenoh-offline-package").network, "external");
   for (const id of ["zenoh-offline-package", "zenoh-core-embedded"]) {
     assert.ok(document.tiers.find(tier => tier.id === "release").nodes.includes(id), id);
     assert.ok(!document.tiers.find(tier => tier.id === "ci").nodes.includes(id), id);

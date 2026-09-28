@@ -204,8 +204,11 @@ struct MQTTBindingAdapterSeamTests {
         let binding = try makeBinding(client: client, delegate: delegate)
         try await binding.start { _ in }
 
-        for route in ["wild/+", "wild/#", "quoted/\"topic", #"backslash/\topic"#] {
+        // The portable route admits MQTT wildcards; MQTT must reject them.
+        for route in ["wild/+", "wild/#"] {
             _ = try ExternalIoRoute(route)
+        }
+        for route in ["wild/+", "wild/#", "quoted/\"topic", #"backslash/\topic"#] {
             await expectInvalidRoute {
                 try await binding.perform(.externalRouteActivated(transition(route)))
             }

@@ -329,6 +329,50 @@ extension AxolotyRuntimeTests {
         await runtime.stop()
     }
 
+    @Test("soft recovery releases active exact external routes on the retained transport")
+    func softRecoveryReleasesActiveExternalRoutes() async throws {
+        let transport = TestTransport()
+        let sourceID = "00000000-0000-4000-8000-000000000811"
+        let actorMetadata: StaticString = "{\"objectId\":\"00000000-0000-4000-8000-000000000812\",\"objectType\":\"coaty.IoActor\",\"name\":\"recovery-actor\",\"coreType\":\"IoActor\",\"valueType\":\"com.example.Bool\"}"
+        var builder = try RuntimeBuilder(sourceID: .zero, namespace: "test")
+        _ = try builder.ioActor(
+            metadata: Object<IoActorMetadata>(decoding: ByteSlice(
+                bytes: actorMetadata.utf8Start,
+                length: actorMetadata.utf8CodeUnitCount
+            )),
+            as: Bool.self
+        ) { _, _ in }
+        let runtime = AxolotyRuntime(definition: try builder.finish(), transport: transport)
+        try await runtime.start()
+
+        for cycle in 0..<3 {
+            let route = "recovery/external/\(cycle)"
+            await transport.deliver(.profile(
+                route: "coaty/3/test/ASC/\(sourceID)",
+                payload: Array("{\"ioSourceId\":\"\(sourceID)\",\"ioActorId\":\"00000000-0000-4000-8000-000000000812\",\"associatingRoute\":\"\(route)\"}".utf8),
+                nowMS: 1
+            ))
+            try await waitUntil("external route \(cycle) to activate") {
+                await transport.externalSubscriptions().last == route
+            }
+            await transport.fail(TestTransportFailure())
+            try await waitUntil("runtime to enter reconnecting state") {
+                await runtime.state() == .reconnecting
+            }
+            await transport.recover()
+            try await waitUntil("soft recovery to release the route and resume") {
+                let released = await transport.externalUnsubscriptions().last == route
+                let state = await runtime.state()
+                return released && state == .running
+            }
+            #expect(await runtime.diagnosticsSnapshot().activeExternalSubscriptions == 0)
+        }
+        #expect(await transport.externalSubscriptions().count == 3)
+        #expect(await transport.externalUnsubscriptions().count == 3)
+        #expect(await transport.lifecycle.filter { $0 == "stop" }.isEmpty)
+        await runtime.stop()
+    }
+
     @Test("reconnect drains offline publications after replay frees dispatch capacity")
     func reconnectDrainsOfflinePublicationsAfterReplayFreesCapacity() async throws {
         let definition = try RuntimeBuilder(

@@ -38,7 +38,7 @@ struct AxolotyZenohOfflineSuite {
         let zenohC = try toolchain.provisionZenohC(
             in: root.appending(path: ".build/zenoh-offline/dependencies/zenoh-c")
         )
-        print("ZENOH_OFFLINE_C_READY version=\(AxolotyZenohToolchain.version)")
+        FileHandle.standardError.write(Data("ZENOH_OFFLINE_C_READY version=\(AxolotyZenohToolchain.version)\n".utf8))
         // An inherited live endpoint would enable the router suite; this tier
         // proves the package without one.
         let childEnvironment = zenohC.environment(extending: environment)

@@ -150,7 +150,7 @@ struct AxolotyZenohToolchain {
     ///   - childEnvironment: The child environment; the toolchain environment
     ///     when `nil`.
     ///   - streamsOutput: Whether the child writes directly to this process's
-    ///     standard output and error instead of a captured pipe.
+    ///     standard error instead of a captured pipe.
     /// - Returns: The captured combined output, or an empty string when
     ///   streaming.
     /// - Throws: `AxolotyZenohCommandError` when the command cannot start or
@@ -169,7 +169,8 @@ struct AxolotyZenohToolchain {
         let output: Pipe?
         if streamsOutput {
             output = nil
-            process.standardOutput = FileHandle.standardOutput
+            // Child diagnostics stay off machine-readable stdout.
+            process.standardOutput = FileHandle.standardError
             process.standardError = FileHandle.standardError
         } else {
             let pipe = Pipe()
