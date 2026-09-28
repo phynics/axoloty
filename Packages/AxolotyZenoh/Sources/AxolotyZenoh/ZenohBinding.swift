@@ -101,6 +101,10 @@ public final class ZenohBinding: AxolotyRuntimeTransport, @unchecked Sendable {
     ///
     /// - Note: The `lastWill` overload intentionally ignores its last-will
     ///   argument because Zenoh's v1 client profile has no broker last-will.
+    ///
+    /// - Parameter receive: Callback for copied inbound frames.
+    /// - Throws: ``AxolotyError`` when the binding is already started or the
+    ///   Zenoh session cannot open.
     public func start(
         receive: @escaping @Sendable (RuntimeInboundFrame) -> Void
     ) async throws(AxolotyError) {
@@ -125,6 +129,8 @@ public final class ZenohBinding: AxolotyRuntimeTransport, @unchecked Sendable {
     }
 
     /// Stores the callback for failures reported by the receive pump.
+    ///
+    /// - Parameter handler: The runtime's transport-failure callback.
     public func setFailureHandler(
         _ handler: @escaping @Sendable (RuntimeTransportFailure) -> Void
     ) async {
@@ -139,6 +145,8 @@ public final class ZenohBinding: AxolotyRuntimeTransport, @unchecked Sendable {
     }
 
     /// Stores the runtime-owned transport counter sink.
+    ///
+    /// - Parameter diagnostics: Shared fixed-size counter sink.
     public func setDiagnostics(_ diagnostics: RuntimeTransportDiagnostics) async {
         Self.sessionRegistryLock.withLock { self.diagnostics = diagnostics }
     }
@@ -189,6 +197,11 @@ public final class ZenohBinding: AxolotyRuntimeTransport, @unchecked Sendable {
     /// left retained handles after rollback failed, first deactivate that same
     /// namespace; a repeated activation with incomplete retained state fails
     /// rather than silently duplicating or losing subscriptions.
+    ///
+    /// - Parameter namespace: The runtime's immutable Coaty namespace.
+    /// - Throws: ``AxolotyError`` when the binding is stopped, a different
+    ///   namespace is active, retained state is incomplete, or Zenoh rejects a
+    ///   declaration.
     public func activateProfileInterest(namespace: String) async throws(AxolotyError) {
         try activateProfileInterestLocked(namespace: namespace)
     }
@@ -199,6 +212,11 @@ public final class ZenohBinding: AxolotyRuntimeTransport, @unchecked Sendable {
     /// may reach this method after transport startup failed. The runtime's
     /// reconnect ordering deactivates while started, then stops and starts the
     /// binding before reactivating its immutable namespace.
+    ///
+    /// - Parameter namespace: The namespace passed to
+    ///   ``activateProfileInterest(namespace:)``.
+    ///   A different namespace is a no-op.
+    /// - Throws: ``AxolotyError`` when Zenoh rejects an undeclaration.
     public func deactivateProfileInterest(namespace: String) async throws(AxolotyError) {
         try deactivateProfileInterestLocked(namespace: namespace)
     }

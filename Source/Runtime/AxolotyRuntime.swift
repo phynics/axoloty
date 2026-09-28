@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
-// Follow-up: split cohesive runtime sections when file-private seams can remain narrow.
+// Splitting this file is tracked by epic #796
+// (https://github.com/phynics/axoloty/issues/796), per the PR #956 review.
 // swiftlint:disable file_length
 
 import AxolotyProtocol
@@ -90,6 +91,14 @@ actor ProtocolExecutor {
     /// Bounded by `definition.capacities.dispatch`, mirroring
     /// `queuedTransportEffects`.
     private var pendingOutboundEffects: [RuntimeQueuedTransportEffect] = []
+    /// Exact external routes the transport has confirmed as active.
+    ///
+    /// `processor.resetTransport()` forgets their associations on failure,
+    /// but a soft recovery keeps the transport session and its subscriptions.
+    /// `transportRecovered()` releases these routes before peers re-associate.
+    /// Bounded by the processor's association capacity; cleared whenever the
+    /// transport is stopped.
+    private var transportExternalRoutes: [OwnedExternalRouteTransition] = []
     var diagnosticsSnapshotValue = RuntimeDiagnostics()
     private let transportDiagnostics = RuntimeTransportDiagnostics()
     var typedIoState: RuntimeTypedIoState
@@ -234,6 +243,7 @@ actor ProtocolExecutor {
                 emit(.init(kind: .transportFailed, detail: runtimeErrorDetail(error)))
             }
             await transport.stop()
+            transportExternalRoutes.removeAll()
             if !hasLifecycleEffects {
                 await drainOutboundPump()
             }
@@ -279,6 +289,7 @@ actor ProtocolExecutor {
             // profile-interest activation below is authoritative.
             try? await transport.deactivateProfileInterest(namespace: definition.namespace)
             await transport.stop()
+            transportExternalRoutes.removeAll()
             installOutboundPump()
             await transport.setFailureHandler { [weak self] failure in
                 Task { await self?.transportFailed(failure.detail) }
@@ -374,13 +385,27 @@ actor ProtocolExecutor {
         installTransportIngressPump(epoch: epoch)
         installOutboundPump()
         do {
+            try await releaseRetainedExternalRoutes(epoch: epoch)
             try await finishTransportRecovery(epoch: epoch, activateProfileInterest: false)
         } catch {
             guard state == .reconnecting, transportEpoch == epoch else { return }
             diagnosticsSnapshotValue.transportFailures += 1
             emit(.init(kind: .transportFailed, detail: runtimeErrorDetail(error)))
         }
-        softRecoveryConsumed = true
+    }
+
+    /// Releases exact external routes that a soft-recovered transport still
+    /// holds after `processor.resetTransport()` forgot their associations.
+    ///
+    /// Without this, each recovery episode would leave one subscription (or
+    /// reference) per active route behind, and repeated recoveries would
+    /// exhaust the transport's bounded external-route table.
+    private func releaseRetainedExternalRoutes(epoch: UInt64) async throws {
+        while let transition = transportExternalRoutes.last {
+            try await transport.perform(.externalRouteDeactivated(transition))
+            guard state == .reconnecting, transportEpoch == epoch else { return }
+            transportExternalRoutes.removeLast()
+        }
     }
 
     func lifecycleState() -> RuntimeLifecycleState { state }
@@ -493,8 +518,12 @@ actor ProtocolExecutor {
             if typedIoState.completeTransportPublication(typedToken) {
                 flushPendingIo(at: typedToken.slot, nowMS: monotonicNowMS())
             }
-        case .externalRouteActivated, .externalRouteDeactivated:
-            break
+        case let .externalRouteActivated(transition):
+            if delivered { transportExternalRoutes.append(transition) }
+        case let .externalRouteDeactivated(transition):
+            if delivered, let index = transportExternalRoutes.firstIndex(of: transition) {
+                transportExternalRoutes.remove(at: index)
+            }
         }
         flushOfflineOperations(nowMS: monotonicNowMS())
     }
@@ -1036,7 +1065,6 @@ actor ProtocolExecutor {
         state = .reconnecting
         softRecoveryConsumed = false
         transportEpoch &+= 1
-        let failedEpoch = transportEpoch
         processor.resetTransport()
         clearIoTransportState()
         diagnosticsSnapshotValue.reconnects += 1
@@ -1050,10 +1078,6 @@ actor ProtocolExecutor {
         if recoveryArrivedBeforeFailure {
             recoveryArrivedBeforeFailure = false
             await transportRecovered()
-        } else {
-            // Capture the epoch so a delayed recovery cannot revive a later
-            // explicit lifecycle transition.
-            guard transportEpoch == failedEpoch else { return }
         }
     }
 

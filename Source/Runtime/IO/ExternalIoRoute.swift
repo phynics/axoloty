@@ -7,8 +7,11 @@ import AxolotyWire
 /// A validated exact route for an external IO source.
 ///
 /// The portable grammar is carrier-neutral: bounded UTF-8, no control scalars,
-/// and no empty slash-separated segments. Each transport applies its own
-/// additional route rules when it uses this value.
+/// and no empty slash-separated segments. The route is also advertised as
+/// IoSource `externalRoute` JSON string content, so it rejects quotation marks
+/// and backslashes rather than emitting an escape a peer would decode as a
+/// different route. Each transport applies its own additional route rules when
+/// it uses this value.
 public struct ExternalIoRoute: Sendable, Hashable {
     let route: String
     let routeBytes: BoundedEncodedText<256>
@@ -17,7 +20,8 @@ public struct ExternalIoRoute: Sendable, Hashable {
     ///
     /// - Parameter route: A bounded exact key with non-empty path segments.
     /// - Throws: ``AxolotyError`` when the route is empty, oversized, contains
-    ///   a control scalar, or has an empty slash-separated segment.
+    ///   a control scalar, a quotation mark, or a backslash, or has an empty
+    ///   slash-separated segment.
     public init(_ route: String) throws(AxolotyError) {
         let bytes = Array(route.utf8)
         guard !bytes.isEmpty, bytes.count <= WireBufferConfig.maxTopicLength else {
@@ -25,6 +29,11 @@ public struct ExternalIoRoute: Sendable, Hashable {
         }
         guard !route.unicodeScalars.contains(where: { $0.properties.generalCategory == .control }) else {
             throw AxolotyError.invalidArgument(argument: "route", reason: "must not contain control characters")
+        }
+        // Quotes and backslashes are not directly representable as JSON
+        // string content in the advertised IoSource metadata.
+        guard !bytes.contains(0x22), !bytes.contains(0x5C) else {
+            throw AxolotyError.invalidArgument(argument: "route", reason: "must not contain quotation marks or backslashes")
         }
         guard bytes.first != 0x2F, bytes.last != 0x2F else {
             throw AxolotyError.invalidArgument(argument: "route", reason: "must not start or end with '/'")

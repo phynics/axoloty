@@ -12,6 +12,8 @@ public enum AxolotyTestNetworkPolicy: String, Codable, Equatable, Sendable {
     case isolatedBroker = "isolated-broker"
     /// The command owns isolated containers and their network.
     case isolatedContainers = "isolated-containers"
+    /// The command downloads pinned artifacts from the public internet.
+    case external
 }
 
 /// The broker lifecycle declared by a canonical test execution entry.

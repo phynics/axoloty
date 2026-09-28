@@ -534,6 +534,9 @@ test("the declared tiers are the whole taxonomy", () => {
   const document = JSON.parse(fs.readFileSync(path.join(root, "Tests/Support/test-tiers.json"), "utf8"));
   assert.deepEqual(document.tiers.map(tier => tier.id), ["ci", "wire", "embedded", "release", "zenoh-live"]);
   assert.equal(document.tiers.find(tier => tier.id === "zenoh-live").attested, true);
+  // The live node downloads the pinned zenohd and zenoh-c releases.
+  assert.equal(document.tiers.find(tier => tier.id === "zenoh-live").network, "external");
+  assert.equal(document.nodes.find(node => node.id === "zenoh-live-integration").network, "external");
   assert.ok(document.tiers.find(tier => tier.id === "release").nodes.includes("zenoh-live-integration"));
   assert.ok(!document.tiers.find(tier => tier.id === "ci").nodes.includes("zenoh-live-integration"));
   assert.equal("plans" in document, false);

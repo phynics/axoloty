@@ -66,6 +66,8 @@ public protocol AxolotyRuntimeTransport: AnyObject, Sendable {
     /// may be called from a transport event-loop thread.
     /// Implementations must wrap foreign failures before invoking it and must not
     /// retain borrowed protocol data in this callback.
+    ///
+    /// - Parameter handler: Callback invoked with each post-start failure.
     func setFailureHandler(_ handler: @escaping @Sendable (RuntimeTransportFailure) -> Void) async
     /// Installs a callback when a transport that reported a recoverable failure is ready again.
     ///
@@ -92,8 +94,14 @@ public protocol AxolotyRuntimeTransport: AnyObject, Sendable {
     func stop() async
 
     /// Activates interest in the profile namespace before identity is advertised.
+    ///
+    /// - Parameter namespace: The runtime's immutable Coaty namespace.
+    /// - Throws: A transport error when the interest cannot be declared.
     func activateProfileInterest(namespace: String) async throws
     /// Deactivates interest in the profile namespace during graceful shutdown.
+    ///
+    /// - Parameter namespace: The namespace previously activated.
+    /// - Throws: A transport error when the interest cannot be removed.
     func deactivateProfileInterest(namespace: String) async throws
     /// Classifies an association route using binding-owned knowledge.
     ///
@@ -120,6 +128,9 @@ public extension AxolotyRuntimeTransport {
         try await start(receive: receive)
     }
 
+    /// Does nothing for transports that do not report asynchronous failures.
+    ///
+    /// - Parameter handler: Failure callback supplied by the runtime.
     func setFailureHandler(_ handler: @escaping @Sendable (RuntimeTransportFailure) -> Void) async { _ = handler }
     /// Does nothing for transports that do not report asynchronous recovery.
     ///
@@ -129,8 +140,19 @@ public extension AxolotyRuntimeTransport {
     ///
     /// - Parameter diagnostics: Runtime-owned counter sink.
     func setDiagnostics(_ diagnostics: RuntimeTransportDiagnostics) async { _ = diagnostics }
+    /// Does nothing for transports without separate profile interest.
+    ///
+    /// - Parameter namespace: The runtime's Coaty namespace, unused.
     func activateProfileInterest(namespace: String) async throws {}
+    /// Does nothing for transports without separate profile interest.
+    ///
+    /// - Parameter namespace: The runtime's Coaty namespace, unused.
     func deactivateProfileInterest(namespace: String) async throws {}
+    /// Classifies every nonempty route as Coaty traffic.
+    ///
+    /// - Parameter route: A borrowed association route.
+    /// - Returns: ``ProtocolRouteClassification/unrelated`` for an empty
+    ///   route, otherwise ``ProtocolRouteClassification/coaty``.
     func classifyRoute(_ route: ByteSlice) -> ProtocolRouteClassification {
         route.length == 0 ? .unrelated : .coaty
     }
