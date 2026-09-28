@@ -5,9 +5,9 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-// Canonical tiers declare the runtime boundary a run needs. Live carrier tiers
-// remain separate from ordinary offline verification.
-const expectedTiers = new Set(["ci", "wire", "embedded", "release", "zenoh-live"]);
+// Canonical tiers declare the runtime boundary a run needs. Zenoh carrier
+// tiers, live or offline, remain separate from ordinary verification.
+const expectedTiers = new Set(["ci", "wire", "embedded", "release", "zenoh-live", "zenoh-offline"]);
 const networkModes = new Set(["none", "isolated", "isolated-broker", "isolated-containers"]);
 const brokerModes = new Set(["none", "local", "isolated"]);
 const hardwareModes = new Set(["forbidden", "optional", "required"]);

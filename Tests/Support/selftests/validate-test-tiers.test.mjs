@@ -532,10 +532,15 @@ test("validator checks Make ownership when invocation data is supplied", () => {
 
 test("the declared tiers are the whole taxonomy", () => {
   const document = JSON.parse(fs.readFileSync(path.join(root, "Tests/Support/test-tiers.json"), "utf8"));
-  assert.deepEqual(document.tiers.map(tier => tier.id), ["ci", "wire", "embedded", "release", "zenoh-live"]);
+  assert.deepEqual(document.tiers.map(tier => tier.id), ["ci", "wire", "embedded", "release", "zenoh-live", "zenoh-offline"]);
   assert.equal(document.tiers.find(tier => tier.id === "zenoh-live").attested, true);
   assert.ok(document.tiers.find(tier => tier.id === "release").nodes.includes("zenoh-live-integration"));
   assert.ok(!document.tiers.find(tier => tier.id === "ci").nodes.includes("zenoh-live-integration"));
+  assert.equal(document.tiers.find(tier => tier.id === "zenoh-offline").attested, false);
+  for (const id of ["zenoh-offline-package", "zenoh-core-embedded"]) {
+    assert.ok(document.tiers.find(tier => tier.id === "release").nodes.includes(id), id);
+    assert.ok(!document.tiers.find(tier => tier.id === "ci").nodes.includes(id), id);
+  }
   assert.equal("plans" in document, false);
   assert.equal("releaseGates" in document, false);
   assert.equal("ciRequiredGates" in document, false);
@@ -576,6 +581,45 @@ test("zenoh-live selects the declared SwiftPM suite and every router scenario", 
     "the runtime enters soft recovery and resumes after router restart",
     "graceful shutdown closes the router session",
   ]) assert.ok(liveSuite.includes(scenario), scenario);
+});
+
+test("zenoh-offline runs every router-free package test and the Embedded core gate without zenohd", () => {
+  const document = JSON.parse(fs.readFileSync(path.join(root, "Tests/Support/test-tiers.json"), "utf8"));
+  const tier = document.tiers.find(candidate => candidate.id === "zenoh-offline");
+  assert.deepEqual(tier.nodes, ["zenoh-offline-package", "zenoh-core-embedded"]);
+  assert.equal(tier.hardware, "forbidden");
+  assert.equal(tier.broker, "none");
+  assert.ok(!tier.resources.includes("zenoh-live-router"));
+  assert.ok(fs.existsSync(path.join(root, tier.workflow)));
+  // Ordinary verification stays unchanged: the ci category never gains a Zenoh node.
+  assert.ok(!document.requiredGates.some(id => id.startsWith("zenoh-")));
+
+  const nodes = new Map(document.nodes.map(node => [node.id, node]));
+  const packageNode = nodes.get("zenoh-offline-package");
+  assert.deepEqual(packageNode.command.arguments.slice(-3), ["axoloty-tool", "zenoh", "offline"]);
+  assert.equal(packageNode.required, false);
+  assert.ok(!packageNode.resources.includes("zenoh-live-router"));
+  const embeddedNode = nodes.get("zenoh-core-embedded");
+  assert.equal(embeddedNode.command.executable, "Tests/Support/checks/check-embedded-swift-zenoh-core.sh");
+  assert.equal(embeddedNode.network, "none");
+
+  // The offline runner provisions zenoh-c through the shared checksum-verified
+  // path, skips only the router suite, and never launches zenohd.
+  const offlineRunner = fs.readFileSync(path.join(root, "Tools/AxolotyTooling/Commands/AxolotyZenohOfflineSuite.swift"), "utf8");
+  assert.match(offlineRunner, /toolchain\.provisionZenohC\(/);
+  assert.match(offlineRunner, /"--skip", Self\.liveSuite/);
+  assert.match(offlineRunner, /static let liveSuite = "ZenohLiveIntegrationTests"/);
+  assert.doesNotMatch(offlineRunner, /provisionRouter|zenohd"|AXOLOTY_ZENOH_LIVE_ENDPOINT/);
+  const packageManifest = fs.readFileSync(path.join(root, "Packages/AxolotyZenoh/Package.swift"), "utf8");
+  for (const target of ["CAxolotyZenohTests", "AxolotyZenohCoreTests", "AxolotyZenohTests"]) {
+    assert.match(packageManifest, new RegExp(`\\.testTarget\\(\\s*name: "${target}"`), target);
+  }
+
+  const workflow = fs.readFileSync(path.join(root, tier.workflow), "utf8");
+  assert.match(workflow, /branches: \[main, exploration\/zenoh\]/);
+  assert.match(workflow, /make test-tier TIER=zenoh-offline/);
+  assert.match(workflow, /uses: \.\/\.github\/actions\/setup-container/);
+  assert.doesNotMatch(workflow, /CONTAINER_NETWORK=host|curl|sha256sum/);
 });
 
 test("a hardware node cannot hide in a hardware-forbidden category", () => {
