@@ -623,9 +623,9 @@ test("zenoh-offline runs every router-free package test and the Embedded core ga
 
   const workflow = fs.readFileSync(path.join(root, tier.workflow), "utf8");
   assert.match(workflow, /branches: \[main, exploration\/zenoh\]/);
-  assert.match(workflow, /make test-tier TIER=zenoh-offline/);
+  assert.match(workflow, /CONTAINER_NETWORK=host make test-tier TIER=zenoh-offline/);
   assert.match(workflow, /uses: \.\/\.github\/actions\/setup-container/);
-  assert.doesNotMatch(workflow, /CONTAINER_NETWORK=host|curl|sha256sum/);
+  assert.doesNotMatch(workflow, /curl|sha256sum/);
 });
 
 test("a hardware node cannot hide in a hardware-forbidden category", () => {
