@@ -216,41 +216,51 @@ actor ProtocolExecutor {
 
     func stop() async {
         guard state == .running || state == .starting || state == .reconnecting || state == .failed else { return }
-        await withTaskCancellationShield {
-            await stopRuntimeModules()
-            state = .stopping
-            offlineOperations.removeAll(keepingCapacity: true)
-            pendingOutboundEffects.removeAll(keepingCapacity: true)
-            transportEpoch &+= 1
-            let stoppingEpoch = transportEpoch
-            await cancelAndDrainHandlers()
-            typedIoState.clearTransportState()
-            finishIoObservers()
-            cancelIngressPump()
-            let hasLifecycleEffects = lifecycleAdvertisementActive || typedIoState.hasEndpoints
-            do {
-                try enqueueIoDeadvertisements(nowMS: monotonicNowMS())
-                try enqueueLifecycleDeadvertisement(nowMS: monotonicNowMS())
-            } catch {
-                emit(.init(kind: .transportFailed, detail: runtimeErrorDetail(error)))
-            }
-            if hasLifecycleEffects {
-                await drainOutboundPump()
-            }
-            do {
-                try await transport.deactivateProfileInterest(namespace: definition.namespace)
-            } catch {
-                emit(.init(kind: .transportFailed, detail: runtimeErrorDetail(error)))
-            }
-            await transport.stop()
-            transportExternalRoutes.removeAll()
-            if !hasLifecycleEffects {
-                await drainOutboundPump()
-            }
-            guard state == .stopping, transportEpoch == stoppingEpoch else { return }
-            state = .stopped
-            signalTermination()
+        #if canImport(Darwin)
+        // Swift 6.4 strong-links the cancellation-shield runtime entry points
+        // even behind `#available`, so any reference breaks launch on macOS 26
+        // (#971). An awaited task inherits this actor's isolation but not the
+        // caller's cancellation, which keeps the same cleanup guarantee.
+        await Task { await self.performStop() }.value
+        #else
+        await withTaskCancellationShield { await performStop() }
+        #endif
+    }
+
+    private func performStop() async {
+        await stopRuntimeModules()
+        state = .stopping
+        offlineOperations.removeAll(keepingCapacity: true)
+        pendingOutboundEffects.removeAll(keepingCapacity: true)
+        transportEpoch &+= 1
+        let stoppingEpoch = transportEpoch
+        await cancelAndDrainHandlers()
+        typedIoState.clearTransportState()
+        finishIoObservers()
+        cancelIngressPump()
+        let hasLifecycleEffects = lifecycleAdvertisementActive || typedIoState.hasEndpoints
+        do {
+            try enqueueIoDeadvertisements(nowMS: monotonicNowMS())
+            try enqueueLifecycleDeadvertisement(nowMS: monotonicNowMS())
+        } catch {
+            emit(.init(kind: .transportFailed, detail: runtimeErrorDetail(error)))
         }
+        if hasLifecycleEffects {
+            await drainOutboundPump()
+        }
+        do {
+            try await transport.deactivateProfileInterest(namespace: definition.namespace)
+        } catch {
+            emit(.init(kind: .transportFailed, detail: runtimeErrorDetail(error)))
+        }
+        await transport.stop()
+        transportExternalRoutes.removeAll()
+        if !hasLifecycleEffects {
+            await drainOutboundPump()
+        }
+        guard state == .stopping, transportEpoch == stoppingEpoch else { return }
+        state = .stopped
+        signalTermination()
     }
 
     func close() async {
