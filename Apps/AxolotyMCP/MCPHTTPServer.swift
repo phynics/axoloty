@@ -135,18 +135,28 @@ public actor MCPHTTPServer {
 
     /// Stops the HTTP server, closing all active sessions and the channel.
     public func stop() async {
-        await withTaskCancellationShield {
-            cleanupTask?.cancel()
-            cleanupTask = nil
-            let channel = channel
-            self.channel = nil
-            try? await channel?.close()
-            await closeAllSessions()
-            let eventLoopGroup = eventLoopGroup
-            self.eventLoopGroup = nil
-            if let eventLoopGroup {
-                try? await eventLoopGroup.shutdownGracefully()
-            }
+        #if canImport(Darwin)
+        // Swift 6.4 strong-links the cancellation-shield runtime entry points
+        // even behind `#available`, so any reference breaks launch on macOS 26
+        // (#971). An awaited task inherits this actor's isolation but not the
+        // caller's cancellation, which keeps the same cleanup guarantee.
+        await Task { await self.performStop() }.value
+        #else
+        await withTaskCancellationShield { await performStop() }
+        #endif
+    }
+
+    private func performStop() async {
+        cleanupTask?.cancel()
+        cleanupTask = nil
+        let channel = channel
+        self.channel = nil
+        try? await channel?.close()
+        await closeAllSessions()
+        let eventLoopGroup = eventLoopGroup
+        self.eventLoopGroup = nil
+        if let eventLoopGroup {
+            try? await eventLoopGroup.shutdownGracefully()
         }
     }
 

@@ -36,6 +36,11 @@ fork, through CoatySwift 2.4.0, remain documented in the
   under a task cancellation shield, so a cancelled caller still deadvertises,
   unsubscribes, and closes its transport. `AxolotyRuntime.run()` uses an
   asynchronous `defer` to guarantee that shutdown on every exit.
+- The root package and the MCP app build and launch on macOS 26 again. Swift
+  6.4 strong-links the cancellation-shield runtime entry points even behind
+  `#available`, so Darwin builds run runtime and MCP HTTP shutdown in an
+  awaited task that does not inherit the caller's cancellation. Linux keeps
+  the shield.
 - The lifecycle matrix's monotonic millisecond clock no longer clamps
   after 24 days of host uptime. The old `awk` format stopped deadlines from
   advancing on long-running hosts.
