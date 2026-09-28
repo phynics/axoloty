@@ -4,14 +4,16 @@ import Foundation
 
 /// The canonical test categories. A category says what a run needs: `ci` is
 /// offline, `wire` needs broker infrastructure, `embedded` proves Core Embedded
-/// Swift compatibility, `release` is the host release plan, and `zenoh-live`
-/// opts into a real host router integration run.
+/// Swift compatibility, `release` is the host release plan, `zenoh-live`
+/// opts into a real host router integration run, and `zenoh-offline` proves the
+/// separate Zenoh package without a router.
 enum CanonicalTier: String, CaseIterable, Sendable {
     case ci
     case wire
     case embedded
     case release
     case zenohLive = "zenoh-live"
+    case zenohOffline = "zenoh-offline"
 }
 
 enum CanonicalPlanRequest: Sendable {

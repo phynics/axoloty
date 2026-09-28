@@ -85,6 +85,7 @@ func typedInvocationParserClassifiesReleaseCommandsAndEnvironmentFallbacks() {
 
     #expect(parser.parse(["release", "checkpoint"]) == .release(.checkpoint))
     #expect(parser.parse(["zenoh", "live"]) == .zenohLive)
+    #expect(parser.parse(["zenoh", "offline"]) == .zenohOffline)
     #expect(parser.parse(["test-one"]) == .testOne(filter: "FallbackSuite", repetition: nil))
     #expect(parser.parse(["test-tier"]) == .testTier(name: "unit", ci: false))
     #expect(parser.parse(["explain"]) == .explain(tier: "unit", ci: false))
@@ -272,9 +273,9 @@ func canonicalManifestDefinesVerifyRootsAndBoundedTestOne() throws {
     #expect(manifest.schemaVersion == 2)
     #expect(manifest.requiredGates.allSatisfy { gate in manifest.nodes.contains { $0.id == gate } })
     // requiredGates is the ci category, and releaseGates includes every
-    // declared non-release category, including zenoh-live.
+    // declared non-release category, including both Zenoh tiers.
     #expect(Set(manifest.requiredGates).isSubset(of: Set(manifest.tiers.first { $0.id == "ci" }?.nodes ?? [])))
-    #expect(manifest.releaseGates == ["ci", "wire", "embedded", "zenoh-live"])
+    #expect(manifest.releaseGates == ["ci", "wire", "embedded", "zenoh-live", "zenoh-offline"])
     #expect(manifest.toolContainerEnv?.allowlist(for: "release-checkpoint")?.contains("AXOLOTY_GIT_TREE") == true)
     #expect(manifest.toolContainerEnv?.allowlist(for: "release-unknown") == nil)
     #expect(try resolver.command(.testOne(
@@ -602,7 +603,7 @@ func checkpointManifestRecordsAllRequiredReleaseGatesInOrder() throws {
     let manifest = try JSONDecoder().decode(AxolotyCheckpointManifest.self, from: Data(result.standardOutput.utf8))
 
     #expect(manifest.schemaVersion == 3)
-    #expect(manifest.releaseGates.map(\.id) == ["ci", "wire", "embedded", "zenoh-live", "swiftpm-sbom"])
+    #expect(manifest.releaseGates.map(\.id) == ["ci", "wire", "embedded", "zenoh-live", "zenoh-offline", "swiftpm-sbom"])
     #expect(manifest.releaseGates.first { $0.id == "integration" } == nil)
 }
 

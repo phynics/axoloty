@@ -88,6 +88,34 @@ restarting `zenohd`, and graceful transport shutdown. This tier is separate
 from `make verify`; it is selected by the `Zenoh live integration` workflow on
 `exploration/zenoh`.
 
+## Offline host verification
+
+The `zenoh-offline` tier proves the package without a router. It never starts
+`zenohd`. It has two nodes:
+
+- `zenoh-offline-package` provisions only the pinned `zenoh-c` archive through
+  the same checksum-verified path as `zenoh-live`, under
+  `.build/zenoh-offline`. It then runs every `AxolotyZenoh` package test except
+  `ZenohLiveIntegrationTests`: the façade contract suite, `AxolotyZenohCoreTests`,
+  the `ZenohBinding` and receive-pump suites, and the protocol trace parity
+  replay. These are the tests that `Packages/AxolotyZenoh/Tests/run-sanitized-tests.sh`
+  runs, without sanitizers.
+- `zenoh-core-embedded` compiles `AxolotyZenohCore` and `AxolotyWire` as
+  Embedded Swift for `riscv32-none-none-eabi` and partially links them. It
+  needs no `zenoh-c` archive: the core reaches Zenoh only through the
+  self-contained façade header. The only unresolved symbols it allows are the
+  `axoloty_zenoh_*` façade entry points, which firmware supplies, and the
+  runtime symbols that the Core Embedded Swift gate also allows.
+
+```sh
+make test-tier TIER=zenoh-offline
+```
+
+The `Zenoh offline` workflow runs this tier for pull requests and pushes to
+`main` and `exploration/zenoh`. The tier is not in the `ci` tier, so
+`make verify` is unchanged. The package node downloads the pinned archive, and
+it builds the separate Zenoh package, which the root package never resolves.
+
 ## Qualification evidence
 
 ### Host (Linux x86_64, Swift 6.3, `axoloty-dev` container)

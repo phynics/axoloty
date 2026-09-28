@@ -247,5 +247,5 @@ test("canonical tiers are the only test entry points", () => {
     assert.match(makefile, new RegExp(`^${kept}:`, "m"), `${kept} must remain a Make target`);
   }
   const document = JSON.parse(fs.readFileSync("Tests/Support/test-tiers.json", "utf8"));
-  assert.deepEqual(document.tiers.map(tier => tier.id), ["ci", "wire", "embedded", "release", "zenoh-live"]);
+  assert.deepEqual(document.tiers.map(tier => tier.id), ["ci", "wire", "embedded", "release", "zenoh-live", "zenoh-offline"]);
 });
