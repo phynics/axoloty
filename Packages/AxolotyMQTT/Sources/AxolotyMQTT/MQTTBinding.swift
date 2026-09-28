@@ -221,11 +221,16 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
     }
 
     /// Forwards post-start transport failures to the owning runtime.
+    ///
+    /// - Parameter handler: The runtime's transport-failure callback.
     public func setFailureHandler(_ handler: @escaping @Sendable (RuntimeTransportFailure) -> Void) async {
         delegate.setFailureHandler(handler)
     }
 
     /// Stores the runtime-owned transport counter sink.
+    ///
+    /// - Parameter diagnostics: Shared fixed-size counter sink. The binding
+    ///   also records MQTT session failures into it.
     public func setDiagnostics(_ diagnostics: RuntimeTransportDiagnostics) async {
         lock.withLock { self.diagnostics = diagnostics }
         delegate.setFailureObserver { diagnostics.recordSessionFailure() }
@@ -235,7 +240,9 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
     ///
     /// - Parameter effect: A finished publication, or an exact external-route
     ///   lifecycle effect. The route arrives resolved.
-    /// - Throws: A transport error when the effect cannot be applied.
+    /// - Throws: ``AxolotyError/runtime(code:reason:)`` when the binding is not
+    ///   started, or an ``AxolotyError`` wrapping the MQTT failure when the
+    ///   publication or subscription change fails.
     public func perform(_ effect: RuntimeTransportEffect) async throws {
         guard lock.withLock({ started }) else {
             throw AxolotyError.runtime(code: .notStarted, reason: "MQTT binding is not started")
@@ -274,6 +281,9 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
     }
 
     /// Activates the closed profile's bounded MQTT wildcard subscriptions.
+    ///
+    /// - Parameter namespace: The runtime's immutable Coaty namespace.
+    /// - Throws: ``AxolotyError/network(error:reason:)`` when a subscription fails.
     public func activateProfileInterest(namespace: String) async throws {
         lock.withLock { activeNamespace = namespace }
         do {
@@ -295,6 +305,9 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
     }
 
     /// Deactivates the profile's MQTT subscriptions during shutdown/reconnect.
+    ///
+    /// - Parameter namespace: The namespace previously activated.
+    /// - Throws: ``AxolotyError/network(error:reason:)`` when an unsubscribe fails.
     public func deactivateProfileInterest(namespace: String) async throws {
         let routes = lock.withLock { () -> [String] in
             transportEpoch &+= 1
@@ -328,10 +341,10 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
         )
     }
 
-    /// Applies MQTT's wildcard restrictions and the legacy quote/backslash
-    /// restrictions formerly applied by ``ExternalIoRoute``. The portable value
-    /// can contain these characters for carriers that allow them; Axoloty's
-    /// MQTT adapter retains its existing route policy at use time.
+    /// Applies MQTT's wildcard restrictions on top of ``ExternalIoRoute``'s
+    /// portable grammar, which already rejects quotes and backslashes. The
+    /// portable value can contain `+` and `#` for carriers that allow them;
+    /// Axoloty's MQTT adapter retains its existing route policy at use time.
     ///
     /// - Parameter route: UTF-8 bytes for an exact external MQTT topic.
     /// - Throws: ``AxolotyError/invalidArgument(argument:reason:)`` if the

@@ -8,7 +8,7 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..")
 // Canonical tiers declare the runtime boundary a run needs. Live carrier tiers
 // remain separate from ordinary offline verification.
 const expectedTiers = new Set(["ci", "wire", "embedded", "release", "zenoh-live"]);
-const networkModes = new Set(["none", "isolated", "isolated-broker", "isolated-containers"]);
+const networkModes = new Set(["none", "isolated", "isolated-broker", "isolated-containers", "external"]);
 const brokerModes = new Set(["none", "local", "isolated"]);
 const hardwareModes = new Set(["forbidden", "optional", "required"]);
 const isolationModes = new Set(["parallel", "separate-process", "exclusive"]);

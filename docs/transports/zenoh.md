@@ -55,6 +55,14 @@ façade reserves two of eight subscriber slots for profile subscriptions, so the
 binding supports at most six exact external routes. A route containing `*` is
 not exact and is rejected.
 
+The binding has no lifecycle last will. The runtime passes an MQTT-compatible
+last will: the identity's Deadvertise on its `DAD` route. `ZenohBinding`
+accepts this value and discards it, because the v1 client profile uses only put
+and subscriber and has no broker-published will. Epic
+[#796](https://github.com/phynics/axoloty/issues/796) keeps Zenoh liveliness
+out of v1 scope. A graceful `stop()` still publishes Deadvertise. After an
+unclean disconnect, peers receive no Deadvertise for the lost node.
+
 ### Zenoh network configuration
 
 `zenohd` owns network listening and routing. Start it with a listener endpoint.

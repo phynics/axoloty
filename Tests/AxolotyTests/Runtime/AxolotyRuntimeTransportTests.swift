@@ -17,7 +17,7 @@ extension AxolotyRuntimeTests {
 
     @Test("external routes accept characters restricted by the MQTT adapter")
     func externalRouteValidationAcceptsCarrierSpecificCharacters() throws {
-        for key in ["wild/+", "wild/#", "quoted/\"topic", #"backslash/\topic"#] {
+        for key in ["wild/+", "wild/#"] {
             let route = try ExternalIoRoute(key)
             route.routeBytes.withBytes { bytes in
                 let expected = Array(key.utf8)
@@ -46,6 +46,16 @@ extension AxolotyRuntimeTests {
         let route = try ExternalIoRoute("plant/line-7/temperature")
         route.routeBytes.withBytes { bytes in
             #expect(bytes.equals("plant/line-7/temperature"))
+        }
+    }
+
+    @Test("external routes reject quotes and backslashes that the IoSource advertisement cannot carry verbatim")
+    func externalRouteValidationRejectsNonJSONRepresentableCharacters() {
+        // `escape/\u0041` would be advertised as `"externalRoute":"escape/\u0041"`,
+        // which a JSON peer decodes as `escape/A` while the carrier uses the
+        // literal key. Quotes and other backslashes fail later in `ioSource`.
+        for topic in ["quoted/\"topic", #"backslash/\topic"#, #"escape/\u0041"#, #"escape/\""#] {
+            #expect(throws: AxolotyError.self) { _ = try ExternalIoRoute(topic) }
         }
     }
 

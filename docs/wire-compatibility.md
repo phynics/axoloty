@@ -88,10 +88,17 @@ that route. Coaty Core 3 retains its sealed topic grammar. Application routes
 that carry three UUIDs remain external IO routes, not Coaty Core 3 topics.
 
 `ExternalIoRoute` is carrier-neutral: it accepts bounded UTF-8 routes with no
-control scalars or empty slash-separated segments. Carrier-specific rules
-apply when an adapter uses the route. `MQTTBinding` preserves Axoloty's prior
-MQTT-route exclusions (`+`, `#`, quotation marks, and backslashes), while a
-different carrier may admit characters its key syntax allows. These
+control scalars or empty slash-separated segments. Advertised external IO
+routes must also be directly representable as bounded JSON string content:
+control characters, quotation marks, and backslashes are rejected instead of
+consuming a larger escaped metadata buffer. The route is stored as encoded
+IoSource `externalRoute` content, so a raw backslash would be advertised as a
+JSON escape. For example, `escape/\u0041` would be advertised verbatim and
+decoded by a peer as `escape/A`, while the carrier used the literal key. This
+rule applies to every carrier and is narrower than MQTT's complete topic
+character set. Carrier-specific rules apply when an adapter uses the route.
+`MQTTBinding` also excludes the MQTT wildcards `+` and `#`, while a different
+carrier may admit other characters its key syntax allows. These
 restrictions do not change Coaty's sealed topic grammar or the wire shape of
 protocol messages; they determine which external routes a carrier can use.
 This boundary was established for Zenoh in [#799](https://github.com/phynics/axoloty/issues/799).

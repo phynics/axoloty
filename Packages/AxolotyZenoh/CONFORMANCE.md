@@ -156,3 +156,17 @@ documented result and excludes only this row from classification equality.
 This adapter-level divergence does not relax protocol trace equality. The
 non-UTF-8 row compares classifier results only; a Zenoh inbound frame must
 still be valid UTF-8 before it can become a runtime route.
+
+### Lifecycle last will
+
+| Behavior | MQTT | Zenoh | Result |
+|---|---|---|---|
+| Unclean-disconnect Deadvertise (runtime `RuntimeTransportLastWill`) | Installed as the broker will | Accepted and discarded (`_ = lastWill`) | Deliberate divergence |
+
+`ZenohBinding.start(receive:lastWill:)` ignores the will because the v1 client
+profile is put/subscriber only, and Zenoh has no broker-published will. Epic
+[#796](https://github.com/phynics/axoloty/issues/796) keeps Zenoh liveliness
+out of v1 scope. Graceful shutdown still publishes Deadvertise on both
+carriers. Only unclean-disconnect notification differs. The divergence is
+outside protocol trace parity, because traces do not model broker-published
+wills. See `docs/transports/zenoh.md`.

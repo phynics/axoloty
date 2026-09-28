@@ -106,7 +106,7 @@ struct AxolotyZenohLiveIntegration {
         }
 
         try waitForRouter(process: router, port: port)
-        print("ZENOH_LIVE_ROUTER_READY version=1.10.0 endpoint=\(endpoint)")
+        FileHandle.standardError.write(Data("ZENOH_LIVE_ROUTER_READY version=1.10.0 endpoint=\(endpoint)\n".utf8))
         let pkgConfigDirectory = pkgConfig.deletingLastPathComponent()
         let libraryDirectory = zenohCRoot.appending(path: "lib").path
         var childEnvironment = environment
@@ -239,7 +239,8 @@ struct AxolotyZenohLiveIntegration {
         let output: Pipe?
         if streamsOutput {
             output = nil
-            process.standardOutput = FileHandle.standardOutput
+            // Child diagnostics stay off machine-readable stdout.
+            process.standardOutput = FileHandle.standardError
             process.standardError = FileHandle.standardError
         } else {
             let pipe = Pipe()
