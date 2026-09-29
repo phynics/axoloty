@@ -97,6 +97,26 @@ The following paths are private and unsupported:
 Consumers may add platform flags, a target triple, and SDK-specific integration.
 Those settings do not change the Core contract.
 
+## Compile the Zenoh Core module
+
+`AxolotyZenohCore` is a separate portable module. It is not a sixth entry in
+`portablePackages`, which remains the same five-module sequence above. The
+preparation report exposes it separately as `zenohCore` with the absolute
+`sourceDir`, module name, façade module name, façade header path, header SHA-256,
+and a generated module-map path.
+
+The generated `CAxolotyZenoh/module.modulemap` lives in caller-owned scratch and
+imports only the reported `axoloty_zenoh.h` header. Use it when compiling the
+reported Swift source directory, after `AxolotyWire` is available. The header
+digest identifies the exact C declarations used by the Swift module. The Core
+commit and dirty flag continue to identify the selected checkout.
+
+Firmware supplies the `axoloty_zenoh_*` implementations. The contract does not
+export or link the host `CZenohC` system library, `zenoh-c`, the host C
+implementation, or the `AxolotyZenoh` runtime adapter. The Core-side
+`zenoh-core-embedded` gate compiles this module for RISC-V Embedded Swift and
+checks that only façade and supported runtime symbols remain unresolved.
+
 ## Supported preparation hosts
 
 Linux through the pinned container is the reference host and the one required
@@ -126,9 +146,18 @@ files, ESP-IDF, or hardware. Scratch and output paths must be outside Core.
 The report has schema version 1 and contains the Core commit and dirty state,
 the contract SHA-256, Swift 6.4 compiler flags, the five portable source
 directories in dependency order, the locked `_JSONCore` revision and source,
-and the static-runtime macro executable and scratch directory. Consumers must
-treat paths as absolute and reject reports with an unknown schema or a path
-outside the declared Core or scratch roots.
+the static-runtime macro executable and scratch directory, and the separate
+`zenohCore` source and façade metadata. This addition keeps the schema version
+and all existing fields unchanged. The new `zenohCore` object contains:
+
+- `module` and `sourceDir` for `AxolotyZenohCore`;
+- `facadeModule` and `facadeHeader` for the `CAxolotyZenoh` C module;
+- `facadeHeaderSHA256` for the exact header bytes; and
+- `moduleMap`, a generated module map inside caller-owned scratch.
+
+Consumers must treat paths as absolute and reject reports with an unknown
+schema or a path outside the declared Core or scratch roots. Existing consumers
+may continue to use the five `portablePackages` entries and ignore `zenohCore`.
 
 ## External firmware proof
 

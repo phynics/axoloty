@@ -39,6 +39,15 @@ struct AxolotyEmbeddedConsumerPreparationReport: Codable, Equatable, Sendable {
         let scratchDir: String
     }
 
+    struct ZenohCore: Codable, Equatable, Sendable {
+        let module: String
+        let sourceDir: String
+        let facadeModule: String
+        let facadeHeader: String
+        let facadeHeaderSHA256: String
+        let moduleMap: String
+    }
+
     let schemaVersion: Int
     let status: String
     let contractSHA256: String
@@ -47,6 +56,7 @@ struct AxolotyEmbeddedConsumerPreparationReport: Codable, Equatable, Sendable {
     let portablePackages: [PortablePackage]
     let jsonCore: JSONCore
     let staticRuntimeMacro: StaticRuntimeMacro
+    let zenohCore: ZenohCore
 }
 
 /// Implements `embedded consumer prepare` without knowing about firmware,
@@ -142,6 +152,17 @@ struct AxolotyEmbeddedConsumerPreparation: Sendable {
         }
         let dirty = !statusResult.standardOutput.isEmpty
 
+        guard let zenohSourceDir = canonicalExistingDirectory(
+            coreURL.appendingPathComponent(contract.zenohCore.sourcePath).path
+        ), isWithin(path: zenohSourceDir, root: coreURL),
+              let facadeHeader = canonicalExistingRegularFile(
+                coreURL.appendingPathComponent(contract.zenohCore.facadeHeaderPath).path
+              ), isWithin(path: facadeHeader, root: coreURL),
+              let facadeHeaderData = try? Data(contentsOf: facadeHeader) else {
+            return failure("Zenoh Core source or façade header is missing from the Core checkout", code: 1)
+        }
+        let facadeHeaderSHA256 = AxolotySHA256().hash(facadeHeaderData)
+
         do {
             try FileManager.default.createDirectory(at: scratchURL, withIntermediateDirectories: true)
         } catch {
@@ -156,6 +177,39 @@ struct AxolotyEmbeddedConsumerPreparation: Sendable {
         defer {
             _ = flock(lockDescriptor, LOCK_UN)
             close(lockDescriptor)
+        }
+        let facadeModuleDirectory = scratchURL.appendingPathComponent(
+            contract.zenohCore.facadeModule,
+            isDirectory: true
+        )
+        do {
+            try FileManager.default.createDirectory(at: facadeModuleDirectory, withIntermediateDirectories: true)
+        } catch {
+            return failure(
+                "could not create Zenoh façade module-map directory in caller-owned scratch: \(error.localizedDescription)",
+                code: 1
+            )
+        }
+        guard let canonicalFacadeModuleDirectory = canonicalExistingDirectory(facadeModuleDirectory.path),
+              isWithin(path: canonicalFacadeModuleDirectory, root: scratchURL) else {
+            return failure("Zenoh façade module-map directory must remain inside caller-owned scratch", code: 1)
+        }
+        let moduleMapURL = canonicalFacadeModuleDirectory.appendingPathComponent("module.modulemap")
+        let moduleMap = Self.moduleMapContents(
+            module: contract.zenohCore.facadeModule,
+            headerPath: facadeHeader.path
+        )
+        do {
+            try atomicReplace(Data(moduleMap.utf8), to: moduleMapURL)
+        } catch {
+            return failure(
+                "could not write Zenoh façade module map in caller-owned scratch: \(error.localizedDescription)",
+                code: 1
+            )
+        }
+        guard let canonicalModuleMap = canonicalExistingRegularFile(moduleMapURL.path),
+              isWithin(path: canonicalModuleMap, root: scratchURL) else {
+            return failure("Zenoh façade module map must remain inside caller-owned scratch", code: 1)
         }
         let packagePath = coreURL.appendingPathComponent("Packages/AxolotyStaticRuntime").path
         let build = commandRunner.run(AxolotyCommandPlan(
@@ -216,16 +270,40 @@ struct AxolotyEmbeddedConsumerPreparation: Sendable {
               (!finalStatusResult.standardOutput.isEmpty) == dirty else {
             return failure("Core checkout changed during preparation", code: 1)
         }
+        guard let finalFacadeHeader = canonicalExistingRegularFile(
+            coreURL.appendingPathComponent(contract.zenohCore.facadeHeaderPath).path
+        ), finalFacadeHeader == facadeHeader,
+              let finalFacadeHeaderData = try? Data(contentsOf: finalFacadeHeader),
+              AxolotySHA256().hash(finalFacadeHeaderData) == facadeHeaderSHA256 else {
+            return failure("Zenoh façade header changed during preparation", code: 1)
+        }
 
         let report = AxolotyEmbeddedConsumerPreparationReport(
             schemaVersion: 1,
             status: "prepared",
             contractSHA256: AxolotySHA256().hash(contractData),
             core: .init(sourceDir: coreURL.path, sha: sha, dirty: dirty),
-            swift: .init(toolsVersion: contract.swiftToolsVersion, languageMode: contract.swiftLanguageMode, compilerFlags: contract.compilerFlags),
-            portablePackages: contract.packages.map { .init(name: $0.name, sourcePath: coreURL.appendingPathComponent($0.sourcePath).path) },
+            swift: .init(
+                toolsVersion: contract.swiftToolsVersion,
+                languageMode: contract.swiftLanguageMode,
+                compilerFlags: contract.compilerFlags
+            ),
+            portablePackages: contract.packages.map { package in
+                .init(
+                    name: package.name,
+                    sourcePath: coreURL.appendingPathComponent(package.sourcePath).path
+                )
+            },
             jsonCore: .init(revision: contract.jsonRevision, sourceDir: jsonCore.path),
-            staticRuntimeMacro: .init(executable: macro.path, pluginModule: contract.pluginModule, scratchDir: scratchURL.path)
+            staticRuntimeMacro: .init(executable: macro.path, pluginModule: contract.pluginModule, scratchDir: scratchURL.path),
+            zenohCore: .init(
+                module: contract.zenohCore.module,
+                sourceDir: zenohSourceDir.path,
+                facadeModule: contract.zenohCore.facadeModule,
+                facadeHeader: facadeHeader.path,
+                facadeHeaderSHA256: facadeHeaderSHA256,
+                moduleMap: canonicalModuleMap.path
+            )
         )
         do {
             let encoder = JSONEncoder()
@@ -243,8 +321,15 @@ struct AxolotyEmbeddedConsumerPreparation: Sendable {
 
     private struct Paths { let scratch: String; let output: String }
     private struct Package { let name: String; let sourcePath: String }
+    private struct ZenohCoreContract {
+        let module: String
+        let sourcePath: String
+        let facadeModule: String
+        let facadeHeaderPath: String
+    }
     private struct Contract {
         let packages: [Package]
+        let zenohCore: ZenohCoreContract
         let jsonRevision: String
         let swiftToolsVersion: String
         let swiftLanguageMode: Int
@@ -270,6 +355,13 @@ struct AxolotyEmbeddedConsumerPreparation: Sendable {
         return [contractName, String(contractName.dropLast(suffix.count))]
     }
 
+    static func moduleMapContents(module: String, headerPath: String) -> String {
+        let escapedHeaderPath = headerPath
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+        return "module \(module) {\n    header \"\(escapedHeaderPath)\"\n    export *\n}\n"
+    }
+
     private func parseContract(_ data: Data) -> Contract? {
         guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let swift = root["swift"] as? [String: Any],
@@ -277,6 +369,11 @@ struct AxolotyEmbeddedConsumerPreparation: Sendable {
               let language = swift["languageMode"] as? Int,
               let flags = swift["requiredCompilerFlags"] as? [String],
               let packages = root["portablePackages"] as? [[String: Any]], packages.count == 5,
+              let zenoh = root["zenohCore"] as? [String: Any],
+              let zenohModule = zenoh["module"] as? String,
+              let zenohSourcePath = zenoh["sourcePath"] as? String,
+              let facadeModule = zenoh["facadeModule"] as? String,
+              let facadeHeaderPath = zenoh["facadeHeaderPath"] as? String,
               let macro = root["staticRuntimeMacro"] as? [String: Any],
               let executable = macro["executable"] as? String,
               let plugin = macro["pluginModule"] as? String,
@@ -288,7 +385,21 @@ struct AxolotyEmbeddedConsumerPreparation: Sendable {
         }
         guard parsed.count == 5,
               parsed.map(\.name) == ["AxolotyWire", "AxolotyObjectModel", "AxolotyProtocol", "AxolotyCoatyModels", "AxolotyStaticRuntime"] else { return nil }
-        return Contract(packages: parsed, jsonRevision: revision, swiftToolsVersion: tools, swiftLanguageMode: language, compilerFlags: flags, macroExecutable: executable, pluginModule: plugin)
+        return Contract(
+            packages: parsed,
+            zenohCore: ZenohCoreContract(
+                module: zenohModule,
+                sourcePath: zenohSourcePath,
+                facadeModule: facadeModule,
+                facadeHeaderPath: facadeHeaderPath
+            ),
+            jsonRevision: revision,
+            swiftToolsVersion: tools,
+            swiftLanguageMode: language,
+            compilerFlags: flags,
+            macroExecutable: executable,
+            pluginModule: plugin
+        )
     }
 
     private func runGit(_ arguments: [String]) -> AxolotyCheckCommandResult {
@@ -312,6 +423,14 @@ struct AxolotyEmbeddedConsumerPreparation: Sendable {
 
     private func canonicalExistingFile(_ path: String) -> URL? {
         guard FileManager.default.isExecutableFile(atPath: path) else { return nil }
+        return URL(fileURLWithPath: path).resolvingSymlinksInPath().standardizedFileURL
+    }
+
+    private func canonicalExistingRegularFile(_ path: String) -> URL? {
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory), !isDirectory.boolValue else {
+            return nil
+        }
         return URL(fileURLWithPath: path).resolvingSymlinksInPath().standardizedFileURL
     }
 
@@ -360,6 +479,23 @@ struct AxolotyEmbeddedConsumerPreparation: Sendable {
                 try? FileManager.default.removeItem(at: temporary)
                 throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno), userInfo: nil)
             }
+        }
+    }
+
+    private func atomicReplace(_ data: Data, to url: URL) throws {
+        let temporary = url.deletingLastPathComponent().appendingPathComponent(
+            ".\(url.lastPathComponent).tmp-\(UUID().uuidString)"
+        )
+        do {
+            try data.write(to: temporary, options: .withoutOverwriting)
+        } catch {
+            try? FileManager.default.removeItem(at: temporary)
+            throw error
+        }
+        guard rename(temporary.path, url.path) == 0 else {
+            let renameError = errno
+            try? FileManager.default.removeItem(at: temporary)
+            throw NSError(domain: NSPOSIXErrorDomain, code: Int(renameError), userInfo: nil)
         }
     }
 

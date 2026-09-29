@@ -20,6 +20,65 @@ func repositoryAuthorityPassesForCheckoutEmbeddedConsumerContract() {
 }
 
 @Test
+func embeddedConsumerContractExportsZenohCoreBesideTheUnchangedFiveModules() throws {
+    let root = embeddedContractRepositoryRoot()
+    let data = try Data(contentsOf: root.appendingPathComponent("docs/embedded-consumer-contract.json"))
+    let contract = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    let packages = try #require(contract["portablePackages"] as? [[String: Any]])
+
+    #expect(packages.compactMap { $0["package"] as? String } == [
+        "AxolotyWire",
+        "AxolotyObjectModel",
+        "AxolotyProtocol",
+        "AxolotyCoatyModels",
+        "AxolotyStaticRuntime",
+    ])
+
+    let zenohCore = try #require(contract["zenohCore"] as? [String: Any])
+    #expect(zenohCore["package"] as? String == "AxolotyZenoh")
+    #expect(zenohCore["packagePath"] as? String == "Packages/AxolotyZenoh")
+    #expect(zenohCore["target"] as? String == "AxolotyZenohCore")
+    #expect(zenohCore["module"] as? String == "AxolotyZenohCore")
+    #expect(zenohCore["sourcePath"] as? String == "Packages/AxolotyZenoh/Sources/AxolotyZenohCore")
+    #expect(zenohCore["facadeModule"] as? String == "CAxolotyZenoh")
+    #expect(zenohCore["facadeHeaderPath"] as? String ==
+        "Packages/AxolotyZenoh/Sources/CAxolotyZenoh/include/axoloty_zenoh.h")
+
+    let findings = AxolotyEmbeddedConsumerContractValidator(root: root).validate()
+    #expect(findings.isEmpty, "\(findings)")
+}
+
+@Test
+func repositoryAuthorityRejectsEmbeddedZenohPathAndTargetDrift() throws {
+    let fixture = try makeEmbeddedContractFixture()
+    defer { try? FileManager.default.removeItem(at: fixture) }
+
+    let contractURL = fixture.appendingPathComponent("docs/embedded-consumer-contract.json")
+    var contract = try JSONSerialization.jsonObject(with: Data(contentsOf: contractURL)) as! [String: Any]
+    var zenohCore = contract["zenohCore"] as! [String: Any]
+
+    zenohCore["sourcePath"] = "../escape"
+    contract["zenohCore"] = zenohCore
+    try JSONSerialization.data(withJSONObject: contract, options: [.sortedKeys]).write(to: contractURL)
+    let sourcePathFindings = AxolotyEmbeddedConsumerContractValidator(root: fixture).validate()
+    #expect(sourcePathFindings.contains { $0.rule == "embedded-contract.zenohCore.sourcePath" })
+
+    zenohCore["sourcePath"] = "Packages/AxolotyZenoh/Sources/AxolotyZenohCore"
+    zenohCore["facadeHeaderPath"] = "Packages/AxolotyZenoh/../outside.h"
+    contract["zenohCore"] = zenohCore
+    try JSONSerialization.data(withJSONObject: contract, options: [.sortedKeys]).write(to: contractURL)
+    let headerPathFindings = AxolotyEmbeddedConsumerContractValidator(root: fixture).validate()
+    #expect(headerPathFindings.contains { $0.rule == "embedded-contract.zenohCore.facadeHeaderPath" })
+
+    zenohCore["facadeHeaderPath"] = "Packages/AxolotyZenoh/Sources/CAxolotyZenoh/include/axoloty_zenoh.h"
+    zenohCore["target"] = "AxolotyZenoh"
+    contract["zenohCore"] = zenohCore
+    try JSONSerialization.data(withJSONObject: contract, options: [.sortedKeys]).write(to: contractURL)
+    let targetFindings = AxolotyEmbeddedConsumerContractValidator(root: fixture).validate()
+    #expect(targetFindings.contains { $0.rule == "embedded-contract.zenohCore.target" })
+}
+
+@Test
 func repositoryAuthorityPassesForCheckoutRejectingEmbeddedContractSchemaAndPathMutations() throws {
     let fixture = try makeEmbeddedContractFixture()
     defer { try? FileManager.default.removeItem(at: fixture) }
@@ -116,6 +175,26 @@ func repositoryAuthorityPassesForCheckoutRejectingEmbeddedContractModulePolicyDr
 }
 
 @Test
+func repositoryAuthorityRejectsEmbeddedZenohModulePolicyDrift() throws {
+    let fixture = try makeEmbeddedContractFixture()
+    defer { try? FileManager.default.removeItem(at: fixture) }
+
+    let policyURL = fixture.appendingPathComponent("docs/module-policy.yml")
+    var policy = try JSONSerialization.jsonObject(with: Data(contentsOf: policyURL)) as! [String: Any]
+    var targets = policy["targets"] as! [[String: Any]]
+    let zenohIndex = targets.firstIndex { ($0["name"] as? String) == "AxolotyZenohCore" }!
+    targets[zenohIndex]["platformClass"] = "host"
+    policy["targets"] = targets
+    try JSONSerialization.data(withJSONObject: policy, options: [.sortedKeys]).write(to: policyURL)
+
+    let findings = AxolotyEmbeddedConsumerContractValidator(root: fixture).validate()
+    #expect(findings.contains {
+        $0.rule == "embedded-contract.zenohCore.modulePolicy" &&
+            $0.message.contains("AxolotyZenohCore must use the portable role and platform class")
+    })
+}
+
+@Test
 func repositoryAuthorityPassesForCheckoutReportingEmbeddedContractCommandFailure() throws {
     let fixture = try makeEmbeddedContractFixture()
     defer { try? FileManager.default.removeItem(at: fixture) }
@@ -143,6 +222,7 @@ func repositoryAuthorityPassesForCheckoutReportingEmbeddedContractCommandFailure
 @Test
 func repositoryAuthorityPassesForCheckoutRejectingEmbeddedContractSymlinkEscape() throws {
     let fixture = try makeEmbeddedContractFixture()
+    let fileManager = FileManager.default
     let externalSources = FileManager.default.temporaryDirectory
         .appendingPathComponent("axoloty-embedded-contract-external-" + UUID().uuidString)
     defer {
@@ -173,9 +253,31 @@ func repositoryAuthorityPassesForCheckoutRejectingEmbeddedContractSymlinkEscape(
     try FileManager.default.createSymbolicLink(at: macroSources, withDestinationURL: externalSources)
     let macroFindings = AxolotyEmbeddedConsumerContractValidator(root: fixture).validate()
     #expect(macroFindings.contains { $0.rule == "embedded-contract.macro.sourcePath" })
+
+    let zenohSources = fixture.appendingPathComponent("Packages/AxolotyZenoh/Sources/AxolotyZenohCore")
+    try fileManager.removeItem(at: zenohSources)
+    try fileManager.createSymbolicLink(at: zenohSources, withDestinationURL: externalSources)
+    let zenohSourceFindings = AxolotyEmbeddedConsumerContractValidator(root: fixture).validate()
+    #expect(zenohSourceFindings.contains { $0.rule == "embedded-contract.zenohCore.sourcePath" })
+    try fileManager.removeItem(at: zenohSources)
+    try fileManager.createDirectory(at: zenohSources, withIntermediateDirectories: true)
+    try Data("struct ZenohCoreFixtureSource {}\n".utf8).write(
+        to: zenohSources.appendingPathComponent("Fixture.swift")
+    )
+
+    let zenohHeader = fixture.appendingPathComponent(
+        "Packages/AxolotyZenoh/Sources/CAxolotyZenoh/include/axoloty_zenoh.h"
+    )
+    try fileManager.removeItem(at: zenohHeader)
+    try fileManager.createSymbolicLink(
+        at: zenohHeader,
+        withDestinationURL: externalSources.appendingPathComponent("External.swift")
+    )
+    let zenohHeaderFindings = AxolotyEmbeddedConsumerContractValidator(root: fixture).validate()
+    #expect(zenohHeaderFindings.contains { $0.rule == "embedded-contract.zenohCore.facadeHeaderPath" })
 }
 
-private func makeEmbeddedContractFixture() throws -> URL {
+func makeEmbeddedContractFixture() throws -> URL {
     let sourceRoot = embeddedContractRepositoryRoot()
     let fixture = FileManager.default.temporaryDirectory
         .appendingPathComponent("axoloty-embedded-contract-" + UUID().uuidString)
@@ -218,6 +320,28 @@ private func makeEmbeddedContractFixture() throws -> URL {
             to: fixtureSources.appendingPathComponent("Fixture.swift")
         )
     }
+    let zenohPackage = sourceRoot.appendingPathComponent("Packages/AxolotyZenoh")
+    let fixtureZenohPackage = fixture.appendingPathComponent("Packages/AxolotyZenoh")
+    try fileManager.createDirectory(at: fixtureZenohPackage, withIntermediateDirectories: true)
+    try fileManager.copyItem(
+        at: zenohPackage.appendingPathComponent("Package.swift"),
+        to: fixtureZenohPackage.appendingPathComponent("Package.swift")
+    )
+    let zenohCoreSources = fixtureZenohPackage.appendingPathComponent("Sources/AxolotyZenohCore")
+    try fileManager.createDirectory(at: zenohCoreSources, withIntermediateDirectories: true)
+    try Data("struct ZenohCoreFixtureSource {}\n".utf8).write(
+        to: zenohCoreSources.appendingPathComponent("Fixture.swift")
+    )
+    let facadeHeader = "Sources/CAxolotyZenoh/include/axoloty_zenoh.h"
+    let fixtureFacadeHeader = fixtureZenohPackage.appendingPathComponent(facadeHeader)
+    try fileManager.createDirectory(
+        at: fixtureFacadeHeader.deletingLastPathComponent(),
+        withIntermediateDirectories: true
+    )
+    try fileManager.copyItem(
+        at: zenohPackage.appendingPathComponent(facadeHeader),
+        to: fixtureFacadeHeader
+    )
     let macroSources = fixture.appendingPathComponent(
         "Packages/AxolotyStaticRuntime/Sources/AxolotyStaticRuntimeMacrosImplementation"
     )
