@@ -96,6 +96,7 @@ internal struct AxolotyEmbeddedConsumerContractValidator {
         validateRootManifestSwift(findings: &findings)
         validatePortablePackages(contract.portablePackages, findings: &findings)
         validatePortableModulePolicy(contract.portablePackages, findings: &findings)
+        validateZenohCore(contract.zenohCore, findings: &findings)
         validateMacro(contract.staticRuntimeMacro, findings: &findings)
         validateJSONCore(contract.jsonCore, findings: &findings)
         validateWireBoundary(findings: &findings)
@@ -108,6 +109,7 @@ internal struct AxolotyEmbeddedConsumerContractValidator {
         let repository: Repository
         let swift: SwiftContract
         let portablePackages: [[String: Any]]
+        let zenohCore: [String: Any]
         let staticRuntimeMacro: [String: Any]
         let jsonCore: JSONCore
     }
@@ -163,6 +165,10 @@ internal struct AxolotyEmbeddedConsumerContractValidator {
             findings.append(finding("contract.portablePackages", path: path, "portablePackages must be an array of objects"))
             return nil
         }
+        guard let zenohCore = object["zenohCore"] as? [String: Any] else {
+            findings.append(finding("contract.zenohCore", path: path, "zenohCore must be an object"))
+            return nil
+        }
         guard let macroObject = object["staticRuntimeMacro"] as? [String: Any] else {
             findings.append(finding("contract.staticRuntimeMacro", path: path, "staticRuntimeMacro must be an object"))
             return nil
@@ -181,6 +187,7 @@ internal struct AxolotyEmbeddedConsumerContractValidator {
             repository: repository,
             swift: swift,
             portablePackages: portablePackages,
+            zenohCore: zenohCore,
             staticRuntimeMacro: macroObject,
             jsonCore: jsonCore
         )
@@ -376,6 +383,124 @@ internal struct AxolotyEmbeddedConsumerContractValidator {
                     "portable package \(package) path must match its consumer contract sourcePath"
                 ))
             }
+        }
+    }
+
+    private func validateZenohCore(
+        _ entry: [String: Any],
+        findings: inout [AxolotyRepositoryAuthorityFinding]
+    ) {
+        let path = relativePath(contractURL)
+        let expected: [String: String] = [
+            "package": "AxolotyZenoh",
+            "packagePath": "Packages/AxolotyZenoh",
+            "target": "AxolotyZenohCore",
+            "module": "AxolotyZenohCore",
+            "sourcePath": "Packages/AxolotyZenoh/Sources/AxolotyZenohCore",
+            "facadeModule": "CAxolotyZenoh",
+            "facadeHeaderPath": "Packages/AxolotyZenoh/Sources/CAxolotyZenoh/include/axoloty_zenoh.h",
+        ]
+        var values: [String: String] = [:]
+        for key in expected.keys.sorted() {
+            guard let value = stringValue(entry[key]), !value.isEmpty else {
+                findings.append(finding("zenohCore.fields", path: path, "zenohCore is missing string field \(key)"))
+                continue
+            }
+            values[key] = value
+        }
+        for key in expected.keys.sorted() where values[key] != expected[key] {
+            findings.append(finding(
+                "zenohCore.\(key)",
+                path: values[key] ?? path,
+                "zenohCore.\(key) must be \(expected[key] ?? "")"
+            ))
+        }
+        guard values.count == expected.count else { return }
+
+        let packagePath = values["packagePath"]!
+        let packageURL = root.appendingPathComponent(packagePath).resolvingSymlinksInPath().standardizedFileURL
+        guard isWithinRepository(packageURL) else {
+            findings.append(finding("zenohCore.packagePath", path: packagePath, "Zenoh package path must remain inside the checkout"))
+            return
+        }
+        validateRelativePath(packagePath, rule: "zenohCore.packagePath", findings: &findings)
+        validateRelativePath(values["sourcePath"]!, rule: "zenohCore.sourcePath", findings: &findings)
+        validateRelativePath(values["facadeHeaderPath"]!, rule: "zenohCore.facadeHeaderPath", findings: &findings)
+
+        let sourceURL = root.appendingPathComponent(values["sourcePath"]!).resolvingSymlinksInPath().standardizedFileURL
+        guard isWithinRepository(sourceURL), sourceURL.path.hasPrefix(packageURL.path + "/"),
+              sourceTreeIsContained(sourceURL), directoryContainsSwift(sourceURL) else {
+            findings.append(finding(
+                "zenohCore.sourcePath",
+                path: values["sourcePath"],
+                "AxolotyZenohCore sourcePath must contain Swift sources inside its package and the checkout"
+            ))
+            return
+        }
+
+        let manifestPath = packagePath + "/Package.swift"
+        guard let manifest = read(manifestPath) else {
+            findings.append(finding("zenohCore.manifest", path: manifestPath, "AxolotyZenoh package manifest is missing"))
+            return
+        }
+        if packageName(in: manifest) != values["package"] {
+            findings.append(finding("zenohCore.package", path: manifestPath, "Zenoh package manifest must declare AxolotyZenoh"))
+        }
+        guard let target = declarationBlock(kind: "target", name: values["target"]!, in: manifest) else {
+            findings.append(finding("zenohCore.target", path: manifestPath, "Zenoh package manifest must declare target AxolotyZenohCore"))
+            return
+        }
+        let packageRelativeSourcePath = String(values["sourcePath"]!.dropFirst(packagePath.count + 1))
+        if firstCapture(#"\bpath\s*:\s*"([^"]+)"#, in: target) != packageRelativeSourcePath {
+            findings.append(finding("zenohCore.targetPath", path: manifestPath, "AxolotyZenohCore target must point to \(packageRelativeSourcePath)"))
+        }
+
+        let headerPath = values["facadeHeaderPath"]!
+        let headerURL = root.appendingPathComponent(headerPath).resolvingSymlinksInPath().standardizedFileURL
+        var isDirectory: ObjCBool = false
+        guard isWithinRepository(headerURL), headerURL.path.hasPrefix(packageURL.path + "/"),
+              FileManager.default.fileExists(atPath: headerURL.path, isDirectory: &isDirectory),
+              !isDirectory.boolValue else {
+            findings.append(finding(
+                "zenohCore.facadeHeaderPath",
+                path: headerPath,
+                "Zenoh façade header must be a file inside the package and checkout"
+            ))
+            return
+        }
+
+        validateZenohCoreModulePolicy(sourcePath: values["sourcePath"]!, findings: &findings)
+    }
+
+    private func validateZenohCoreModulePolicy(
+        sourcePath: String,
+        findings: inout [AxolotyRepositoryAuthorityFinding]
+    ) {
+        let policyPath = "docs/module-policy.yml"
+        guard let data = readData(policyPath),
+              let policy = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let targets = policy["targets"] as? [[String: Any]],
+              let target = targets.first(where: { stringValue($0["name"]) == "AxolotyZenohCore" }) else {
+            findings.append(finding(
+                "zenohCore.modulePolicy",
+                path: policyPath,
+                "module policy must declare AxolotyZenohCore"
+            ))
+            return
+        }
+        if stringValue(target["platformClass"]) != "portable" || stringValue(target["role"]) != "portable" {
+            findings.append(finding(
+                "zenohCore.modulePolicy",
+                path: policyPath,
+                "AxolotyZenohCore must use the portable role and platform class"
+            ))
+        }
+        if stringValue(target["path"]) != sourcePath {
+            findings.append(finding(
+                "zenohCore.modulePolicy",
+                path: policyPath,
+                "AxolotyZenohCore module-policy path must match zenohCore.sourcePath"
+            ))
         }
     }
 

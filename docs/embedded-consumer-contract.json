@@ -63,6 +63,15 @@
       "sourcePath": "Packages/AxolotyStaticRuntime/Sources/AxolotyStaticRuntime"
     }
   ],
+  "zenohCore": {
+    "package": "AxolotyZenoh",
+    "packagePath": "Packages/AxolotyZenoh",
+    "target": "AxolotyZenohCore",
+    "module": "AxolotyZenohCore",
+    "sourcePath": "Packages/AxolotyZenoh/Sources/AxolotyZenohCore",
+    "facadeModule": "CAxolotyZenoh",
+    "facadeHeaderPath": "Packages/AxolotyZenoh/Sources/CAxolotyZenoh/include/axoloty_zenoh.h"
+  },
   "staticRuntimeMacro": {
     "package": "AxolotyStaticRuntime",
     "packagePath": "Packages/AxolotyStaticRuntime",
