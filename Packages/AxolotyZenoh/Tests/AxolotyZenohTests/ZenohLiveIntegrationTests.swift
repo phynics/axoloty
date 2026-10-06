@@ -392,3 +392,78 @@ private final class FrameRecorder: @unchecked Sendable {
     func append(_ frame: RuntimeInboundFrame) { lock.withLock { storage.append(frame) }
     }
 }
+
+/// Opt-in routerless peer scenario.
+///
+/// Set `AXOLOTY_ZENOH_LIVE_PEER` to run it. The scenario uses no `zenohd`:
+/// every binding opens in peer mode with multicast scouting, so the peers
+/// discover each other on the local link and form a routerless topology.
+@Suite(
+    "Zenoh live peer integration",
+    .serialized,
+    .enabled(if: ProcessInfo.processInfo.environment["AXOLOTY_ZENOH_LIVE_PEER"] != nil)
+)
+struct ZenohPeerLiveIntegrationTests {
+    @Test("routerless peers exchange a route and one peer leaving does not stop delivery")
+    func routerlessPeerDelivery() async throws {
+        let route = "external/peer/\(UUID().uuidString.lowercased())"
+        let firstReceiver = FrameRecorder()
+        let secondReceiver = FrameRecorder()
+        let hub = try ZenohBinding(mode: .peer, multicastScoutingEnabled: true)
+        let first = try ZenohBinding(mode: .peer, multicastScoutingEnabled: true)
+        let second = try ZenohBinding(mode: .peer, multicastScoutingEnabled: true)
+        try await withStoppedBindings([hub, first, second]) {
+            try await hub.start { _ in }
+            try await first.start { frame in firstReceiver.append(frame) }
+            try await second.start { frame in secondReceiver.append(frame) }
+            try await first.perform(.externalRouteActivated(transition(route)))
+            try await second.perform(.externalRouteActivated(transition(route)))
+
+            try await publishUntil("routerless peer delivery to both peers", receive: {
+                firstReceiver.contains(route: route, payload: [4, 5, 6])
+                    && secondReceiver.contains(route: route, payload: [4, 5, 6])
+            }) {
+                try await hub.perform(.publish(RuntimeOutboundMessage(route: route, payload: [4, 5, 6])))
+            }
+
+            await first.stop()
+            try await publishUntil("delivery to the remaining peer", receive: {
+                secondReceiver.contains(route: route, payload: [7, 8, 9])
+            }) {
+                try await hub.perform(.publish(RuntimeOutboundMessage(route: route, payload: [7, 8, 9])))
+            }
+        }
+    }
+
+    private func transition(_ route: String) -> OwnedExternalRouteTransition {
+        OwnedExternalRouteTransition(sourceID: .zero, actorID: .zero, route: Array(route.utf8))
+    }
+
+    private func withStoppedBindings(
+        _ bindings: [ZenohBinding],
+        operation: () async throws -> Void
+    ) async throws {
+        do {
+            try await operation()
+        } catch {
+            for binding in bindings { await binding.stop() }
+            throw error
+        }
+        for binding in bindings { await binding.stop() }
+    }
+
+    private func publishUntil(
+        _ description: String,
+        timeout: Duration = .seconds(20),
+        receive: @escaping () async -> Bool,
+        publish: @escaping () async throws -> Void
+    ) async throws {
+        let deadline = ContinuousClock.now + timeout
+        while ContinuousClock.now < deadline {
+            try await publish()
+            if await receive() { return }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        throw ZenohLiveTestFailure.timeout(description)
+    }
+}

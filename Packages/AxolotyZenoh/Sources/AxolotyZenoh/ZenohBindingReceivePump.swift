@@ -82,6 +82,10 @@ extension ZenohBinding {
     }
 
     private func pollRouterConnectivityLocked() -> (failure: RuntimeTransportFailure?, recovered: Bool) {
+        // Peer mode has no router. Router presence is not a connectivity signal,
+        // so peer churn never produces a synthesized transport failure. Concrete
+        // operation failures still surface through their own result mapping.
+        guard configuration.mode == .client else { return (nil, false) }
         switch session.connectedRouterCount() {
         case let .count(count) where count > 0:
             let recovered = routerLossReported

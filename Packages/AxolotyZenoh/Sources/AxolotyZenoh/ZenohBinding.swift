@@ -52,7 +52,11 @@ public final class ZenohBinding: AxolotyRuntimeTransport, @unchecked Sendable {
     /// the runtime's owned error type.
     ///
     /// - Parameters:
-    ///   - connectEndpoint: Zenoh router endpoint.
+    ///   - mode: Connectivity mode. Defaults to client mode.
+    ///   - connectEndpoint: Zenoh router or peer endpoint. Defaults to the
+    ///     mode's discovery default.
+    ///   - multicastScoutingEnabled: Whether Zenoh multicast scouting is
+    ///     enabled. Defaults to the mode's discovery default.
     ///   - maximumProfileKeyBytes: Maximum profile key length.
     ///   - maximumExternalRoutes: Maximum exact external routes.
     ///   - receiveKeyCapacity: Maximum received key length.
@@ -60,7 +64,9 @@ public final class ZenohBinding: AxolotyRuntimeTransport, @unchecked Sendable {
     /// - Throws: ``AxolotyError/invalidConfiguration(option:reason:)`` when a
     ///   setting is outside the validated Zenoh bounds.
     public convenience init(
-        connectEndpoint: String = "tcp/127.0.0.1:7447",
+        mode: ZenohBindingMode = .client,
+        connectEndpoint: String? = nil,
+        multicastScoutingEnabled: Bool? = nil,
         maximumProfileKeyBytes: Int = 256,
         maximumExternalRoutes: Int = ZenohBindingConfiguration.maximumExternalRouteCapacity,
         receiveKeyCapacity: Int = ZenohFrameStorage.keyCapacity,
@@ -69,7 +75,9 @@ public final class ZenohBinding: AxolotyRuntimeTransport, @unchecked Sendable {
         let configuration: ZenohBindingConfiguration
         do {
             configuration = try ZenohBindingConfiguration(
+                mode: mode,
                 connectEndpoint: connectEndpoint,
+                multicastScoutingEnabled: multicastScoutingEnabled,
                 maximumProfileKeyBytes: maximumProfileKeyBytes,
                 maximumExternalRoutes: maximumExternalRoutes,
                 receiveKeyCapacity: receiveKeyCapacity,
@@ -283,7 +291,14 @@ public final class ZenohBinding: AxolotyRuntimeTransport, @unchecked Sendable {
         }
         let endpoint = Array(configuration.connectEndpoint.utf8)
         do {
-            try ZenohBindingSupport.requireSuccess(session.open(endpoint: endpoint), operation: "Zenoh session open")
+            try ZenohBindingSupport.requireSuccess(
+                session.open(
+                    endpoint: endpoint,
+                    mode: configuration.mode,
+                    multicastScoutingEnabled: configuration.multicastScoutingEnabled
+                ),
+                operation: "Zenoh session open"
+            )
         } catch {
             diagnostics?.recordSessionFailure()
             throw error
