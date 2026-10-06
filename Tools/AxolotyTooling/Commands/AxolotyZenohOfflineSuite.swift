@@ -3,7 +3,8 @@
 import Foundation
 
 /// Runs every router-free AxolotyZenoh package test against the pinned zenoh-c
-/// archive inside the pinned project container. It never starts `zenohd`.
+/// archive, inside the pinned project container on Linux or with the native
+/// toolchain on macOS. It never starts `zenohd`.
 struct AxolotyZenohOfflineSuite {
     /// The suite that needs a live router; it stays in the opt-in zenoh-live tier.
     static let liveSuite = "ZenohLiveIntegrationTests"
@@ -32,9 +33,7 @@ struct AxolotyZenohOfflineSuite {
     }
 
     private func execute() throws(AxolotyZenohCommandError) {
-        guard AxolotyCheckPlan.currentPlatform == .linux else {
-            throw .invalidOutput("the pinned zenoh-offline tier requires Linux")
-        }
+        try toolchain.requireSupportedHost(for: "zenoh-offline")
         let zenohC = try toolchain.provisionZenohC(
             in: root.appending(path: ".build/zenoh-offline/dependencies/zenoh-c")
         )
@@ -50,7 +49,7 @@ struct AxolotyZenohOfflineSuite {
                 "--scratch-path", ".build/zenoh-offline/swift",
                 "--cache-path", ".swiftpm-cache", "--disable-automatic-resolution",
                 "--skip", Self.liveSuite,
-            ],
+            ] + zenohC.swiftLinkerArguments,
             environment: childEnvironment,
             streamsOutput: true
         )

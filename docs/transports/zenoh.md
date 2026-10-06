@@ -79,7 +79,10 @@ The standalone package at [`Examples/ZenohHost`](../../Examples/ZenohHost)
 depends on `Axoloty` and `Packages/AxolotyZenoh`. The root package does not
 depend on Zenoh.
 
-First run the Linux-only live tier. It downloads the pinned `zenohd` and
+The steps below use the pinned Linux container. On macOS arm64, see
+[Run the host example natively on macOS](#run-the-host-example-natively-on-macos).
+
+First run the live tier. It downloads the pinned `zenohd` and
 `zenoh-c` archives, verifies their SHA-256 checksums, and runs the binding's
 live integration suite:
 
@@ -120,9 +123,7 @@ LD_LIBRARY_PATH=/workspace/.build/zenoh-live/dependencies/zenoh-c/unpacked/lib \
 The subscriber prints `RECEIVED channel=demo payload={"privateData":{"message":"hello from host B"}}`. Stop
 the subscriber and router with Ctrl-C. `PUBLISHED` means the Zenoh session
 accepted the publication. It does not confirm delivery to the subscriber.
-`zenoh-live` provisioning is Linux-only;
-the adapter itself also targets supported macOS hosts. See
-[`docs/dependencies/zenoh.md`](../dependencies/zenoh.md) for the pinned
+See [`docs/dependencies/zenoh.md`](../dependencies/zenoh.md) for the pinned
 versions, artifacts, and live-tier details.
 
 Use the command form `ZenohHost <mode> <endpoint> <channel> [payload]`. The
@@ -130,6 +131,40 @@ endpoint follows the mode. Use a valid Coaty Channel JSON payload with `send`.
 `ZenohBindingConfiguration` defaults to `tcp/127.0.0.1:7447`, but this example
 passes the endpoint explicitly. Both processes must use the same namespace and
 channel identifier. The example uses namespace `zenoh-example`.
+
+### Run the host example natively on macOS
+
+On macOS arm64, the live tier runs with the native toolchain. It provisions the
+pinned `aarch64-apple-darwin` archives under the same `.build/zenoh-live`
+directory:
+
+```sh
+swift run --package-path Tools axoloty-tool test-tier zenoh-live
+```
+
+Start the verified router:
+
+```sh
+.build/zenoh-live/dependencies/router/unpacked/zenohd -l tcp/127.0.0.1:7447
+```
+
+The example reads `zenohc.pc` through `PKG_CONFIG_PATH`. SwiftPM drops the
+runtime search path from pkg-config output, so pass it to the linker. In a
+second terminal, start the subscriber:
+
+```sh
+ZC="$PWD/.build/zenoh-live/dependencies/zenoh-c/unpacked/lib"
+PKG_CONFIG_PATH="$ZC/pkgconfig" swift run --package-path Examples/ZenohHost -Xlinker -rpath -Xlinker "$ZC" ZenohHost listen tcp/127.0.0.1:7447 demo
+```
+
+In a third terminal, send one message:
+
+```sh
+ZC="$PWD/.build/zenoh-live/dependencies/zenoh-c/unpacked/lib"
+PKG_CONFIG_PATH="$ZC/pkgconfig" swift run --package-path Examples/ZenohHost -Xlinker -rpath -Xlinker "$ZC" ZenohHost send tcp/127.0.0.1:7447 demo '{"privateData":{"message":"hello from host B"}}'
+```
+
+The subscriber prints the same `RECEIVED` line as on Linux.
 
 ## Embedded smoke scenario
 
@@ -152,7 +187,7 @@ router rejected or lost a connection.
 | Oversized frames or receive drops | Inspect `oversizedSamples` for keys or payloads above configured limits, and `receiveDrops` for full fixed-depth per-subscription façade queues or frames the binding could not admit. `receivedFrames` counts frames admitted to the runtime callback. |
 | External route subscription is rejected | The host binding accepts at most six exact external routes per session. Routes containing `*` are not exact Zenoh key expressions. See the [documented MQTT and Zenoh route difference](../../Packages/AxolotyZenoh/CONFORMANCE.md#mqtt-and-zenoh-protocol-trace-parity-811). |
 | Router loss and recovery debounce | The binding reports loss only after all connected routers remain absent for one second. Inspect `sessionFailures`, runtime state, `transportFailures`, `reconnects`, and `transportReconnects`. A short router interruption can end before the debounce and produce no reconnect. |
-| Live tier does not run | `zenoh-live` requires Linux and host container networking. Check the tier output and `.build/zenoh-live` logs. The tier provisions pinned artifacts and verifies their checksums. |
+| Live tier does not run | `zenoh-live` requires Linux x86_64 with host container networking, or macOS arm64 with the native toolchain. Check the tier output and `.build/zenoh-live` logs. The tier provisions pinned artifacts and verifies their checksums. |
 
 For the full transport boundary, fixed capacities, and conformance rules, see
 [`Packages/AxolotyZenoh/CONFORMANCE.md`](../../Packages/AxolotyZenoh/CONFORMANCE.md).

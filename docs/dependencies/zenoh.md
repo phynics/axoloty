@@ -60,12 +60,28 @@ requiring a Rust toolchain — is not necessary on the host. See
 anywhere else, the `prefix` line must be rewritten before `pkg-config` will
 resolve it.
 
-Verified SHA-256 of the archives used for qualification:
+The Darwin `libzenohc.dylib` records the upstream CI build path
+(`/Users/runner/work/zenoh-c/...`) as its install name, so a product linked
+against the unmodified archive cannot load it. Provisioning rewrites the
+install name to `@rpath/libzenohc.dylib` with `install_name_tool` and applies
+an ad-hoc signature, because the rewrite invalidates the original one.
+SwiftPM keeps only `-L` and `-l` from pkg-config output, and macOS strips
+`DYLD_LIBRARY_PATH` from its protected launchers, so the Darwin tiers pass
+`-Xlinker -rpath -Xlinker <zenoh-c>/lib` to `swift test`.
+
+Verified SHA-256 of the archives used for qualification. The Darwin digests
+match the digests GitHub publishes for the release assets:
 
 ```text
 1168b3dffa7f4f48ffabfd640a3878ec0527c0a612ce825aa6f93e2cd05762d1  zenoh-c-1.10.0-x86_64-unknown-linux-gnu-standalone.zip
 43de097382e3db4f95903cbadbbf472a21fbea53d6a3193606ae12b034a20881  zenoh-1.10.0-x86_64-unknown-linux-gnu-standalone.zip
+0f5aed4e9e618b13d37518c8c19fb03210050843ca0cf7b6105f367a6c32a97c  zenoh-c-1.10.0-aarch64-apple-darwin-standalone.zip
+00432b7efe7e84a230bad98b0995b5c2ab3757e8501c126f3b2d239fc0931610  zenoh-1.10.0-aarch64-apple-darwin-standalone.zip
 ```
+
+The tiers provision only these two hosts: Linux x86_64 in the pinned
+container, and macOS arm64 with the native toolchain. Any other host fails
+before downloading.
 
 ## Live host integration
 
@@ -80,6 +96,12 @@ Run it through the pinned Linux container with host networking:
 
 ```sh
 CONTAINER_NETWORK=host make test-tier TIER=zenoh-live BUILD_DIR=.build
+```
+
+On macOS arm64, run it with the native toolchain:
+
+```sh
+swift run --package-path Tools axoloty-tool test-tier zenoh-live
 ```
 
 The scenarios cover two host `ZenohBinding` clients, an independent C client in
@@ -111,6 +133,13 @@ The `zenoh-offline` tier proves the package without a router. It never starts
 make test-tier TIER=zenoh-offline
 ```
 
+On macOS arm64, the native tier runs only `zenoh-offline-package`.
+`zenoh-core-embedded` stays Linux-only, like the Core Embedded Swift gate:
+
+```sh
+swift run --package-path Tools axoloty-tool test-tier zenoh-offline
+```
+
 The `Zenoh offline` workflow runs this tier for pull requests and pushes to
 `main` and `exploration/zenoh`. The tier is not in the `ci` tier, so
 `make verify` is unchanged. The package node downloads the pinned archive, and
@@ -134,6 +163,15 @@ PROBE_ROUNDTRIP_OK
 
 The Coaty route was carried unchanged as a Zenoh key expression, which is the
 behavior AD-5 requires.
+
+### Host (macOS 26.6 arm64, Xcode 27, Swift 6.4, native)
+
+Both host tiers pass natively through `axoloty-tool test-tier` against the
+pinned `aarch64-apple-darwin` archives. `zenoh-offline` passes the façade
+conformance suite, the core, binding, and receive-pump suites, and the MQTT and
+Zenoh protocol trace parity replay. `zenoh-live` passes every router scenario,
+including soft recovery after `zenohd` is killed and restarted. See
+[#972](https://github.com/phynics/axoloty/issues/972).
 
 ### Embedded (ESP32-C6, ESP-IDF v5.4, riscv32-esp-elf-gcc 14.2.0)
 
@@ -194,8 +232,8 @@ sets the final numbers.
 
 ## Not yet qualified
 
-- **macOS host build.** The prebuilt Darwin archives exist for both
-  architectures, but no macOS machine was available to build against them.
+- **macOS x86_64 and Linux aarch64 hosts.** Upstream publishes archives for
+  both, but neither is pinned or qualified.
 - **On-device `zenoh-pico` execution.** The ESP32-C6 firmware compiles and
   links; it has not been flashed and run. The runtime smoke test needs Wi-Fi
   credentials (`AXOLOTY_WIFI_SSID` / `AXOLOTY_WIFI_PASSWORD`) and a reachable

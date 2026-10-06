@@ -2,7 +2,8 @@
 
 import Foundation
 
-/// Owns the opt-in live Zenoh test lifecycle inside the pinned project container.
+/// Owns the opt-in live Zenoh test lifecycle inside the pinned project container
+/// on Linux or with the native toolchain on macOS.
 struct AxolotyZenohLiveIntegration {
     private let environment: [String: String]
     private let root: URL
@@ -28,9 +29,7 @@ struct AxolotyZenohLiveIntegration {
     }
 
     private func execute() throws(AxolotyZenohCommandError) {
-        guard AxolotyCheckPlan.currentPlatform == .linux else {
-            throw .invalidOutput("the pinned zenoh-live tier requires Linux")
-        }
+        try toolchain.requireSupportedHost(for: "zenoh-live")
         let cacheRoot = root.appending(path: ".build/zenoh-live/dependencies")
         let scratch = root.appending(path: ".build/zenoh-live/runs/run-\(UUID().uuidString.lowercased())")
         let fileManager = FileManager.default
@@ -71,8 +70,7 @@ struct AxolotyZenohLiveIntegration {
         childEnvironment["AXOLOTY_ZENOH_LIVE_ROUTER"] = routerBinary.path
         childEnvironment["AXOLOTY_ZENOH_LIVE_C_PEER"] = scratch.appending(path: "zenoh-live-peer").path
 
-        let compilerFlags = try toolchain.runCommand("pkg-config", arguments: ["--cflags", "--libs", "zenohc"], environment: childEnvironment)
-            .split(whereSeparator: \.isWhitespace).map(String.init)
+        let compilerFlags = zenohC.cCompilerArguments
         let cPeer = URL(fileURLWithPath: childEnvironment["AXOLOTY_ZENOH_LIVE_C_PEER"]!)
         try toolchain.runCommand(
             "clang",
@@ -88,7 +86,7 @@ struct AxolotyZenohLiveIntegration {
                 "--scratch-path", ".build/zenoh-live/swift",
                 "--cache-path", ".swiftpm-cache", "--disable-automatic-resolution",
                 "--filter", "ZenohLiveIntegrationTests",
-            ],
+            ] + zenohC.swiftLinkerArguments,
             environment: childEnvironment,
             streamsOutput: true
         )
