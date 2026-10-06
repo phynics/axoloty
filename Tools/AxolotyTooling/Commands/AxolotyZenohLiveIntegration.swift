@@ -90,6 +90,22 @@ struct AxolotyZenohLiveIntegration {
             environment: childEnvironment,
             streamsOutput: true
         )
+
+        // Routerless peer scenario. It reuses the same build and zenoh-c
+        // installation but opens its own peer-to-peer topology with no router.
+        var peerEnvironment = childEnvironment
+        peerEnvironment["AXOLOTY_ZENOH_LIVE_PEER"] = "1"
+        try toolchain.runCommand(
+            "swift",
+            arguments: [
+                "test", "--package-path", "Packages/AxolotyZenoh",
+                "--scratch-path", ".build/zenoh-live/swift",
+                "--cache-path", ".swiftpm-cache", "--disable-automatic-resolution",
+                "--filter", "ZenohPeerLiveIntegrationTests",
+            ] + zenohC.swiftLinkerArguments,
+            environment: peerEnvironment,
+            streamsOutput: true
+        )
     }
 
     private func availablePort() throws(AxolotyZenohCommandError) -> String {
