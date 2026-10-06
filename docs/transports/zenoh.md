@@ -45,11 +45,16 @@ subscriptions, publishes resolved route and payload pairs, and polls bounded
 receive queues. The C façade owns Zenoh's C values and their lifetimes. Swift
 consumers use `ZenohBinding` and `ZenohBindingConfiguration` instead.
 
-The host binding supports client mode with a router connect endpoint. Its
-receive queues hold up to four frames per subscription. This is a fixed façade
-bound and cannot be configured. It accepts keys up to 256 UTF-8 bytes and
-payloads up to 2,048 bytes. Configuration can lower the key and payload limits.
-Frames above either configured limit are dropped and counted in
+The host binding supports client mode with a router connect endpoint and peer
+mode without a router. In client mode the binding connects to `zenohd` and
+tracks router presence. In peer mode the binding connects directly to other
+peers, discovers them through multicast scouting by default, and does not treat
+router presence as a connectivity signal.
+
+The binding's receive queues hold up to four frames per subscription. This is a
+fixed façade bound and cannot be configured. It accepts keys up to 256 UTF-8
+bytes and payloads up to 2,048 bytes. Configuration can lower the key and
+payload limits. Frames above either configured limit are dropped and counted in
 `oversizedSamples`; neither limit can be raised above the façade maximum. The
 façade reserves two of eight subscriber slots for profile subscriptions, so the
 binding supports at most six exact external routes. A route containing `*` is
@@ -62,6 +67,43 @@ and subscriber and has no broker-published will. Epic
 [#796](https://github.com/phynics/axoloty/issues/796) keeps Zenoh liveliness
 out of v1 scope. A graceful `stop()` still publishes Deadvertise. After an
 unclean disconnect, peers receive no Deadvertise for the lost node.
+
+### Peer mode
+
+Peer mode connects host runtimes without a router. Each binding listens on an
+ephemeral port and discovers other peers through multicast scouting. Coaty
+routes and payloads are unchanged; only the topology differs.
+
+```mermaid
+flowchart LR
+    subgraph hostA["Axoloty host A"]
+        appA["Application"] --> protocolA["AxolotyProtocol"]
+        protocolA --> bindingA["AxolotyZenoh\npeer mode"]
+    end
+    subgraph hostB["Axoloty host B"]
+        bindingB["AxolotyZenoh\npeer mode"] --> protocolB["AxolotyProtocol"]
+        protocolB --> appB["Application"]
+    end
+    bindingA <-->|multicast scouting| bindingB
+```
+
+Use peer mode when a router is not available:
+
+```swift
+let binding = try ZenohBinding(mode: .peer)
+```
+
+`ZenohBinding(mode: .peer)` resolves to an empty connect endpoint and enables
+multicast scouting. To connect to a known peer instead, pass an explicit
+endpoint, for example `ZenohBinding(mode: .peer, connectEndpoint:
+"tcp/192.168.1.10:7447")`, and set `multicastScoutingEnabled` to `false` when
+scouting is not wanted.
+
+Peer mode does not synthesize a `brokerUnavailable` transport failure from
+router presence, because a peer topology has no router and a peer leaving is
+not itself a transport failure. Concrete operation failures, such as a closed
+session or an invalid argument, still surface as transport failures. Client
+mode keeps the one-second debounced router-loss and recovery behavior.
 
 ### Zenoh network configuration
 
@@ -84,7 +126,8 @@ The steps below use the pinned Linux container. On macOS arm64, see
 
 First run the live tier. It downloads the pinned `zenohd` and
 `zenoh-c` archives, verifies their SHA-256 checksums, and runs the binding's
-live integration suite:
+live integration suite. It also runs an opt-in routerless peer scenario in the
+same tier:
 
 ```sh
 CONTAINER_NETWORK=host make test-tier TIER=zenoh-live BUILD_DIR=.build
@@ -128,8 +171,8 @@ versions, artifacts, and live-tier details.
 
 Use the command form `ZenohHost <mode> <endpoint> <channel> [payload]`. The
 endpoint follows the mode. Use a valid Coaty Channel JSON payload with `send`.
-`ZenohBindingConfiguration` defaults to `tcp/127.0.0.1:7447`, but this example
-passes the endpoint explicitly. Both processes must use the same namespace and
+`ZenohBindingConfiguration` defaults to `tcp/127.0.0.1:7447` in client mode,
+but this example passes the endpoint explicitly. Both processes must use the same namespace and
 channel identifier. The example uses namespace `zenoh-example`.
 
 ### Run the host example natively on macOS
@@ -183,10 +226,11 @@ router rejected or lost a connection.
 | Symptom | Inspect |
 |---|---|
 | Router is not reachable | Check that `zenohd` is running and that its listener matches the binding endpoint. Inspect `sessionOpens` and `sessionFailures`, but do not treat a successful session open as proof of a router connection. Check router logs and network reachability. After an established connection drops, inspect `transportFailures` and `reconnects`. |
-| Connect endpoint is invalid | Check the exact `connectEndpoint` string. Configuration rejects empty strings, whitespace, quotes, backslashes, non-ASCII bytes, and strings longer than 512 bytes. `ZenohBindingConfiguration(connectEndpoint:)` throws `ZenohBindingConfigurationError.invalidConnectEndpoint`. `ZenohBinding(connectEndpoint:)` maps that failure to `AxolotyError.invalidConfiguration`. |
+| Connect endpoint is invalid | Check the exact `connectEndpoint` string. Configuration rejects whitespace, quotes, backslashes, non-ASCII bytes, and strings longer than 512 bytes. Client mode additionally rejects an empty string. `ZenohBindingConfiguration(connectEndpoint:)` throws `ZenohBindingConfigurationError.invalidConnectEndpoint`. `ZenohBinding(connectEndpoint:)` maps that failure to `AxolotyError.invalidConfiguration`. |
+| Peers do not discover each other | Peer mode listens on an ephemeral port, so a fixed connect endpoint is not a discovery address. Confirm that multicast scouting is enabled, or pass the peer's actual reachable endpoint. Check that the network forwards multicast traffic. |
 | Oversized frames or receive drops | Inspect `oversizedSamples` for keys or payloads above configured limits, and `receiveDrops` for full fixed-depth per-subscription façade queues or frames the binding could not admit. `receivedFrames` counts frames admitted to the runtime callback. |
 | External route subscription is rejected | The host binding accepts at most six exact external routes per session. Routes containing `*` are not exact Zenoh key expressions. See the [documented MQTT and Zenoh route difference](../../Packages/AxolotyZenoh/CONFORMANCE.md#mqtt-and-zenoh-protocol-trace-parity-811). |
-| Router loss and recovery debounce | The binding reports loss only after all connected routers remain absent for one second. Inspect `sessionFailures`, runtime state, `transportFailures`, `reconnects`, and `transportReconnects`. A short router interruption can end before the debounce and produce no reconnect. |
+| Router loss and recovery debounce | The binding reports loss only after all connected routers remain absent for one second. Inspect `sessionFailures`, runtime state, `transportFailures`, `reconnects`, and `transportReconnects`. A short router interruption can end before the debounce and produce no reconnect. Peer mode never reports router loss. |
 | Live tier does not run | `zenoh-live` requires Linux x86_64 with host container networking, or macOS arm64 with the native toolchain. Check the tier output and `.build/zenoh-live` logs. The tier provisions pinned artifacts and verifies their checksums. |
 
 For the full transport boundary, fixed capacities, and conformance rules, see

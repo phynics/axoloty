@@ -24,7 +24,7 @@ public enum ZenohBindingConfigurationError: Error, Sendable, Equatable {
     case receivePayloadCapacityOutOfRange
 }
 
-/// Bounded client settings for the host Zenoh runtime binding.
+/// Bounded host Zenoh runtime binding settings.
 ///
 /// Zenoh's synchronous session-open API does not expose a meaningful deadline
 /// that the binding can enforce without adding its own clock or background

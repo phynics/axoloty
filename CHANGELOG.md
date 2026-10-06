@@ -11,6 +11,10 @@ fork, through CoatySwift 2.4.0, remain documented in the
 
 ### Added
 
+- The host Zenoh binding supports peer mode. `ZenohBindingMode.peer` opens a
+  routerless session, `multicastScoutingEnabled` controls peer discovery, and
+  peer mode does not report router loss as a transport failure. The opt-in
+  `zenoh-live` tier also runs a routerless peer scenario.
 - The `zenoh-offline` and `zenoh-live` host tiers run natively on macOS arm64
   through `swift run --package-path Tools axoloty-tool test-tier`. Provisioning
   pins and checksum-verifies the `aarch64-apple-darwin` 1.10.0 archives,
