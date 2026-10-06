@@ -11,6 +11,11 @@ fork, through CoatySwift 2.4.0, remain documented in the
 
 ### Added
 
+- The `zenoh-offline` and `zenoh-live` host tiers run natively on macOS arm64
+  through `swift run --package-path Tools axoloty-tool test-tier`. Provisioning
+  pins and checksum-verifies the `aarch64-apple-darwin` 1.10.0 archives,
+  relocates the Darwin `libzenohc.dylib` install name, and passes an explicit
+  runtime search path to `swift test`. `zenoh-core-embedded` stays Linux-only.
 - Test failures show bounded hex/text mirrors for `ByteSlice` and `TopicView`.
   `make test-one` accepts `REPEAT` and `REPEAT_UNTIL` to reproduce intermittent
   failures with Swift Testing 6.4.
