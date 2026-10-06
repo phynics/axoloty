@@ -112,10 +112,52 @@ struct ZenohBindingConfigurationTests {
         #expect(labels == [
             "mode",
             "connectEndpoint",
+            "multicastScoutingEnabled",
             "maximumProfileKeyBytes",
             "maximumExternalRoutes",
             "receiveKeyCapacity",
             "receivePayloadCapacity",
         ])
+    }
+
+    @Test("peer mode defaults to scouting discovery and an empty endpoint")
+    func peerDefaultsToScouting() throws(ZenohBindingConfigurationError) {
+        let configuration = try ZenohBindingConfiguration(mode: .peer)
+
+        #expect(configuration.mode == .peer)
+        #expect(configuration.connectEndpoint == "")
+        #expect(configuration.multicastScoutingEnabled)
+    }
+
+    @Test("client mode defaults to a router endpoint with scouting disabled")
+    func clientDefaultsToRouter() throws(ZenohBindingConfigurationError) {
+        let configuration = try ZenohBindingConfiguration()
+
+        #expect(configuration.mode == .client)
+        #expect(configuration.connectEndpoint == "tcp/127.0.0.1:7447")
+        #expect(!configuration.multicastScoutingEnabled)
+    }
+
+    @Test("peer mode accepts an explicit endpoint and scouting choice")
+    func peerAcceptsExplicitSettings() throws(ZenohBindingConfigurationError) {
+        let configuration = try ZenohBindingConfiguration(
+            mode: .peer,
+            connectEndpoint: "tcp/127.0.0.1:7447",
+            multicastScoutingEnabled: false
+        )
+
+        #expect(configuration.mode == .peer)
+        #expect(configuration.connectEndpoint == "tcp/127.0.0.1:7447")
+        #expect(!configuration.multicastScoutingEnabled)
+    }
+
+    @Test("peer mode still rejects malformed endpoint bytes")
+    func peerRejectsInvalidEndpointBytes() {
+        #expect(throws: ZenohBindingConfigurationError.invalidConnectEndpoint) {
+            try ZenohBindingConfiguration(mode: .peer, connectEndpoint: "tcp/router\n")
+        }
+        #expect(throws: ZenohBindingConfigurationError.invalidConnectEndpoint) {
+            try ZenohBindingConfiguration(mode: .peer, connectEndpoint: String(repeating: "x", count: 513))
+        }
     }
 }
