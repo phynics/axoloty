@@ -23,7 +23,89 @@ struct ZenohBindingTests {
         )
         await binding.stop()
 
-        #expect(session.operations == [.open(Array("tcp/127.0.0.1:7447".utf8)), .close])
+        #expect(session.operations == [.open(
+            Array("tcp/127.0.0.1:7447".utf8),
+            mode: .client,
+            multicastScoutingEnabled: false
+        ), .close])
+    }
+
+    @Test("forwards the client mode and scouting choice when opening")
+    func clientOpenForwardsModeAndScouting() async throws {
+        let session = RecordingZenohSession()
+        let binding = try makeBinding(session: session)
+
+        try await binding.start { _ in }
+        await binding.stop()
+
+        #expect(session.operations == [.open(
+            Array("tcp/127.0.0.1:7447".utf8),
+            mode: .client,
+            multicastScoutingEnabled: false
+        ), .close])
+    }
+
+    @Test("forwards peer mode and scouting discovery when opening")
+    func peerOpenForwardsModeAndScouting() async throws {
+        let session = RecordingZenohSession()
+        let configuration = try ZenohBindingConfiguration(mode: .peer)
+        let binding = try makeBinding(configuration: configuration, session: session)
+
+        try await binding.start { _ in }
+        await binding.stop()
+
+        #expect(session.operations == [.open(
+            [],
+            mode: .peer,
+            multicastScoutingEnabled: true
+        ), .close])
+    }
+
+    @Test("peer mode never reports a router-loss failure or recovery")
+    func peerModeIgnoresRouterPresence() async throws {
+        let session = RecordingZenohSession()
+        let now = NanosecondTestClock()
+        let configuration = try ZenohBindingConfiguration(mode: .peer)
+        let binding = try makeBinding(
+            configuration: configuration,
+            session: session,
+            now: { now.value },
+            debounce: 1_000
+        )
+        let failures = FailureRecorder()
+        let recoveries = RecoveryRecorder()
+        await binding.setFailureHandler { failures.append($0) }
+        await binding.setRecoveryHandler { recoveries.append() }
+        try await binding.start { _ in }
+
+        session.connectedRouters = 3
+        binding.drainReceiveQueues()
+        session.connectedRouters = 0
+        binding.drainReceiveQueues()
+        now.advance(by: 10_000)
+        binding.drainReceiveQueues()
+
+        #expect(failures.snapshot().isEmpty)
+        #expect(recoveries.snapshot() == 0)
+        #expect(session.pollCount == 0)
+        await binding.stop()
+    }
+
+    @Test("peer mode still publishes after a simulated peer change")
+    func peerModePublishesAfterPresenceChange() async throws {
+        let session = RecordingZenohSession()
+        let configuration = try ZenohBindingConfiguration(mode: .peer)
+        let binding = try makeBinding(configuration: configuration, session: session)
+        try await binding.start { _ in }
+
+        session.connectedRouters = 2
+        binding.drainReceiveQueues()
+        session.connectedRouters = 0
+        binding.drainReceiveQueues()
+
+        try await binding.perform(.publish(RuntimeOutboundMessage(route: "coaty/3/node/ADV/source", payload: [9])))
+        #expect(session.operations.last == .publish(Array("coaty/3/node/ADV/source".utf8), [9]))
+        await binding.stop()
     }
 
     @Test("ZenohBinding satisfies the shared runtime transport contract")
@@ -90,7 +172,7 @@ struct ZenohBindingTests {
         }
 
         #expect(session.operations == [
-            .open(Array("tcp/127.0.0.1:7447".utf8)),
+            .open(Array("tcp/127.0.0.1:7447".utf8), mode: .client, multicastScoutingEnabled: false),
             .subscribe(Array(route.utf8), id: 1),
             .unsubscribe(1),
         ])
@@ -114,7 +196,7 @@ struct ZenohBindingTests {
         #expect(session.operations.count == operationCount)
 
         #expect(session.operations == [
-            .open(Array("tcp/127.0.0.1:7447".utf8)),
+            .open(Array("tcp/127.0.0.1:7447".utf8), mode: .client, multicastScoutingEnabled: false),
             .subscribe(Array("coaty/3/node/*/*".utf8), id: 1),
             .subscribe(Array("coaty/3/node/*/*/*".utf8), id: 2),
             .unsubscribe(1),
@@ -147,7 +229,7 @@ struct ZenohBindingTests {
         try await binding.deactivateProfileInterest(namespace: "node")
 
         #expect(session.operations == [
-            .open(Array("tcp/127.0.0.1:7447".utf8)),
+            .open(Array("tcp/127.0.0.1:7447".utf8), mode: .client, multicastScoutingEnabled: false),
             .subscribe(Array("coaty/3/node/*/*".utf8), id: 1),
             .subscribe(Array("coaty/3/node/*/*/*".utf8), id: 2),
             .unsubscribe(1),
@@ -455,15 +537,21 @@ struct ZenohBindingTests {
     }
 
     private func makeBinding(
+        configuration: ZenohBindingConfiguration? = nil,
         session: any ZenohBindingSession,
         clock: @escaping @Sendable () -> UInt32 = { 0 },
         receivePumpIntervalNanoseconds: UInt64 = 60_000_000_000,
         now: @escaping @Sendable () -> UInt64 = { 0 },
         debounce: UInt64 = ZenohBinding.routerLossDebounceNanoseconds
     ) throws -> ZenohBinding {
-        let configuration = try ZenohBindingConfiguration()
+        let resolved: ZenohBindingConfiguration
+        if let configuration {
+            resolved = configuration
+        } else {
+            resolved = try ZenohBindingConfiguration()
+        }
         return ZenohBinding(
-            configuration: configuration,
+            configuration: resolved,
             session: session,
             clock: clock,
             receivePumpIntervalNanoseconds: receivePumpIntervalNanoseconds,
@@ -486,7 +574,7 @@ struct ZenohBindingTests {
 
 final class RecordingZenohSession: ZenohBindingSession {
     enum Operation: Equatable {
-        case open([UInt8])
+        case open([UInt8], mode: ZenohBindingMode, multicastScoutingEnabled: Bool)
         case close
         case publish([UInt8], [UInt8])
         case subscribe([UInt8], id: Int)
@@ -510,8 +598,8 @@ final class RecordingZenohSession: ZenohBindingSession {
         case result(ZenohResult)
     }
 
-    func open(endpoint: [UInt8]) -> ZenohResult {
-        operations.append(.open(endpoint))
+    func open(endpoint: [UInt8], mode: ZenohBindingMode, multicastScoutingEnabled: Bool) -> ZenohResult {
+        operations.append(.open(endpoint, mode: mode, multicastScoutingEnabled: multicastScoutingEnabled))
         return .success
     }
 

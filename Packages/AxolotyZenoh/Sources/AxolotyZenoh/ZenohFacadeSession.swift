@@ -11,13 +11,27 @@ struct ExternalSubscription {
 }
 
 protocol ZenohBindingSession: AnyObject {
-    func open(endpoint: [UInt8]) -> ZenohResult
+    func open(
+        endpoint: [UInt8],
+        mode: ZenohBindingMode,
+        multicastScoutingEnabled: Bool
+    ) -> ZenohResult
     func close() -> ZenohResult
     func publish(route: [UInt8], payload: [UInt8]) -> ZenohResult
     func subscribe(route: [UInt8]) throws(AxolotyError) -> Int
     func unsubscribe(_ subscription: Int) -> ZenohResult
     func poll(_ subscription: Int, into storage: inout ZenohFrameStorage) -> ZenohPollResult
     func connectedRouterCount() -> ZenohRouterCountResult
+}
+
+extension ZenohBindingMode {
+    /// The façade connectivity mode that matches this host binding mode.
+    var coreMode: ZenohMode {
+        switch self {
+        case .client: return .client
+        case .peer: return .peer
+        }
+    }
 }
 
 /// Couples the move-only Swift session with its opaque façade handles.
@@ -28,9 +42,17 @@ final class ZenohFacadeSession: ZenohBindingSession {
     private var subscriptions: [(id: Int, handle: ZenohSubscription)] = []
     private var nextSubscriptionID = 0
 
-    func open(endpoint: [UInt8]) -> ZenohResult {
+    func open(
+        endpoint: [UInt8],
+        mode: ZenohBindingMode,
+        multicastScoutingEnabled: Bool
+    ) -> ZenohResult {
         withSlice(endpoint) { endpointSlice in
-            session.open(configuration: ZenohConfiguration(connectEndpoint: endpointSlice))
+            session.open(configuration: ZenohConfiguration(
+                mode: mode.coreMode,
+                connectEndpoint: endpointSlice.length == 0 ? nil : endpointSlice,
+                multicastScoutingEnabled: multicastScoutingEnabled
+            ))
         }
     }
 
