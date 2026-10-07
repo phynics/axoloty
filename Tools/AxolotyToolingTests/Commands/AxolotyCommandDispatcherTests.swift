@@ -118,7 +118,8 @@ func typedInvocationParserPreservesSemanticCommandOwnership() {
     let parser = AxolotyCommandParser(environment: [:])
 
     #expect(parser.parse(["build"]) == .build)
-    #expect(parser.parse(["test", "offline"]) == .testOffline)
+    #expect(parser.parse(["test", "offline"]) == .unsupported)
+    #expect(parser.parse(["test", "integration"]) == .unsupported)
     #expect(parser.parse(["test", "tooling"]) == .testTooling)
     #expect(parser.parse(["wire", "verify"]) == .wireVerify)
 }
@@ -150,7 +151,7 @@ func helpCommandPrintsUsage() {
     #expect(result.exitCode == 0)
     #expect(result.standardOutput.contains("Usage: axoloty-tool <command>"))
     #expect(result.standardOutput.contains("test tooling"))
-    #expect(result.standardOutput.contains("measure timing"))
+    #expect(!result.standardOutput.contains("measure timing"))
     #expect(result.standardError.isEmpty)
 }
 

@@ -10,7 +10,6 @@ enum AxolotyCommandInvocation: Equatable, Sendable {
     case version
     case unsupported
     case serve(arguments: [String])
-    case timing(arguments: [String])
     case repositoryValidation(arguments: [String])
     case testOne(filter: String, repetition: AxolotyTestRepetition?)
     case testTier(name: String, ci: Bool)
@@ -18,10 +17,8 @@ enum AxolotyCommandInvocation: Equatable, Sendable {
     case checkPlan
     case check(requested: [String]?)
     case build
-    case testOffline
     case testTooling
     case verify(ci: Bool)
-    case integration
     case wireVerify
     case wireCapture
     case zenohLive
@@ -43,9 +40,6 @@ struct AxolotyCommandParser: Sendable {
         }
         if arguments == ["zenoh", "offline"] {
             return .zenohOffline
-        }
-        if arguments.count >= 2, arguments[0] == "measure", arguments[1] == "timing" {
-            return .timing(arguments: Array(arguments.dropFirst(2)))
         }
         if arguments.first == "repository", arguments.dropFirst().first == "validate" {
             return .repositoryValidation(arguments: Array(arguments.dropFirst(2)))
@@ -91,12 +85,8 @@ struct AxolotyCommandParser: Sendable {
             return .explain(tier: environment["TIER"] ?? "", ci: false)
         case ["build"]:
             return .build
-        case ["test", "offline"]:
-            return .testOffline
         case ["test", "tooling"]:
             return .testTooling
-        case ["test", "integration"]:
-            return .integration
         case ["wire", "verify"]:
             return .wireVerify
         case ["wire", "capture"]:

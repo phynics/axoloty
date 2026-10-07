@@ -13,7 +13,6 @@ public struct AxolotyCommandDispatcher: Sendable {
     private let checkCommands: AxolotyCheckCommands
     private let wireCommands: AxolotyWireCommands
     private let serveCommands: AxolotyServeCommandRunner
-    private let timingCommands: AxolotyTimingCommandRunner
     private let repositoryValidationCommands: AxolotyRepositoryValidationCommands
     private let releaseCommands: AxolotyReleaseCommands
     private let embeddedConsumerPreparation: AxolotyEmbeddedConsumerPreparation
@@ -54,7 +53,6 @@ public struct AxolotyCommandDispatcher: Sendable {
         processRunnerFactory: (@Sendable () -> any AxolotyManagedProcessRunning)? = nil,
         portProbe: any AxolotyServiceProbing? = nil,
         tempDirProvider: any AxolotyTempDirectoryProvider? = nil,
-        timingRunner: AxolotyTimingRunner? = nil,
         repositoryRoot: URL? = nil,
         installSignalHandler: Bool = true,
         cancellation: AxolotyCommandCancellation? = nil,
@@ -101,11 +99,6 @@ public struct AxolotyCommandDispatcher: Sendable {
         let processRunnerFactory = processRunnerFactory ?? { FoundationProcessRunner() }
         let portProbe = portProbe ?? FoundationServiceProbe()
         let tempDirProvider = tempDirProvider ?? FoundationTempDirectoryProvider()
-        let timingRunner = timingRunner ?? AxolotyTimingRunner(
-            commandRunner: configuredCommandRunner,
-            environment: environment,
-            planResolver: planResolution
-        )
         let executor = AxolotyCheckExecutor(
             commandRunner: CanonicalTierCommandRunner(
                 commandRunner: configuredCommandRunner,
@@ -147,10 +140,6 @@ public struct AxolotyCommandDispatcher: Sendable {
             portProbe: portProbe,
             tempDirProvider: tempDirProvider,
             cancellation: invocationCancellation
-        )
-        self.timingCommands = AxolotyTimingCommandRunner(
-            executableName: executableName,
-            timingRunner: timingRunner
         )
         self.repositoryValidationCommands = AxolotyRepositoryValidationCommands(
             repositoryRoot: normalizedRepositoryRoot
@@ -201,8 +190,6 @@ public struct AxolotyCommandDispatcher: Sendable {
             )
         case .serve(let arguments):
             return serveCommands.run(arguments: arguments)
-        case .timing(let arguments):
-            return timingCommands.run(arguments: arguments)
         case .repositoryValidation(let arguments):
             return repositoryValidationCommands.run(arguments: arguments)
         case .testOne(let filter, let repetition):
@@ -217,14 +204,10 @@ public struct AxolotyCommandDispatcher: Sendable {
             return checkCommands.run(.check(requested: requested))
         case .build:
             return checkCommands.run(.build)
-        case .testOffline:
-            return checkCommands.run(.testOffline)
         case .testTooling:
             return checkCommands.run(.testTooling)
         case .verify(let ci):
             return checkCommands.run(.verify(ci: ci))
-        case .integration:
-            return checkCommands.run(.integration)
         case .wireCapture:
             return wireCommands.run(.capture)
         case .zenohLive:
