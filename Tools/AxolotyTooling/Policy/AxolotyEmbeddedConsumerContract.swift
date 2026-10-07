@@ -488,11 +488,11 @@ internal struct AxolotyEmbeddedConsumerContractValidator {
             ))
             return
         }
-        if stringValue(target["platformClass"]) != "portable" || stringValue(target["role"]) != "portable" {
+        if stringValue(target["platformClass"]) != "portable" || stringValue(target["role"]) != "adapter" {
             findings.append(finding(
                 "zenohCore.modulePolicy",
                 path: policyPath,
-                "AxolotyZenohCore must use the portable role and platform class"
+                "AxolotyZenohCore must use the adapter role and the portable platform class"
             ))
         }
         if stringValue(target["path"]) != sourcePath {
