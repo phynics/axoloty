@@ -9,6 +9,11 @@ fork, through CoatySwift 2.4.0, remain documented in the
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-10-08
+
+Axoloty 0.9.0 requires Swift 6.4, completes the embedded firmware split, and
+adds an experimental Zenoh transport. See `docs/releases/0.9.0.md`.
+
 ### Added
 
 - An experimental Zenoh transport. The separate `Packages/AxolotyZenoh`
@@ -50,10 +55,24 @@ fork, through CoatySwift 2.4.0, remain documented in the
 
 ### Changed
 
-- Swift progress and timing parsers recognize Swift Build's whitespace-padded
+- The Swift progress parser recognizes Swift Build's whitespace-padded
   step counters. Optional existential types use the Swift 6.4 `any X?` syntax.
 - SwiftSyntax is pinned to 604.0.0 to match the Swift 6.4 toolchain and report
   macro-test failures through Swift Testing.
+
+- Ordinary verification no longer builds every public product in debug and
+  release. The release checkpoint still does.
+- `AxolotyZenohCore` is classified as a portable adapter in the module policy.
+
+### Removed
+
+- The `axoloty-tool measure timing`, `test offline`, and `test integration`
+  commands. `measure timing` was an unused one-off build measurement, `test
+  offline` duplicated `check`, and `test integration` only reported a retired
+  tier. They now parse as unsupported.
+- Thirteen canonical test nodes that no longer guarded anything: checks of
+  deleted files and retired 0.6-era symbols, a duplicate node, and their shell
+  self-tests. The module policy enforces the import boundaries they covered.
 
 ### Fixed
 
