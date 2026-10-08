@@ -25,6 +25,10 @@ microservices, or in cloud and backend services. MQTT is the transport Axoloty
 ships and validates against live CoatyJS; it reaches the runtime through a
 replaceable adapter (`AxolotyMQTT`) rather than defining what Axoloty
 networking is.
+An experimental [Zenoh](https://zenoh.io) adapter (`AxolotyZenoh`) carries the
+same Coaty routes and payloads over `zenohd` or peer-to-peer; see
+[docs/transports/zenoh.md](./docs/transports/zenoh.md). It is consumed from a
+checkout of this repository, and its wire encoding may change (ADR 0008).
 
 Axoloty provides an application and communication layer foundation for
 collaborative IoT prosumer scenarios where smart agents act in an autonomous,

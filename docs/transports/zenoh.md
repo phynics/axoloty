@@ -216,7 +216,30 @@ The embedded Zenoh implementation and its smoke scenario are tracked under
 Check that issue for current scope and setup. This repository does not contain
 firmware instructions or device credentials.
 
-## Inspect diagnostics
+## Troubleshooting
+
+Work from the outside in: confirm that the package builds and loads `zenoh-c`,
+then that a session opens, then that frames move, and finally that the runtime
+accepts them.
+
+### Build and load failures
+
+| Symptom | Cause and fix |
+|---|---|
+| SwiftPM cannot find the `zenohc` pkg-config package, or `zenoh_commons.h` is missing | `CZenohC` resolves `zenoh-c` only through pkg-config. Point `PKG_CONFIG_PATH` at the `lib/pkgconfig` directory of the pinned archive, as the example commands above do. An archive unpacked outside `/usr/local` needs its `zenohc.pc` `prefix` line rewritten; see [`docs/dependencies/zenoh.md`](../dependencies/zenoh.md). The root `Axoloty` package never needs `zenoh-c`. |
+| Linux: `libzenohc.so: cannot open shared object file` at launch | The library linked but is not on the loader path. Set `LD_LIBRARY_PATH` to the archive's `lib` directory. |
+| macOS: `Library not loaded: @rpath/libzenohc.dylib` at launch | SwiftPM drops the runtime search path from pkg-config output. Pass `-Xlinker -rpath -Xlinker <zenoh-c>/lib`, as in [the macOS steps](#run-the-host-example-natively-on-macos). |
+| The session opens but behavior differs from these docs | Use the pinned versions from [`docs/dependencies/zenoh.md`](../dependencies/zenoh.md) for both `zenohd` and `zenoh-c`. Other versions and other host architectures are not qualified. |
+
+### Sessions open but nothing arrives
+
+| Symptom | Cause and fix |
+|---|---|
+| `publishedFrames` rises on the sender but `receivedFrames` stays at zero on the receiver | Routes include the namespace and the channel or object identifier, so both runtimes must use the same namespace and identifier. Zenoh v1 keeps no history: a subscriber that starts after a publication never receives it, and `PUBLISHED` confirms only that the local session accepted the frame. |
+| `receivedFrames` rises but the application sees no event | `malformedFrames` counts inbound routes the runtime could not parse, and each one emits a `malformedFrame` diagnostic. Payloads that are not valid for their operation family are rejected by the protocol processor and reported as a rejected transition, not delivered to handlers. Validate the payload against the Coaty operation, for example a Channel payload with `privateData`. |
+| An MQTT agent, such as CoatyJS, never sees Zenoh traffic | Axoloty does not bridge transports. A runtime receives only what its own binding carries, so MQTT peers and Zenoh peers do not see each other's traffic. |
+
+### Read diagnostics
 
 Call `await runtime.diagnosticsSnapshot()` on the host runtime. The snapshot
 includes transport counters and runtime lifecycle counters. Read router logs

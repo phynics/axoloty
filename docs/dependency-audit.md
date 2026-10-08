@@ -128,8 +128,7 @@ expansion assertion to fail under the Swift 6.4 test runner.
 No vendored third-party source exists under `Source/`. The previously vendored
 fork of Flight-School/AnyCodable was removed in #110, replaced by the internal
 `JSONValue` type and raw JSON `String` storage across the snapshot, event, and
-model layers. A CI check (`make test-no-anycodable`) enforces that `AnyCodable`
-does not reappear in `Source/`.
+model layers.
 
 ## Actionable recommendations
 

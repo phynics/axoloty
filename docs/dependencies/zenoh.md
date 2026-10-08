@@ -31,15 +31,15 @@ and compatible with Axoloty's MIT license. GitHub's license classifier reports
 
 ## Host artifacts
 
-`zenoh-c` publishes prebuilt `*-standalone` archives per release. The Linux
-and macOS archives cover Axoloty's entire host matrix:
+`zenoh-c` publishes prebuilt `*-standalone` archives per release. Axoloty
+pins and supports two of them:
 
-| Platform | Asset |
-|---|---|
-| Linux x86_64 | `zenoh-c-1.10.0-x86_64-unknown-linux-gnu-standalone.zip` |
-| Linux aarch64 | `zenoh-c-1.10.0-aarch64-unknown-linux-gnu-standalone.zip` |
-| macOS x86_64 | `zenoh-c-1.10.0-x86_64-apple-darwin-standalone.zip` |
-| macOS arm64 | `zenoh-c-1.10.0-aarch64-apple-darwin-standalone.zip` |
+| Platform | Asset | Support |
+|---|---|---|
+| Linux x86_64 | `zenoh-c-1.10.0-x86_64-unknown-linux-gnu-standalone.zip` | Supported (pinned container) |
+| macOS arm64 | `zenoh-c-1.10.0-aarch64-apple-darwin-standalone.zip` | Supported (native toolchain) |
+| Linux aarch64 | `zenoh-c-1.10.0-aarch64-unknown-linux-gnu-standalone.zip` | Unsupported |
+| macOS x86_64 | `zenoh-c-1.10.0-x86_64-apple-darwin-standalone.zip` | Unsupported |
 
 Each archive contains headers, both a static and a shared library, a CMake
 package configuration, and a pkg-config file:
@@ -230,11 +230,13 @@ and `Z_RUNTIME_MAX_TASKS` from 64 to 8. Those values are a starting point
 chosen for a constrained target, not a measured optimum; the hardware gate
 sets the final numbers.
 
-## Not yet qualified
+## Unsupported hosts and device evidence
 
-- **macOS x86_64 and Linux aarch64 hosts.** Upstream publishes archives for
-  both, but neither is pinned or qualified.
-- **On-device `zenoh-pico` execution.** The ESP32-C6 firmware compiles and
-  links; it has not been flashed and run. The runtime smoke test needs Wi-Fi
-  credentials (`AXOLOTY_WIFI_SSID` / `AXOLOTY_WIFI_PASSWORD`) and a reachable
-  `zenohd`, and belongs to the hardware qualification gate.
+- **macOS x86_64 and Linux aarch64 are unsupported hosts.** Upstream publishes
+  archives for both, but Axoloty pins no checksum for them and provisioning
+  refuses them. Supporting either requires pinning its archive and running
+  the `zenoh-offline` and `zenoh-live` tiers on it.
+- **On-device `zenoh-pico` execution is qualified in
+  [`phynics/axoloty-embedded`](https://github.com/phynics/axoloty-embedded/issues/8),**
+  which owns firmware builds, flashing, and device evidence. This repository
+  records no device results.

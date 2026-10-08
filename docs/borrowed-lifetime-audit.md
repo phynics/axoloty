@@ -142,12 +142,9 @@ textually; per the task's guidance, loosening the regex is not an option —
 any such case should be added there with a comment explaining why the
 borrow does not actually escape.
 
-This script is intentionally **not** wired into the check-plan JSON or CI
-graph. A maintainer adding it to CI should add
-`Tests/Support/checks/check-no-escaping-borrows.sh` alongside the other
-`check-no-*.sh` entries (see `check-no-anycodable.sh`,
-`check-no-foundation-types.sh`) in whatever manifest drives the check-plan
-(e.g. `test-tiers.json` / the CI workflow that invokes `Tests/Support/*.sh`).
+The script runs in required CI as the `no-escaping-borrows` node of
+`Tests/Support/test-tiers.json`, with its self-test as
+`support-no-escaping-borrows-self-test`.
 
 ## Swift 6.4 `~Escapable` + `RawSpan` spike (#872)
 

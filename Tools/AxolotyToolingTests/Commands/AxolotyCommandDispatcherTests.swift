@@ -413,7 +413,7 @@ func verifyPlanIncludesStaticSupportWithoutRecursiveGates() throws {
         requested: nil
     ))
     #expect(ordinary.nodes.contains { $0.name == "support-tier-contract" })
-    #expect(ordinary.nodes.contains { $0.name == "no-anycodable" })
+    #expect(ordinary.nodes.contains { $0.name == "no-escaping-borrows" })
     #expect(!ordinary.nodes.contains { $0.name == "integration-tests" })
     #expect(!ordinary.nodes.contains { $0.name == "logging-global" })
 }

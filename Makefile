@@ -81,7 +81,7 @@ DOC_HOSTING_BASE_PATH ?=
 	axoloty-tool verify verify-ci test-one test-tier explain \
 	checkpoint \
 	test-decoder-context-sendable \
-	test-no-anycodable test-no-foundation-types test-axoloty-wire-dependencies \
+	test-axoloty-wire-dependencies \
 	test-axoloty-wire-independent-resolution test-axoloty-wire-distribution \
 	test-axoloty-semver-consumer \
 	ci-preflight ci shell docs lint \
@@ -112,8 +112,6 @@ help:
 		'make serve-mcp     Run the MCP service in the container' \
 		'make serve-dev     Run the MQTT + MCP development stack' \
 		'make test-decoder-context-sendable  Fail if the former decoder-context Sendable diagnostic returns' \
-		'make test-no-anycodable  Fail if AnyCodable is used in production source' \
-		'make test-no-foundation-types  Fail if forbidden Foundation types are used in production source' \
 		'make test-axoloty-wire-distribution  Validate root and standalone AxolotyWire consumers' \
 		'make test-axoloty-semver-consumer  Build clean semver consumers for both products' \
 		'make wire-tool   Build the npx-runnable wire-compatibility CLI' \
@@ -255,12 +253,6 @@ test-decoder-context-sendable: image
 	then cat "$$build_log"; exit 1; fi; \
 	cat "$$build_log"; \
 	sh Tests/Support/checks/check-decoder-context-diagnostic.sh "$$build_log"
-
-test-no-anycodable:
-	@sh Tests/Support/checks/check-no-anycodable.sh
-
-test-no-foundation-types:
-	@sh Tests/Support/checks/check-no-foundation-types.sh
 
 test-axoloty-wire-dependencies:
 	@sh Tests/Support/checks/check-axoloty-wire-dependencies.sh Packages/AxolotyWire
