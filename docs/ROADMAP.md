@@ -4,34 +4,36 @@ Axoloty is a Swift runtime and protocol suite for collaborative distributed agen
 
 ## Current checkpoint
 
-[`VERSION`](../VERSION) identifies the current released version (`0.8.2`). Axoloty remains pre-1.0 and its public API may change. The 0.8 line is the active checkpoint.
+[`VERSION`](../VERSION) identifies the current released version (`0.9.0`). Axoloty remains pre-1.0 and its public API may change. The 0.9 line is the active checkpoint.
 
 Historical release outcomes are preserved in [`docs/releases/`](./releases/) and [`CHANGELOG.md`](../CHANGELOG.md). They do not define current strategy.
 
-## Active direction: Swift 6.4
+## Active direction: qualify firmware, then scope 1.0
 
-Axoloty 0.8.2 is the Core revision that the embedded firmware split locks
-against. It publishes the versioned
-[embedded consumer contract](./embedded-consumer-contract.md) and a
-firmware-independent Embedded Swift portability gate in required CI. Outcomes
-are recorded in [`docs/releases/0.8.0.md`](./releases/0.8.0.md) and
-[`docs/releases/0.8.1.md`](./releases/0.8.1.md) and
-[`docs/releases/0.8.2.md`](./releases/0.8.2.md).
+Axoloty 0.9.0 closes three programs, recorded in
+[`docs/releases/0.9.0.md`](./releases/0.9.0.md):
 
-The programs run in this order:
+- [Epic #845](https://github.com/phynics/axoloty/issues/845) moved concrete
+  firmware, board integration, and device qualification into
+  `phynics/axoloty-embedded`. Axoloty keeps the portable protocol and runtime
+  and proves them Embedded-Swift compatible in required CI.
+- [Epic #878](https://github.com/phynics/axoloty/issues/878) adopted Swift 6.4.
+- [Epic #796](https://github.com/phynics/axoloty/issues/796) added the host
+  Zenoh transport, which is experimental in 0.9.
 
-1. [Epic #845](https://github.com/phynics/axoloty/issues/845) moved concrete
-   firmware products, board and toolchain integration, and device
-   qualification into `phynics/axoloty-embedded`. Axoloty keeps the portable
-   protocol/runtime implementation and proves it remains Embedded Swift
-   compatible. The migration landed; firmware no longer lives here.
-2. [Epic #878](https://github.com/phynics/axoloty/issues/878) adopts Swift 6.4
-   now that the firmware migration has landed, so a toolchain change never
-   overlaps a behavior-preserving move.
+The next steps, in order:
 
-Embedded Zenoh implementation under
-[epic #796](https://github.com/phynics/axoloty/issues/796) is owned by
-`phynics/axoloty-embedded`. Host and shared Zenoh work stays in Axoloty.
+1. **Qualify firmware against 0.9.0.** `phynics/axoloty-embedded` locks to the
+   `v0.9.0` tag and requalifies both ESP32-C6 profiles on hardware
+   ([#796 plan](https://github.com/phynics/axoloty/issues/796)).
+2. **Scope 1.0.** Decide what the 1.0 API freeze covers, the remote packaging
+   of the Zenoh adapter, and the device performance budgets
+   ([#978](https://github.com/phynics/axoloty/issues/978),
+   [#987](https://github.com/phynics/axoloty/issues/987)).
+3. **Measure the `axoloty/1` CBOR profile.**
+   [ADR 0008](./adr/0008-axoloty-1-cbor-extension-profile.md) defines it, and
+   [epic #977](https://github.com/phynics/axoloty/issues/977) gates it on
+   device measurements.
 
 ## Completed: 0.7 architecture stabilization and transport boundary
 
@@ -117,7 +119,7 @@ Implementation tickets are created lazily as each gate opens. [AT Protocol resea
 
 ## Explicit non-goals
 
-These remain out of scope through the 0.8 line:
+These remain out of scope through the 0.9 line:
 
 - shipping the `axoloty/1` CBOR extension profile, which
   [ADR 0008](./adr/0008-axoloty-1-cbor-extension-profile.md) defines and

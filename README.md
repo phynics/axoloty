@@ -10,10 +10,10 @@ version](https://img.shields.io/badge/swift-6.4-%23F05138?logo=swift)](https://d
 MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
 > **Development checkpoint.** [`VERSION`](./VERSION) identifies the current
-> published release (`0.8.2`). Axoloty is not API-stable. The 0.8 line
-> publishes a versioned contract for firmware that consumes the portable Core
-> from outside this repository, on the explicit runtime composition introduced
-> by 0.7 and the shared host and Embedded Swift path established by 0.6.
+> published release (`0.9.0`). Axoloty is not API-stable. The 0.9 line moves
+> to Swift 6.4, completes the split of firmware into `phynics/axoloty-embedded`,
+> and adds an experimental Zenoh transport, on the versioned embedded consumer
+> contract from 0.8 and the explicit runtime composition from 0.7.
 
 ## About Axoloty
 
@@ -86,7 +86,7 @@ Add Axoloty to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/phynics/axoloty", from: "0.8.2"),
+    .package(url: "https://github.com/phynics/axoloty", from: "0.9.0"),
 ],
 targets: [
     .executableTarget(
@@ -102,7 +102,7 @@ For a wire target in a consumer that already resolves the root package:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/phynics/axoloty", from: "0.8.2"),
+    .package(url: "https://github.com/phynics/axoloty", from: "0.9.0"),
 ],
 targets: [
     .executableTarget(
@@ -235,7 +235,7 @@ swift run --package-path Apps axoloty-inspect discover --core-type Identity
 See [docs/inspector.md](./docs/inspector.md) for the full reference.
 
 For the current release's changes, see
-[0.8.2 release notes](./docs/releases/0.8.2.md). For migrating from legacy
+[0.9.0 release notes](./docs/releases/0.9.0.md). For migrating from legacy
 CoatySwift, see [the 0.2 migration guide](./docs/migration/from-coatyswift-to-0.2.md).
 For the 0.7 runtime-registration migration, see
 [the 0.6-to-0.7 guide](./docs/migration/from-0.6-to-0.7.md). For the 0.8
