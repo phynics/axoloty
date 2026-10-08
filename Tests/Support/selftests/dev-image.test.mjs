@@ -712,8 +712,7 @@ test("required CI preserves the plan budget and uploads durable run evidence", (
   assert.match(requiredCIJob, /timeout-minutes: 90/);
   assert.match(requiredCIJob, /AXOLOTY_RUNS_DIR: \.testing\/runs/);
   assert.match(requiredCIJob, /CONTAINER_CREATE_TIMEOUT_SECONDS: "300"/);
-  assert.match(requiredCIJob, /AXOLOTY_TIMING_EVIDENCE: "1"/);
-  assert.match(requiredCIJob, /AXOLOTY_TOOL_CONTAINER_ENV_VARS="AXOLOTY_OUTPUT CONTAINER_CREATE_TIMEOUT_SECONDS AXOLOTY_RUNS_DIR AXOLOTY_TIMING_EVIDENCE"/);
+  assert.match(requiredCIJob, /AXOLOTY_TOOL_CONTAINER_ENV_VARS="AXOLOTY_OUTPUT CONTAINER_CREATE_TIMEOUT_SECONDS AXOLOTY_RUNS_DIR"/);
   assert.match(requiredCIJob, /Upload verification run diagnostics[\s\S]*\.testing\/required-checks\.log[\s\S]*\.testing\/runs\/\*\*[\s\S]*if-no-files-found: warn/);
   assert.match(requiredCIJob, /Summarize verification evidence[\s\S]*manifest\.json[\s\S]*verifier\.log/);
   assert.match(requiredCIJob, /\.primary == true[\s\S]*\*-verify-ci\.json/);

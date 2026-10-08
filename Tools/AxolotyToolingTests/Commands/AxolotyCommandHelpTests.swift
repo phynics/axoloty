@@ -24,19 +24,6 @@ func rootHelpAliasesRemainByteIdentical() {
 }
 
 @Test
-func timingHelpUsesConfiguredExecutableName() {
-    let result = commandHelpDispatcher(executableName: "ax").run(
-        arguments: ["measure", "timing", "--help"]
-    )
-
-    #expect(result.exitCode == 0)
-    #expect(result.standardOutput.hasPrefix("Usage: ax measure timing [options]\n"))
-    #expect(result.standardOutput.contains("--scratch-root PATH"))
-    #expect(!result.standardOutput.contains("axoloty-tool"))
-    #expect(result.standardError.isEmpty)
-}
-
-@Test
 func repositoryValidationHelpKeepsStableUsageDocument() {
     let result = commandHelpDispatcher().run(
         arguments: ["repository", "validate", "--help"]

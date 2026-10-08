@@ -54,21 +54,18 @@ starts MQTT or accesses hardware.
 
 | Command | MQTT | Hardware | Purpose |
 |---|:---:|:---:|---|
-| `axoloty-tool check` / `axoloty-tool test offline` | no | no | Deterministic platform plan |
+| `axoloty-tool check` | no | no | Deterministic platform plan |
 | `axoloty-tool wire verify` | no | no | Direct fixture and snapshot verification |
 | `axoloty-tool wire capture` | local | no | Live reference-agent capture (host-side orchestration) |
 | `axoloty-tool embedded consumer prepare` | no | no | Prepare a supported external consumer from `AXOLOTY_SOURCE_DIR` |
-| `axoloty-tool measure timing` | no | no | Linux-only cold/warm build evidence |
 
 The `ci` category includes the required optional-product boundary and tests
 for the bounded host SensorThings source and direct-observation workflows.
 
 Live CoatyJS capture retains focused Make
-targets while their existing evidence contracts remain in place. The former
-`axoloty-tool test integration` command is retained only as a deprecation
-diagnostic because its canonical broker-backed test nodes depended on removed
-production APIs. Wire parsing correctness belongs to the offline tier; fresh
-broker evidence belongs to the live-wire capture workflow.
+targets while their existing evidence contracts remain in place. Wire parsing
+correctness belongs to the offline tier; fresh broker evidence belongs to the
+live-wire capture workflow.
 
 The tooling test suite preserves an end-to-end development-service test as
 opt-in evidence. Ordinary `test tooling` runs skip it before looking up or
@@ -201,29 +198,6 @@ the exact bytes of `Tests/Support/evidence/g6-resource-policy.json`. The policy
 requires two independent host runs, two physical ESP32-C6 power-cycle runs,
 production Embedded Swift, the sustained workload limits, and each required
 device metric. A C surrogate can never satisfy the gate.
-
-## Timing evidence
-
-On Linux, `axoloty-tool measure timing` runs four commands serially: cold and
-warm host build and cold and warm focused test build. Each scenario owns a
-separate scratch directory; the warm run
-reuses the cold directory. Use `--scratch-root PATH` to select the root and
-`--keep-scratch` to retain the directories for inspection:
-
-```sh
-axoloty-tool measure timing \
-  --filter AxolotyCommandDispatcherTests \
-  --scratch-root .testing/timing --keep-scratch
-```
-
-Standard output is one sorted-key JSON report. Each measurement records its
-command plan, monotonic duration, child exit status, bounded failure diagnostic,
-scratch reuse, toolchain identity, parsed build-step count, and cache counters.
-Metrics that are not present in command output are marked `unavailable`; the
-runner never estimates them. The command uses only build and linker validation
-plans and never probes devices, acquires leases, starts a broker, or performs
-network I/O. macOS returns a structured unsupported-platform result instead of
-launching a measurement.
 
 ## Adding tooling
 

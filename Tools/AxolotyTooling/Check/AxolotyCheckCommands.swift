@@ -7,13 +7,11 @@ enum AxolotyCheckCommand: Equatable, Sendable {
     case plan
     case check(requested: [String]?)
     case build
-    case testOffline
     case testTooling
     case verify(ci: Bool)
     case testOne(filter: String, repetition: AxolotyTestRepetition?)
     case testTier(name: String, ci: Bool)
     case explain(tier: String, ci: Bool)
-    case integration
 }
 
 /// Executes canonical checks, plans, and check-oriented compatibility aliases.
@@ -47,8 +45,6 @@ struct AxolotyCheckCommands: Sendable {
             return checkResult(requested: requested)
         case .build:
             return checkResult(requested: ["build"])
-        case .testOffline:
-            return checkResult(requested: nil)
         case .testTooling:
             return checkResult(requested: ["test-tooling"])
         case .verify(let ci):
@@ -59,11 +55,6 @@ struct AxolotyCheckCommands: Sendable {
             return testTierResult(tier: name, ci: ci)
         case .explain(let tier, let ci):
             return explainResult(tier: tier, ci: ci)
-        case .integration:
-            return AxolotyCommandResult(
-                standardError: "error: broker-backed integration tier is retired; use a declared test tier or wire capture for broker evidence\n",
-                exitCode: 69
-            )
         }
     }
 

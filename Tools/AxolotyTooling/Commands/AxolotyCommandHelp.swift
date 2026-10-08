@@ -7,9 +7,6 @@ enum AxolotyCommandHelp {
         usageDocument.replacingOccurrences(of: "axoloty-tool", with: executableName)
     }
 
-    static func timingUsage(executableName: String) -> String {
-        timingUsageDocument(executableName: executableName)
-    }
 
     static func serveUsage(topic: AxolotyServeHelpTopic, executableName: String) -> String {
         let usage = switch topic {
@@ -38,15 +35,12 @@ enum AxolotyCommandHelp {
       test-tier TIER       Run one canonical test tier.
       explain TIER          Print its command graph and execution policies.
       build                Build the host package and its prerequisites.
-      test offline         Run the same offline plan as check.
       test tooling         Run offline developer-tool tests and prerequisites.
-      test integration     Deprecated; no canonical broker-backed tier is declared.
       wire capture         Run live MQTT captures with pinned reference agents.
       zenoh live           Run the opt-in pinned zenohd integration suite.
       zenoh offline        Run the router-free Zenoh package tests on pinned zenoh-c.
       embedded consumer prepare  Prepare a standalone Embedded Swift consumer report.
       release checkpoint   Run the release checkpoint validation (no hardware).
-      measure timing        Measure cold/warm hardware-free builds (Linux only).
       repository validate    Validate version, documentation, and architecture authority.
       serve mqtt           Start a local Mosquitto broker in the foreground.
       serve mcp            Start an Axoloty MCP server (stdio or HTTP).
@@ -55,20 +49,6 @@ enum AxolotyCommandHelp {
     The initial command surface is intentionally small. Workflow commands are
     introduced only when their execution contracts and structured results exist.
     """
-
-    private static func timingUsageDocument(executableName: String) -> String {
-        """
-        Usage: \(executableName) measure timing [options]
-
-        Measure cold and warm hardware-free build paths on Linux.
-
-        Options:
-          --filter FILTER       Focused Swift test filter (default: AxolotyCommandDispatcherTests).
-          --scratch-root PATH   Root for isolated per-scenario scratch trees.
-          --keep-scratch        Retain scratch trees after measurement.
-          --help                Show this help.
-        """
-    }
 
     private static let mqttUsageDocument = """
     Usage: axoloty-tool serve mqtt [options]
