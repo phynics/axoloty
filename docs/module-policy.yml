@@ -571,7 +571,7 @@
     },
     {
       "name": "AxolotyZenohCore",
-      "role": "portable",
+      "role": "adapter",
       "platformClass": "portable",
       "path": "Packages/AxolotyZenoh/Sources/AxolotyZenohCore",
       "allowedImports": [
@@ -597,7 +597,7 @@
         "ErrorKit",
         "Combine"
       ],
-      "note": "Portable Embedded-Swift-compatible core. It may use the stable C façade, but cannot import the carrier system library or host runtime/transport modules."
+      "note": "The Zenoh adapter's Embedded-Swift-compatible core. It compiles for every profile, so its platform class is portable, but its role is adapter because it carries one transport through the C façade, whose session registry is process-global. It cannot import the carrier system library or host runtime/transport modules."
     },
     {
       "name": "AxolotyZenoh",
