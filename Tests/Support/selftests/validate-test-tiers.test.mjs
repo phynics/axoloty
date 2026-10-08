@@ -106,9 +106,11 @@ test("G6 public product builds are offline-only", () => {
   assert.equal(build.local, true);
   assert.equal(build.ci, false);
   assert.equal(build.command.environment.AXOLOTY_G6_PRODUCT_BUILD, "1");
-  // It belongs to ci -- it needs no infrastructure -- but is local-only, so
-  // the resolver drops it from a CI run and it is not a required gate.
-  assert.ok(document.tiers.find(tier => tier.id === "ci").nodes.includes(build.id));
+  // Building every public product in debug and release takes longer than
+  // the rest of ordinary verification combined, so it runs only in the
+  // release checkpoint, which its cadence already names.
+  assert.equal(build.cadence, "release-and-checkpoint");
+  assert.ok(!document.tiers.find(tier => tier.id === "ci").nodes.includes(build.id));
   assert.ok(document.tiers.find(tier => tier.id === "release").nodes.includes(build.id));
   assert.equal(document.requiredGates.includes(build.id), false);
 });
