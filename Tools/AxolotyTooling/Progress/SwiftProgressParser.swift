@@ -87,9 +87,6 @@ public struct SwiftBuildProgressParser: AxolotyCommandProgressParsing {
 
     /// Extracts a `[completed/total] action` marker.
     ///
-    /// The scanning intentionally mirrors ``AxolotyTimingOutputParser`` so
-    /// step interpretation stays consistent with timing metrics.
-    ///
     /// - Parameter text: The line to scan.
     /// - Returns: Completed count, total, and the action text after `]`.
     static func stepMarker(in text: String) -> (completed: Int, total: Int, action: String)? {

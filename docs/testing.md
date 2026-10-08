@@ -76,7 +76,7 @@ prints the graph, durations, deadlines, policies, locks/lanes, and artifacts.
 `make test-tier TIER=wire` for live CoatyJS interoperability. For the other
 tooling plans, use
 `make axoloty-tool AXOLOTY_TOOL_ARGS='test tooling'` or
-`make axoloty-tool AXOLOTY_TOOL_ARGS='test offline'`.
+`make axoloty-tool AXOLOTY_TOOL_ARGS='check'`.
 
 ### Required Linux timing and cache policy
 

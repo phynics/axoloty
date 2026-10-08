@@ -83,43 +83,6 @@ struct AxolotyServeCommandRunner: Sendable {
     }
 }
 
-/// Parses and executes the existing timing command without changing its runner.
-struct AxolotyTimingCommandRunner: Sendable {
-    private let executableName: String
-    private let timingRunner: AxolotyTimingRunner
-
-    init(executableName: String, timingRunner: AxolotyTimingRunner) {
-        self.executableName = executableName
-        self.timingRunner = timingRunner
-    }
-
-    /// Parses and executes one timing command.
-    func run(arguments: [String]) -> AxolotyCommandResult {
-        if arguments == ["--help"] || arguments == ["-h"] {
-            return AxolotyCommandResult(standardOutput: AxolotyCommandHelp.timingUsage(executableName: executableName))
-        }
-        let parsed = AxolotyTimingArgumentParser.parse(arguments)
-        guard let options = parsed.success else {
-            let message = parsed.failure?.message ?? "invalid timing arguments"
-            return AxolotyCommandResult(
-                standardError: "error: \(message)\n\n\(AxolotyCommandHelp.timingUsage(executableName: executableName))\n",
-                exitCode: 64
-            )
-        }
-        let report = timingRunner.run(options)
-        do {
-            return try AxolotyCommandFamilySupport.jsonResult(report, exitCode: report.exitCode)
-        } catch {
-            let diagnostic = AxolotyTimingOutputParser.boundedDiagnostic(String(reflecting: error))
-                ?? "unknown encoding error"
-            return AxolotyCommandResult(
-                standardError: "error: unable to encode timing report: \(diagnostic)\n",
-                exitCode: 70
-            )
-        }
-    }
-}
-
 /// Parses and executes repository-authority validation output.
 struct AxolotyRepositoryValidationCommands: Sendable {
     private let repositoryRoot: URL

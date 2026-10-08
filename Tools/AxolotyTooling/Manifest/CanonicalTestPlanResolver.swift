@@ -36,12 +36,6 @@ enum CanonicalPlanRequest: Sendable {
 enum CanonicalCommandRequest: Sendable {
     case node(name: String)
     case testOne(filter: String, repetition: AxolotyTestRepetition?)
-    case timing(
-        scenario: AxolotyTimingScenario,
-        mode: AxolotyTimingMode,
-        workspace: String,
-        filter: String
-    )
 }
 
 enum AxolotyTestRepeatCondition: String, Equatable, Sendable {
@@ -102,31 +96,6 @@ struct AxolotyCanonicalTestPlanResolver: Sendable {
                 filter: filter,
                 timeoutSeconds: manifest.testOne.timeoutSeconds,
                 repetition: repetition
-            )
-        case .timing(let scenario, let mode, let workspace, let filter):
-            let base: AxolotyCommandPlan = switch scenario {
-            case .hostBuild:
-                try command(.node(name: "build"))
-            case .focusedTestBuild:
-                try command(.testOne(filter: filter, repetition: nil))
-            }
-            var arguments = base.arguments
-            var environment = base.environment
-            environment["AXOLOTY_TIMING_SCENARIO"] = scenario.rawValue
-            environment["AXOLOTY_TIMING_MODE"] = mode.rawValue
-            environment["AXOLOTY_TIMING_SCRATCH"] = workspace
-            switch scenario {
-            case .hostBuild, .focusedTestBuild:
-                if !arguments.contains("--scratch-path") {
-                    arguments += ["--scratch-path", workspace]
-                }
-            }
-            return AxolotyCommandPlan(
-                executable: base.executable,
-                arguments: arguments,
-                environment: environment,
-                executionContext: base.executionContext,
-                timeoutSeconds: base.timeoutSeconds
             )
         }
     }
