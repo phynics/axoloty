@@ -11,6 +11,22 @@ fork, through CoatySwift 2.4.0, remain documented in the
 
 ### Added
 
+- An experimental Zenoh transport. The separate `Packages/AxolotyZenoh`
+  package provides `AxolotyZenoh`, a host `AxolotyRuntimeTransport` over the
+  pinned `zenoh-c` 1.10.0 archive, and `AxolotyZenohCore`, an Embedded-Swift
+  core over an Axoloty-owned C façade. Coaty routes become Zenoh key
+  expressions unchanged. The binding opens client sessions to `zenohd`,
+  publishes resolved routes, polls bounded receive queues (four frames per
+  subscription, 256-byte keys, 2,048-byte payloads, at most six exact
+  external routes), and recovers from router loss with a one-second
+  debounce. `RuntimeDiagnostics` gains transport-neutral session, frame,
+  drop, and reconnect counters that MQTT also reports. The `zenoh-offline`
+  and `zenoh-live` tiers cover it in CI. The package is consumed from a
+  checkout (path dependency, ADR 0007), and its wire encoding may move to the
+  `axoloty/1` CBOR profile (ADR 0008). See `docs/transports/zenoh.md`.
+- The embedded consumer contract reports the Zenoh core artifacts, so
+  firmware can compile `AxolotyZenohCore` and the C façade header from a
+  locked Core checkout.
 - The host Zenoh binding supports peer mode. `ZenohBindingMode.peer` opens a
   routerless session, `multicastScoutingEnabled` controls peer discovery, and
   peer mode does not report router loss as a transport failure. The opt-in
