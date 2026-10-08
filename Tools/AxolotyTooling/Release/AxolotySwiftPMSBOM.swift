@@ -48,10 +48,17 @@ struct AxolotySwiftPMSBOMValidator {
             throw AxolotySwiftPMSBOMError.malformedSBOM
         }
 
+        // The SBOM's subject is the root package itself. It is listed among
+        // the components but is never pinned in its own Package.resolved, so
+        // only its dependencies are compared with the lockfile.
+        let rootPURL = (document["metadata"] as? [String: Any])
+            .flatMap { $0["component"] as? [String: Any] }
+            .flatMap { $0["purl"] as? String }
         let sbomPackages = components.compactMap { component -> (String, String, String?)? in
             guard let properties = component["properties"] as? [[String: String]],
                   properties.contains(where: { $0["name"] == "swift-entity" && $0["value"] == "swift-package" }),
                   let purl = component["purl"] as? String,
+                  purl != rootPURL,
                   purl.contains("github.com/") else {
                 return nil
             }
