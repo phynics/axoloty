@@ -105,9 +105,10 @@ most recent cache for the current image and manifest identity. Only a
 successful push to `main` may save a new Swift compiler cache. Pull requests
 restore caches but never publish them.
 
-The G6 plan split is unchanged. Ordinary CI runs the G6 inventory and
-non-divergence checks without `g6-public-products-build`. Local G6 and release
-checkpoint plans retain the public-product build.
+Ordinary verification, local and CI, runs the G6 inventory and
+non-divergence checks without `g6-public-products-build`. The release
+checkpoint keeps the public-product build, which compiles every product in
+debug and release configurations.
 
 Process-global signal, logging, environment, and fixed-port tests are declared
 as separate Swift invocations/lanes. The canonical graph executor invokes
