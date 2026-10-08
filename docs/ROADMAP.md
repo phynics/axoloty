@@ -119,7 +119,10 @@ Implementation tickets are created lazily as each gate opens. [AT Protocol resea
 
 These remain out of scope through the 0.8 line:
 
-- a production `axoloty/1` extension profile;
+- shipping the `axoloty/1` CBOR extension profile, which
+  [ADR 0008](./adr/0008-axoloty-1-cbor-extension-profile.md) defines and
+  [epic #977](https://github.com/phynics/axoloty/issues/977) gates behind
+  device measurements;
 - dynamic profile registration or live runtime reconfiguration;
 - a schema migration engine;
 - AT Protocol production integration;
