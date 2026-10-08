@@ -190,7 +190,27 @@ func repositoryAuthorityRejectsEmbeddedZenohModulePolicyDrift() throws {
     let findings = AxolotyEmbeddedConsumerContractValidator(root: fixture).validate()
     #expect(findings.contains {
         $0.rule == "embedded-contract.zenohCore.modulePolicy" &&
-            $0.message.contains("AxolotyZenohCore must use the portable role and platform class")
+            $0.message.contains("AxolotyZenohCore must use the adapter role and the portable platform class")
+    })
+}
+
+@Test
+func repositoryAuthorityRejectsEmbeddedZenohModuleRoleDrift() throws {
+    let fixture = try makeEmbeddedContractFixture()
+    defer { try? FileManager.default.removeItem(at: fixture) }
+
+    let policyURL = fixture.appendingPathComponent("docs/module-policy.yml")
+    var policy = try JSONSerialization.jsonObject(with: Data(contentsOf: policyURL)) as! [String: Any]
+    var targets = policy["targets"] as! [[String: Any]]
+    let zenohIndex = targets.firstIndex { ($0["name"] as? String) == "AxolotyZenohCore" }!
+    targets[zenohIndex]["role"] = "portable"
+    policy["targets"] = targets
+    try JSONSerialization.data(withJSONObject: policy, options: [.sortedKeys]).write(to: policyURL)
+
+    let findings = AxolotyEmbeddedConsumerContractValidator(root: fixture).validate()
+    #expect(findings.contains {
+        $0.rule == "embedded-contract.zenohCore.modulePolicy" &&
+            $0.message.contains("AxolotyZenohCore must use the adapter role and the portable platform class")
     })
 }
 
