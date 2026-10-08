@@ -105,10 +105,9 @@ diagnostics, and all thirteen protocol families enter the shared
 ``ProtocolProcessor``. ``AxolotyStaticRuntime`` is the fixed synchronous
 profile for Embedded Swift. Inspector and MCP use the same runtime contracts.
 
-The required `g4-runtime-boundary`, `g4-runtime-package-boundary`, and
-`g4-runtime-consumer-boundary` checks reject legacy runtime symbols, raw MQTT
-APIs outside the adapter, parallel encoders, and implicit SwiftPM source
-discovery. `AxolotySensorThings` supplies bounded Foundation-free schemas and
+The module policy in `docs/module-policy.yml`, enforced by the required
+`repository-authority` check, rejects transport and networking imports outside
+the adapter targets. `AxolotySensorThings` supplies bounded Foundation-free schemas and
 one atomic runtime-owned source and direct-observation module. Sources
 validate Sensor-to-Thing parentage and deduplicate bounded Thing
 advertisements; direct observation subscribes only to its configured Channel.
