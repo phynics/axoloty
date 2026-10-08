@@ -30,10 +30,12 @@ The next steps, in order:
    of the Zenoh adapter, and the device performance budgets
    ([#978](https://github.com/phynics/axoloty/issues/978),
    [#987](https://github.com/phynics/axoloty/issues/987)).
-3. **Measure the `axoloty/1` CBOR profile.**
-   [ADR 0008](./adr/0008-axoloty-1-cbor-extension-profile.md) defines it, and
-   [epic #977](https://github.com/phynics/axoloty/issues/977) gates it on
-   device measurements.
+3. **Ship the `axoloty/1` CBOR profile as Zenoh's only wire format.**
+   [ADR 0008](./adr/0008-axoloty-1-cbor-extension-profile.md) defines the
+   profile and [ADR 0009](./adr/0009-zenoh-carries-only-axoloty-1.md) makes it
+   the only encoding on Zenoh. MQTT keeps `coaty/3` JSON for CoatyJS.
+   [Epic #977](https://github.com/phynics/axoloty/issues/977) settles the
+   profile details from device measurements.
 
 ## Completed: 0.7 architecture stabilization and transport boundary
 
@@ -123,8 +125,8 @@ These remain out of scope through the 0.9 line:
 
 - shipping the `axoloty/1` CBOR extension profile, which
   [ADR 0008](./adr/0008-axoloty-1-cbor-extension-profile.md) defines and
-  [epic #977](https://github.com/phynics/axoloty/issues/977) gates behind
-  device measurements;
+  [ADR 0009](./adr/0009-zenoh-carries-only-axoloty-1.md) schedules for 1.0
+  as Zenoh's only wire format;
 - dynamic profile registration or live runtime reconfiguration;
 - a schema migration engine;
 - AT Protocol production integration;
