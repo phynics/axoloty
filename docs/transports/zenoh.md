@@ -37,6 +37,12 @@ Coaty routes such as `coaty/3/<namespace>/CHN/<identifier>` become Zenoh key
 expressions unchanged. The sealed `coaty/3` profile remains the same on MQTT
 and Zenoh.
 
+> **Changing in 1.0.** [ADR 0009](../adr/0009-zenoh-carries-only-axoloty-1.md)
+> makes the `axoloty/1` CBOR profile the only wire format on Zenoh. Keys
+> become `axoloty/1/<namespace>/<event>/<identifier>` and payloads become
+> CBOR. MQTT keeps `coaty/3` JSON. Zenoh peers on 0.9.x will not interoperate
+> with 1.0 Zenoh peers. This guide describes the current 0.9 behavior.
+
 ### Axoloty Zenoh binding
 
 The `AxolotyZenoh` Swift package implements the host runtime transport. It opens
