@@ -13,6 +13,24 @@ func swiftPMSBOMPackagesMustMatchTheirResolvedVersions() throws {
 }
 
 @Test
+func swiftPMSBOMIgnoresItsRootPackage() throws {
+    // SwiftPM lists the root package among the components, named after the
+    // checkout directory, and Package.resolved never pins it.
+    let resolved = Data(#"{"pins":[{"identity":"swift-nio","location":"https://github.com/apple/swift-nio.git","state":{"revision":"abc123","version":"2.101.2"}}]}"#.utf8)
+    let root = #"{"name":"workspace","purl":"pkg:swift/github.com/phynics/workspace@0123abc","properties":[{"name":"swift-entity","value":"swift-package"}]}"#
+    let dependency = #"{"name":"swift-nio","purl":"pkg:swift/github.com/apple/swift-nio@2.101.2","pedigree":{"commits":[{"uid":"abc123"}]},"properties":[{"name":"swift-entity","value":"swift-package"}]}"#
+    let sbom = Data(#"{"bomFormat":"CycloneDX","metadata":{"component":{"name":"workspace","purl":"pkg:swift/github.com/phynics/workspace@0123abc"}},"components":["#.utf8 + Data(root.utf8) + Data(",".utf8) + Data(dependency.utf8) + Data("]}".utf8))
+
+    try AxolotySwiftPMSBOMValidator().validate(sbom: sbom, resolved: resolved)
+
+    // Without the metadata subject, the same root component is unpinned.
+    let anonymous = Data(#"{"bomFormat":"CycloneDX","components":["#.utf8 + Data(root.utf8) + Data(",".utf8) + Data(dependency.utf8) + Data("]}".utf8))
+    #expect(throws: AxolotySwiftPMSBOMError.packageMismatch(["workspace"])) {
+        try AxolotySwiftPMSBOMValidator().validate(sbom: anonymous, resolved: resolved)
+    }
+}
+
+@Test
 func swiftPMSBOMRejectsAnUnpinnedOrStaleSBOMPackage() throws {
     let resolved = Data(#"{"pins":[{"identity":"swift-nio","location":"https://github.com/apple/swift-nio.git","state":{"revision":"abc123","version":"2.101.2"}}]}"#.utf8)
     let stale = Data(#"{"bomFormat":"CycloneDX","components":[{"name":"swift-nio","purl":"pkg:swift/github.com/apple/swift-nio@2.100.0","pedigree":{"commits":[{"uid":"abc123"}]},"properties":[{"name":"swift-entity","value":"swift-package"}]}]}"#.utf8)
