@@ -12,7 +12,7 @@ const networkModes = new Set(["none", "isolated", "isolated-broker", "isolated-c
 const brokerModes = new Set(["none", "local", "isolated"]);
 const hardwareModes = new Set(["forbidden", "optional", "required"]);
 const isolationModes = new Set(["parallel", "separate-process", "exclusive"]);
-const retiredCanonicalNodes = new Set(["integration-tests", "logging-global"]);
+const retiredCanonicalNodes = new Set(["integration-tests", "logging-global", "test-tooling-check"]);
 const retiredCanonicalFilters = new Set(["MQTTNIOClientTests", "DecentralizedLoggingTest", "LogManagerTests"]);
 
 export function parseMakeTargets(makefilePath) {
@@ -442,15 +442,11 @@ export function validate(document, { makeTargets, discoveredSelfTests, invokedSe
     if (!node?.required || !node.local || !node.ci) errors.push(`required gate ${JSON.stringify(gate)} must be required and available locally and in CI`);
   }
   const toolingNode = (document.nodes ?? []).find(node => node?.id === "test-tooling");
-  // RepositoryAuthorityTests declares free-function tests with no suite, so a
-  // bare file label never matches SwiftPM discovery. Require the gate to name
-  // the file's test functions instead: every selector in that file starts
-  // with repositoryAuthority or modulePolicy.
-  const toolingBranches = toolingNode?.filter?.split("|") ?? [];
-  const selectsAuthority = toolingBranches.some(branch => branch.startsWith("repositoryAuthority"));
-  const selectsModulePolicy = toolingBranches.some(branch => branch.startsWith("modulePolicy"));
-  if (!selectsAuthority || !selectsModulePolicy) {
-    errors.push("test-tooling must select RepositoryAuthorityTests");
+  // Run the entire package so newly added tooling tests enter CI automatically.
+  // Reject both inclusion and exclusion filters, including --flag=value syntax.
+  const toolingArguments = Array.isArray(toolingNode?.command?.arguments) ? toolingNode.command.arguments : [];
+  if (!toolingNode || toolingNode.filter != null || toolingArguments.some(argument => /^(--filter|--skip)(=|$)/.test(argument))) {
+    errors.push("test-tooling must run the full Tools test target without filters");
   }
   if (!document.testOne?.command?.filterFlag || !Number.isInteger(document.testOne?.timeoutSeconds) || document.testOne.timeoutSeconds <= 0) errors.push("testOne must declare a filterFlag and positive timeoutSeconds");
   // The root package builds the portable Packages/* test targets by path, but
