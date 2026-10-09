@@ -161,13 +161,18 @@ func testOneCommandsPreferTheOwningPackageAndKeepEveryPackageReachable() throws 
         }
     }
 
-    // A manifest-declared filter is routed straight to its owning package.
-    #expect(try packages(for: "AxolotyCheckTests").first == "Tools")
+    // A manifest-declared filter is routed straight to its owning package. The
+    // retired `test-tooling-check` node no longer declares `AxolotyCheckTests`,
+    // so an Apps filter now proves the owning-package preference.
+    #expect(try packages(for: "AxolotyMCPTests").first == "Apps")
     #expect(try packages(for: "WireDTOBoundaryTests").first == ".")
     // An unlisted filter still reaches Tools, after the root package.
     let unlisted = try packages(for: "signalMultiplexerRestoresPreviousSignalDispositionsAndFansOutConcurrentLeases")
     #expect(unlisted.first == ".")
     #expect(unlisted.contains("Tools"))
+    // The retired check suite is now just another unlisted Tools filter.
+    #expect(try packages(for: "AxolotyCheckTests").first == ".")
+    #expect(try packages(for: "AxolotyCheckTests").contains("Tools"))
     // Every candidate substitutes the requested filter.
     for command in try resolver.testOneCommands(filter: "AxolotyCheckTests", repetition: nil, platform: .linux) {
         #expect(command.arguments.last == "AxolotyCheckTests")
