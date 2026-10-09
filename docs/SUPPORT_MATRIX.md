@@ -10,6 +10,8 @@ product surface. Support levels use a consistent vocabulary:
   evidence where claimed.
 - **Supported** — implementation with at least one behavioral test, but
   lacking cross-implementation evidence or failure/boundary coverage.
+- **Best effort** means a declared platform without dedicated CI. Manual
+  evidence covers only the configurations and scenarios recorded.
 - **Partial** — useful subset or platform-limited; evidence is incomplete.
 - **Experimental** — implemented but not tested at production quality.
 - **Compatibility-unverified** — implementation exists but
@@ -73,9 +75,9 @@ product surface. Support levels use a consistent vocabulary:
 
 | Platform | Support level | Evidence |
 |---|---|---|
-| Linux | Validated | Canonical platform. Containerized CI. Platform-specific tests (observation, embedded toolchain). All standard checks pass. |
-| macOS | Supported | Platform-conditional implementation (Network.framework). Manual oracle verification only — no automated macOS CI. Package.swift declares macOS 26.0. |
-| iOS | Supported | Declared in Package.swift (iOS 26.0). Inherits macOS Apple-platform code path. Zero dedicated test coverage and no CI. |
+| Linux | Validated | Canonical platform. The [CI workflow](../.github/workflows/ci.yml) runs the required checks in the pinned Linux container, including host tests and the hardware-free Embedded Swift gate. |
+| macOS | Best effort | `Package.swift` declares macOS 26.0; the Apple MQTT path uses Network.framework. No automated macOS CI. Verification is manual: use the [macOS oracle procedure](./testing.md#manual-macos-oracle). Recorded [macOS arm64 Zenoh tier results](./dependencies/zenoh.md#host-macos-266-arm64-xcode-27-swift-64-native) cover that transport and configuration. |
+| iOS | Best effort | `Package.swift` declares iOS 26.0 and selects the Apple MQTT implementation. No dedicated iOS device/simulator tests or CI. Shared Apple code and macOS results do not establish iOS validation. |
 | ESP32-C6 Embedded Swift | Validated at 0.8 (embedded scope) | 313 on-device vector tests. Six physical harness scenarios: two-device exchange, host interop, CoatyJS bidirectional, last-will, broker-restart. Zero hot-path allocations. Scope: Advertise/Deadvertise, Discover/Resolve only. Device qualification now lives in `phynics/axoloty-embedded`. No profile holds an unrevoked certificate at the current Core revision, and requalification is tracked in [#796](https://github.com/phynics/axoloty/issues/796). |
 
 ## Wire compatibility evidence summary
