@@ -73,12 +73,16 @@ capability, see [SUPPORT_MATRIX.md](./docs/SUPPORT_MATRIX.md).
 
 Axoloty is distributed via Swift Package Manager only.
 
-| Deployment Target | Compatibility |
-| ----------------- | ------------- |
-| iOS               | 26.0+         |
-| macOS             | 26.0+         |
-| Linux             | Yes (containerized) |
-| ESP32-C6          | Embedded Swift (Advertise/Deadvertise, Discover/Resolve) |
+| Platform | Deployment requirement | Support and evidence |
+| -------- | ---------------------- | -------------------- |
+| iOS | 26.0+ | Best effort. No dedicated device/simulator tests or CI. |
+| macOS | 26.0+ | Best effort. Manual verification; no macOS CI. |
+| Linux | Pinned container | Validated in Linux CI. |
+| ESP32-C6 | Embedded Swift | Advertise/Deadvertise and Discover/Resolve. See the support matrix for qualification scope. |
+
+[`Package.swift`](./Package.swift) declares the Apple deployment minimums.
+The [support matrix](./docs/SUPPORT_MATRIX.md#platforms) records platform
+evidence, including the manual macOS arm64 Zenoh runs.
 
 ### Swift Package Manager
 
@@ -203,7 +207,9 @@ The Swift `axoloty-tool` executable is the orchestration control plane. On
 Linux, the pinned container provides a stable launcher that builds the
 mounted-worktree product in the worktree-specific cache via the lightweight
 Makefile and `.devcontainer/run.sh`.
-macOS runs the same offline plan with native Swift:
+On macOS, run the host and offline-wire checks with native Swift. Platform
+support is best effort. Record Apple-platform verification with the
+[manual macOS procedure](./docs/testing.md#manual-macos-oracle).
 
 ```sh
 make worktree-bootstrap  # resolve dependencies into the shared SwiftPM cache

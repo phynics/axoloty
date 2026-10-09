@@ -384,9 +384,13 @@ The release gate requires no unresolved compatibility flake.
 
 ## Manual macOS oracle
 
-Linux/Podman is canonical, but it cannot establish Apple-platform integration.
+Linux/Podman is the canonical CI platform. macOS and iOS are
+[best effort](./SUPPORT_MATRIX.md#platforms), with no dedicated platform CI.
+Each recorded macOS run covers its tested OS, toolchain, architecture, and
+scenarios. iOS requires separate device or simulator validation.
+
 Before a release candidate, and after changes to TLS, networking, package
-platform declarations, or Apple availability code, run on a supported macOS
+platform declarations, or Apple availability code, run on a macOS 26.0+
 host:
 
 1. Record macOS, Xcode, Swift, and architecture versions.

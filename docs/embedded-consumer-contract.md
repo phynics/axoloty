@@ -120,10 +120,10 @@ checks that only façade and supported runtime symbols remain unresolved.
 ## Supported preparation hosts
 
 Linux through the pinned container is the reference host and the one required
-CI uses. macOS is supported for local firmware development: the portable
-packages declare a 26.0 Apple platform floor, and preparation accepts the Swift
-Build macro executable name. A macOS host still cannot run the firmware build
-itself, which needs ESP-IDF in the container.
+CI uses. macOS preparation is [best effort](./SUPPORT_MATRIX.md#platforms),
+with no macOS CI. The portable packages declare a 26.0 Apple platform floor,
+and preparation accepts the Swift Build macro executable name. The firmware
+build itself needs ESP-IDF in the container.
 
 ## Supported preparation command
 

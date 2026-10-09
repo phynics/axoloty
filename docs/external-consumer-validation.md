@@ -108,9 +108,12 @@ from the host runtime, rather than dependency-free at package resolution.
 ## Platform validation
 
 - **Linux (containerized):** ✅ Validated — both consumers build and run.
-- **macOS:** Not validated on this host (Linux only). The package declares
-  macOS 26.0+ and uses NIOTransportServices (Network.framework) on Apple
-  platforms. Manual macOS oracle verification is documented in
-  `docs/testing.md`.
-- **iOS:** Not validated. Declared in Package.swift (iOS 26.0+) and shares
-  the Apple-platform code path with macOS. Zero dedicated test coverage.
+- **macOS:** Best effort. The consumer runs recorded here used Linux only;
+  no macOS CI validates them. The package declares macOS 26.0+ and uses
+  NIOTransportServices (Network.framework) on Apple platforms. Follow the
+  [manual macOS oracle procedure](./testing.md#manual-macos-oracle) and record
+  results for the consumer's configuration.
+- **iOS:** Best effort, with no dedicated device/simulator tests or CI.
+  `Package.swift` declares iOS 26.0+ and selects the shared Apple code path.
+  Dedicated iOS validation remains absent from the
+  [platform evidence](./SUPPORT_MATRIX.md#platforms).
