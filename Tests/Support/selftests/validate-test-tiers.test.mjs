@@ -24,9 +24,9 @@ test("checked-in contract covers discovered self-tests", () => {
   assert.deepEqual(errors, []);
 });
 
-test("canonical contract contains no retired zero-test gates", () => {
+test("canonical contract contains no retired test gates", () => {
   const document = JSON.parse(fs.readFileSync(path.join(root, "Tests/Support/test-tiers.json"), "utf8"));
-  const retired = new Set(["integration-tests", "logging-global"]);
+  const retired = new Set(["integration-tests", "logging-global", "test-tooling-check"]);
   assert.deepEqual(document.nodes.filter(node => retired.has(node.id)), []);
   assert.equal(document.tiers.some(tier => tier.id === "integration"), false);
   assert.equal(document.requiredGates.some(gate => retired.has(gate)), false);
@@ -118,7 +118,7 @@ test("G6 public product builds are offline-only", () => {
 test("validator rejects retired canonical nodes and filters if reintroduced", () => {
   const document = JSON.parse(fs.readFileSync(path.join(root, "Tests/Support/test-tiers.json"), "utf8"));
   const template = document.nodes.find(node => node.id === "build");
-  for (const [id, filter] of [["integration-tests", "MQTTNIOClientTests"], ["logging-global", "LogManagerTests"]]) {
+  for (const [id, filter] of [["integration-tests", "MQTTNIOClientTests"], ["logging-global", "LogManagerTests"], ["test-tooling-check", "AxolotyCheckTests"]]) {
     document.nodes.push({
       ...template,
       id,
@@ -133,6 +133,7 @@ test("validator rejects retired canonical nodes and filters if reintroduced", ()
   });
   assert.ok(errors.includes("integration-tests: retired canonical node must not be declared"));
   assert.ok(errors.includes("logging-global: retired canonical node must not be declared"));
+  assert.ok(errors.includes("test-tooling-check: retired canonical node must not be declared"));
   assert.ok(errors.includes('integration-tests: retired test filter "MQTTNIOClientTests" must not be declared'));
   assert.ok(errors.includes('logging-global: retired test filter "LogManagerTests" must not be declared'));
 });
@@ -234,17 +235,47 @@ test("discovery includes shell and Node self-tests", () => {
   assert.deepEqual(discoverSelfTests(tests), ["Tests/Support/one.test.mjs", "Tests/Support/test-one.sh"]);
 });
 
-test("validator requires repository authority tests in the tooling filter", () => {
+test("canonical tooling tests run the entire package once with signal isolation", () => {
   const document = JSON.parse(fs.readFileSync(path.join(root, "Tests/Support/test-tiers.json"), "utf8"));
-  const node = document.nodes.find(candidate => candidate.id === "test-tooling");
-  node.filter = node.filter.split("|").filter(branch => !branch.startsWith("repositoryAuthority") && !branch.startsWith("modulePolicy")).join("|");
-  node.command.arguments[node.command.arguments.indexOf("--filter") + 1] = node.filter;
-  const errors = validate(document, {
-    makeTargets: parseMakeTargets(path.join(root, "Makefile")),
-    discoveredSelfTests: [],
-    exists: () => true,
+  const toolingRuns = document.nodes.filter(node => {
+    const args = node.command.arguments;
+    return node.command.executable === "swift" && args[0] === "test" && args[args.indexOf("--package-path") + 1] === "Tools";
   });
-  assert.ok(errors.includes("test-tooling must select RepositoryAuthorityTests"));
+  assert.deepEqual(toolingRuns.map(node => node.id), ["test-tooling"]);
+  const [node] = toolingRuns;
+  assert.equal(node.filter, null);
+  assert.equal(node.command.filterFlag, undefined);
+  assert.equal(node.command.arguments.some(argument => /^(--filter|--skip)(=|$)/.test(argument)), false);
+  assert.ok(node.command.arguments.includes("--no-parallel"));
+  assert.ok(node.resources.includes("signal-disposition"));
+  assert.ok(node.resources.includes("swiftpm-build"));
+  assert.equal(node.isolation, "separate-process");
+  assert.equal(node.lane, "swift-global");
+  for (const id of ["q-command-runner-flake", "q-project-command-flake"]) {
+    assert.deepEqual(document.quarantine.find(entry => entry.id === id).nodeIds, [node.id]);
+  }
+});
+
+test("validator rejects tooling test inclusion and exclusion filters", () => {
+  for (const [argumentsToAdd, filter] of [
+    [["--filter", "AxolotyCheckTests"], "AxolotyCheckTests"],
+    [["--filter"], null],
+    [["--filter=AxolotyCheckTests"], null],
+    [["--skip", "AxolotyCheckTests"], null],
+    [["--skip=AxolotyCheckTests"], null],
+    [[], "AxolotyCheckTests"],
+  ]) {
+    const document = JSON.parse(fs.readFileSync(path.join(root, "Tests/Support/test-tiers.json"), "utf8"));
+    const node = document.nodes.find(candidate => candidate.id === "test-tooling");
+    node.command.arguments.push(...argumentsToAdd);
+    node.filter = filter;
+    const errors = validate(document, {
+      makeTargets: parseMakeTargets(path.join(root, "Makefile")),
+      discoveredSelfTests: [],
+      exists: () => true,
+    });
+    assert.ok(errors.includes("test-tooling must run the full Tools test target without filters"), JSON.stringify({ argumentsToAdd, filter }));
+  }
 });
 
 test("filter discovery records preserve an empty root scratch path", () => {

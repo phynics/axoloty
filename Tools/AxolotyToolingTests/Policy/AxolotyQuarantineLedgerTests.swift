@@ -6,7 +6,7 @@ import Testing
 
 private func makeEntry(
     prefixes: [String] = ["commandRunner"],
-    nodeIds: [String] = ["test-tooling-check"],
+    nodeIds: [String] = ["test-tooling"],
     deadline: String = "2026-10-18"
 ) -> AxolotyQuarantineEntry {
     AxolotyQuarantineEntry(
@@ -26,44 +26,44 @@ private let referenceNow = DateFormatter.axolotyQuarantineFixtureDate("2026-09-0
 @Test
 func quarantineLedgerMatchesAnUnexpiredPrefixInItsOwningNode() {
     let ledger = AxolotyQuarantineLedger(entries: [makeEntry()], now: referenceNow)
-    #expect(ledger.isQuarantined("commandRunnerFlakesSometimes()", nodeID: "test-tooling-check"))
+    #expect(ledger.isQuarantined("commandRunnerFlakesSometimes()", nodeID: "test-tooling"))
 }
 
 @Test
 func quarantineLedgerIgnoresAMatchingPrefixInAnotherNode() {
     let ledger = AxolotyQuarantineLedger(entries: [makeEntry()], now: referenceNow)
-    #expect(!ledger.isQuarantined("commandRunnerFlakesSometimes()", nodeID: "test-tooling"))
+    #expect(!ledger.isQuarantined("commandRunnerFlakesSometimes()", nodeID: "test-apps"))
 }
 
 @Test
 func quarantineLedgerIgnoresANonMatchingName() {
     let ledger = AxolotyQuarantineLedger(entries: [makeEntry()], now: referenceNow)
-    #expect(!ledger.isQuarantined("projectCommandFlakesSometimes()", nodeID: "test-tooling-check"))
+    #expect(!ledger.isQuarantined("projectCommandFlakesSometimes()", nodeID: "test-tooling"))
 }
 
 @Test
 func quarantineLedgerTreatsAnExpiredEntryAsNonSuppressing() {
     let ledger = AxolotyQuarantineLedger(entries: [makeEntry(deadline: "2020-01-01")], now: referenceNow)
-    #expect(!ledger.isQuarantined("commandRunnerFlakesSometimes()", nodeID: "test-tooling-check"))
+    #expect(!ledger.isQuarantined("commandRunnerFlakesSometimes()", nodeID: "test-tooling"))
 }
 
 @Test
 func quarantineLedgerTreatsAMalformedDeadlineAsExpired() {
     let ledger = AxolotyQuarantineLedger(entries: [makeEntry(deadline: "not-a-date")], now: referenceNow)
-    #expect(!ledger.isQuarantined("commandRunnerFlakesSometimes()", nodeID: "test-tooling-check"))
+    #expect(!ledger.isQuarantined("commandRunnerFlakesSometimes()", nodeID: "test-tooling"))
 }
 
 @Test
 func allQuarantinedRequiresEveryNameCovered() {
     let ledger = AxolotyQuarantineLedger(entries: [makeEntry()], now: referenceNow)
-    #expect(ledger.allQuarantined(["commandRunnerOne()", "commandRunnerTwo()"], nodeID: "test-tooling-check"))
-    #expect(!ledger.allQuarantined(["commandRunnerOne()", "somethingElse()"], nodeID: "test-tooling-check"))
+    #expect(ledger.allQuarantined(["commandRunnerOne()", "commandRunnerTwo()"], nodeID: "test-tooling"))
+    #expect(!ledger.allQuarantined(["commandRunnerOne()", "somethingElse()"], nodeID: "test-tooling"))
 }
 
 @Test
 func allQuarantinedRejectsAnEmptySet() {
     let ledger = AxolotyQuarantineLedger(entries: [makeEntry()], now: referenceNow)
-    #expect(!ledger.allQuarantined([], nodeID: "test-tooling-check"))
+    #expect(!ledger.allQuarantined([], nodeID: "test-tooling"))
 }
 
 @Test
