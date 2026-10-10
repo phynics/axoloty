@@ -9,6 +9,15 @@ fork, through CoatySwift 2.4.0, remain documented in the
 
 ## [Unreleased]
 
+### Changed
+
+- `make checkpoint` no longer requires evidence bundles for the `wire` and
+  `zenoh-live` tiers, which nothing produced (#991). Both tiers are now
+  non-required checkpoint inputs; the certificate records them as
+  `covered-by-ci` with their CI workflow and, when `AXOLOTY_CI_RUN_URL_<GATE>`
+  is set, the CI run link. A bundle that is supplied is still validated and
+  still fails the gate when invalid.
+
 ## [0.9.0] - 2026-10-08
 
 Axoloty 0.9.0 requires Swift 6.4, completes the embedded firmware split, and

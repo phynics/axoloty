@@ -11,7 +11,9 @@ private let evidenceVersion = try! AxolotySemanticVersion("0.5.1")
 
 private func certificationManifest(
     gate: String? = nil,
-    hardware: Bool = false
+    hardware: Bool = false,
+    gateRequired: Bool = true,
+    coveringNodes: [String]? = nil
 ) -> AxolotyCanonicalTestManifest {
     let node = AxolotyCanonicalTestNode(
         id: "checkpoint-node",
@@ -31,13 +33,14 @@ private func certificationManifest(
         timeoutSeconds: 1,
         expectedDurationSeconds: 1,
         cadence: "release",
-        required: true,
+        required: gateRequired,
         local: true,
         ci: true,
+        workflow: ".github/workflows/\(gate ?? "unused").yml",
         network: .none,
         broker: .none,
         hardware: hardware ? .required : .forbidden,
-        nodes: [node.id]
+        nodes: coveringNodes ?? [node.id]
     )
     return AxolotyCanonicalTestManifest(
         manifestID: "certification-test",
@@ -668,4 +671,82 @@ func checkpointCertificationReportsUnreadableEvidenceJsonPath() {
     #expect(gate.result == .failed)
     #expect(gate.evidence == path)
     #expect(gate.note == "unable to read evidence bundle: \(path)/evidence.json")
+}
+
+@Test
+func checkpointCertificationCoversNonRequiredGateByCIWithoutFailing() {
+    let result = AxolotyCheckpointCertification().certify(
+        manifest: certificationManifest(gate: "wire-live", gateRequired: false, coveringNodes: []),
+        results: [AxolotyCheckResult(name: "checkpoint-node", status: .passed)],
+        metadata: certificationMetadata(),
+        evidence: ReleaseEvidenceInput(
+            bundles: [
+                "wire-live": ReleaseEvidenceBundle(
+                    path: "/tmp/optional-evidence/wire-live",
+                    envelope: nil,
+                    source: .evidenceDirectory,
+                    state: .absent
+                ),
+            ],
+            ciRunURLs: ["wire-live": "https://github.com/phynics/axoloty/actions/runs/42"]
+        )
+    )
+
+    let gate = result.manifest.releaseGates[0]
+    #expect(gate.result == .coveredByCI)
+    #expect(gate.note == "covered by CI, see .github/workflows/wire-live.yml; CI run: https://github.com/phynics/axoloty/actions/runs/42")
+    #expect(result.exitCode == 0)
+}
+
+@Test
+func checkpointCertificationStillRequiresBundleForRequiredGateWithNoCoveringNode() {
+    let result = AxolotyCheckpointCertification().certify(
+        manifest: certificationManifest(gate: "wire-live", coveringNodes: []),
+        results: [AxolotyCheckResult(name: "checkpoint-node", status: .passed)],
+        metadata: certificationMetadata(),
+        evidence: ReleaseEvidenceInput()
+    )
+
+    #expect(result.manifest.releaseGates[0].result == .skipped)
+    #expect(result.exitCode == 1)
+}
+
+@Test
+func checkpointCertificationRejectsSuppliedInvalidBundleForNonRequiredGate() {
+    let result = AxolotyCheckpointCertification().certify(
+        manifest: certificationManifest(gate: "wire-live", gateRequired: false, coveringNodes: []),
+        results: [AxolotyCheckResult(name: "checkpoint-node", status: .passed)],
+        metadata: certificationMetadata(),
+        evidence: ReleaseEvidenceInput(bundles: [
+            "wire-live": ReleaseEvidenceBundle(
+                path: "/tmp/bad-bundle",
+                envelope: Data("{\"status\":\"passed\"}".utf8),
+                source: .evidenceDirectory,
+                state: .loaded
+            ),
+        ])
+    )
+
+    #expect(result.manifest.releaseGates[0].result == .failed)
+    #expect(result.exitCode == 1)
+}
+
+@Test
+func checkpointCertificationRejectsMissingExplicitBundlePathForNonRequiredGate() {
+    let result = AxolotyCheckpointCertification().certify(
+        manifest: certificationManifest(gate: "wire-live", gateRequired: false, coveringNodes: []),
+        results: [AxolotyCheckResult(name: "checkpoint-node", status: .passed)],
+        metadata: certificationMetadata(),
+        evidence: ReleaseEvidenceInput(bundles: [
+            "wire-live": ReleaseEvidenceBundle(
+                path: "/tmp/missing-bundle",
+                envelope: nil,
+                source: .explicitPath,
+                state: .absent
+            ),
+        ])
+    )
+
+    #expect(result.manifest.releaseGates[0].result == .failed)
+    #expect(result.exitCode == 1)
 }

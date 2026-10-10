@@ -505,21 +505,28 @@ func checkpointPlanIncludesRequiredCompatibilityNodes() throws {
 }
 
 @Test
-func checkpointFailsWhenRequiredReleaseGateHasNoEvidence() throws {
+func checkpointPassesWithoutWireAndZenohLiveBundlesAndRecordsCICoverage() throws {
     let dispatcher = AxolotyCommandDispatcher(
         commandRunner: StubRunner(result: AxolotyCheckCommandResult(exitCode: 0)),
         integrationRunner: StubIntegrationRunner(result: AxolotyCheckCommandResult(exitCode: 0)),
         fileSystem: StubFileSystem(paths: []),
-        environment: projectEnvironment
+        environment: projectEnvironment.merging([
+            "AXOLOTY_CI_RUN_URL_WIRE": "https://github.com/phynics/axoloty/actions/runs/1",
+        ]) { _, value in value },
+        suppliedSwiftPMSBOM: successfulSwiftPMSBOMEvidence()
     )
 
     let result = dispatcher.run(arguments: ["release", "checkpoint"])
     let manifest = try JSONDecoder().decode(AxolotyCheckpointManifest.self, from: Data(result.standardOutput.utf8))
 
-    #expect(result.exitCode == 1)
-    let wireLive = try #require(manifest.releaseGates.first { $0.id == "wire" })
-    #expect(wireLive.result == .skipped)
-    #expect(manifest.releaseGates.contains { $0.result == .skipped })
+    let wire = try #require(manifest.releaseGates.first { $0.id == "wire" })
+    #expect(wire.result == .coveredByCI)
+    #expect(wire.note == "covered by CI, see .github/workflows/wire-compatibility.yml; CI run: https://github.com/phynics/axoloty/actions/runs/1")
+    let zenohLive = try #require(manifest.releaseGates.first { $0.id == "zenoh-live" })
+    #expect(zenohLive.result == .coveredByCI)
+    #expect(zenohLive.note == "covered by CI, see .github/workflows/zenoh-live.yml")
+    #expect(!manifest.releaseGates.filter { $0.id == "wire" || $0.id == "zenoh-live" }
+        .contains { $0.result == .skipped || $0.result == .failed })
 }
 
 @Test
