@@ -115,7 +115,6 @@ public struct AxolotyRepositoryAuthorityValidator: Sendable {
             ("docs/API.md", "Axoloty " + semanticVersion, true),
             ("docs/SUPPORT_MATRIX.md", "(?:Axoloty )?" + semanticVersion + " (?:support matrix|checkpoint)", true),
             ("docs/ROADMAP.md", "current released version \\(`" + semanticVersion + "`\\)", false),
-            ("docs/FEATURE_MATRIX.md", "full " + semanticVersion + " support", false),
         ]
         let repositoryDerivedClaims: [String: String] = [
             "Makefile": "AXOLOTY_CONSUMER_VERSION ?= $(shell tr -d '[:space:]' < VERSION)",

@@ -64,9 +64,7 @@ Axoloty is a modernized fork of
 [coatyio/coaty-swift](https://github.com/coatyio/coaty-swift) and follows its
 own direction documented in [ROADMAP.md](./docs/ROADMAP.md). The accepted
 architecture boundaries and transition state are documented in
-[ARCHITECTURE.md](./ARCHITECTURE.md). For an explicit
-comparison against CoatyJS and legacy CoatySwift, see
-[FEATURE_MATRIX.md](./docs/FEATURE_MATRIX.md). For support levels per
+[ARCHITECTURE.md](./ARCHITECTURE.md). For support levels per
 capability, see [SUPPORT_MATRIX.md](./docs/SUPPORT_MATRIX.md).
 
 ## Getting started
