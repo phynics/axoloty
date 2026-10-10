@@ -9,8 +9,9 @@ scope, issue #277).
 > `approvalStatus: "provisional"`. Host latency and binary-size baselines
 > are still pending (`#303`) and the ESP32-C6 device measurements
 > originate from a C surrogate (`#302`) that did not exercise production
-> AxolotyWire Swift interfaces; production Embedded Swift device evidence
-> is tracked in `#322`. The manifest may only move to `approved` once
+> AxolotyWire Swift interfaces. Issue `#322` is closed; production Embedded
+> Swift device evidence and budget re-derivation are tracked in `#987`
+> and phynics/axoloty-embedded#63. The manifest may only move to `approved` once
 > host baselines are populated and Embedded Swift device evidence
 > satisfies every approval gate enforced by
 > `Tests/Support/checks/check-budget-manifest.sh`. No host/device numbers were
@@ -48,7 +49,8 @@ values:
 
 The `historicalEvidence` section records non-approval-eligible prior
 runs. The `esp32c6-c-surrogate` entry marks the issue #302 C surrogate
-benchmark as `approvalEligible: false`, superseded by `#322`, and
+benchmark as `approvalEligible: false`, superseded by production Embedded
+Swift evidence tracked in `#987`, and
 retained only as historical engineering data. The validator rejects any
 manifest where a historical-evidence entry claims `approvalEligible:
 true`, regardless of `approvalStatus`.
@@ -119,7 +121,17 @@ environment declares
 `implementation: "embedded-swift"`; an approved manifest must identify
 this implementation (the C surrogate is never approval-eligible). The
 provisional values below originate from the C surrogate (#302) and are
-retained pending Embedded Swift evidence (#322). p50/p95 in microseconds.
+retained pending Embedded Swift evidence (#987). p50/p95 in microseconds.
+
+> **Note: the rows below are C-surrogate data, not production measurements.**
+> They come from the C surrogate (#302), which did not exercise the shipping
+> Embedded Swift code. First production Embedded Swift smoke measurements
+> (2026-10-08, `esp32c6-mqtt` profile, Core `68e46c7`, upper bounds from the
+> smoke harness, not a benchmark) miss several of these budgets: free heap
+> about 228 KB (budget ≥ 400,000 B), stack headroom 2,648 B (budget ≥ 4,000 B),
+> dtoDecode p50 about 204 µs (budget 6 µs), and combined parse+decode p50 about
+> 236 µs (budget 14 µs). Flash is about 750 KB (MQTT). Do not treat the
+> provisional budgets as approved; re-derivation is tracked in `#987`.
 
 ### Latency
 
