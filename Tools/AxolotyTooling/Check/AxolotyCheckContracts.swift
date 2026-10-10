@@ -449,6 +449,9 @@ public enum AxolotyCheckpointGateResult: String, Codable, Equatable, Sendable {
     case skipped
     /// The gate was covered by externally supplied attestation evidence.
     case attested
+    /// The gate is not a required checkpoint input and is covered by its CI
+    /// workflow; the checkpoint only records where that coverage lives.
+    case coveredByCI = "covered-by-ci"
 }
 
 /// A required release gate and how the checkpoint accounted for it.

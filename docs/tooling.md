@@ -147,7 +147,8 @@ bundle is never presented as this evidence.
 certification gate. It runs every ordinary offline check, binary-size
 benchmarks, and release snapshot verification.
 The tooling derives its `releaseGates` from the `tiers` array in the test-tier
-manifest. The current gates are `ci`, `wire`, and `embedded`; the `release`
+manifest. The current gates are `ci`, `wire`, `embedded`, `zenoh-live`, and
+`zenoh-offline`; the `release`
 category adds the Apple-host oracle and release consumer checks. The checkpoint
 manifest records
 a disposition for each gate:
@@ -156,12 +157,22 @@ a disposition for each gate:
 - **failed** — a covering node ran and at least one failed;
 - **attested** — no covering node ran, but external attestation evidence was
   supplied for the gate;
+- **covered-by-ci** — the tier is declared `"required": false`, no covering
+  node ran, and no bundle was supplied. The checkpoint records
+  `covered by CI, see <workflow>` (the tier's `workflow`) and, when
+  `AXOLOTY_CI_RUN_URL_<GATE>` is set (gate upper-cased, `-` as `_`, for example
+  `AXOLOTY_CI_RUN_URL_ZENOH_LIVE`), the CI run link. It never fails the
+  checkpoint;
 - **skipped** — no covering node ran and no attestation was supplied.
 
 The command fails if any required gate is skipped or has invalid evidence, so a
-release cannot be certified with missing mandatory-tier proof. Tiers that are
-not normally run inside the checkpoint (for example the live `wire` capture)
-must supply typed evidence bundles.
+release cannot be certified with missing mandatory-tier proof. The live `wire`
+and `zenoh-live` tiers are attested but not required: CI owns them
+(`wire-compatibility.yml`, `zenoh-live.yml`), and nothing in this repository
+produces an evidence bundle for them, so the checkpoint reports them as
+covered by CI instead. Any bundle that is supplied for any gate, including
+these, is validated and fails the gate when invalid or when an explicit path
+is missing.
 Point the checkpoint at one evidence root with `AXOLOTY_EVIDENCE_DIR`; each
 gate is loaded from `<root>/<gate>/evidence.json` and its declared artifacts
 are rehashed. Every bundle must identify the repository, full commit SHA, Git

@@ -134,11 +134,18 @@ struct ReleaseEvidenceInput: Equatable, Sendable {
     let bundles: [String: ReleaseEvidenceBundle]
     /// SwiftPM's generated dependency inventory, when checkpointed.
     let swiftPMSBOM: SwiftPMSBOMEvidence?
+    /// CI run links an operator recorded for gates covered by CI, keyed by gate.
+    let ciRunURLs: [String: String]
 
     /// Creates release evidence input.
-    init(bundles: [String: ReleaseEvidenceBundle] = [:], swiftPMSBOM: SwiftPMSBOMEvidence? = nil) {
+    init(
+        bundles: [String: ReleaseEvidenceBundle] = [:],
+        swiftPMSBOM: SwiftPMSBOMEvidence? = nil,
+        ciRunURLs: [String: String] = [:]
+    ) {
         self.bundles = bundles
         self.swiftPMSBOM = swiftPMSBOM
+        self.ciRunURLs = ciRunURLs
     }
 }
 
@@ -187,6 +194,7 @@ struct AxolotyCheckpointCertification: Sendable {
                 results: results,
                 metadata: metadata,
                 evidence: evidence.bundles[gate],
+                ciRunURL: evidence.ciRunURLs[gate],
                 expectedProducerID: expectedProducerID
             )
         }
@@ -224,15 +232,20 @@ struct AxolotyCheckpointCertification: Sendable {
         results: [AxolotyCheckResult],
         metadata: CheckpointMetadata,
         evidence: ReleaseEvidenceBundle?,
+        ciRunURL: String?,
         expectedProducerID: String?
     ) -> AxolotyCheckpointGate {
         let resultByName = Dictionary(uniqueKeysWithValues: results.map { ($0.name, $0) })
         let coveringNodes = manifest.tiers.first { $0.id == gate }?.nodes ?? []
         let coveringResults = coveringNodes.compactMap { resultByName[$0] }
+        let tier = manifest.tiers.first { $0.id == gate }
+        // A non-required gate that nothing ran and nothing was supplied for is
+        // covered by its CI workflow. Supplied bundles are still validated.
+        let coveredByCI = tier.map { !$0.required } ?? false
         if let evidence {
             switch evidence.state {
             case .absent:
-                if evidence.source == .explicitPath || coveringResults.isEmpty {
+                if evidence.source == .explicitPath || (coveringResults.isEmpty && !coveredByCI) {
                     return AxolotyCheckpointGate(
                         id: gate,
                         result: .failed,
@@ -318,6 +331,16 @@ struct AxolotyCheckpointCertification: Sendable {
                     )
                 }
             }
+        }
+        if coveringResults.isEmpty, coveredByCI {
+            let workflow = tier?.workflow ?? "its CI workflow"
+            let run = ciRunURL.map { "; CI run: \($0)" } ?? ""
+            return AxolotyCheckpointGate(
+                id: gate,
+                result: .coveredByCI,
+                nodes: [],
+                note: "covered by CI, see \(workflow)\(run)"
+            )
         }
         if coveringResults.isEmpty {
             return AxolotyCheckpointGate(
@@ -476,8 +499,15 @@ struct AxolotyReleaseCommands: Sendable {
         swiftPMSBOM: SwiftPMSBOMEvidence?
     ) -> ReleaseEvidenceInput {
         var bundles: [String: ReleaseEvidenceBundle] = [:]
+        var ciRunURLs: [String: String] = [:]
         for gate in manifest.releaseGates {
             let normalized = gate.uppercased().replacingOccurrences(of: "-", with: "_")
+            // `AXOLOTY_CI_RUN_URL_<GATE>` records where CI covered a gate that
+            // the checkpoint does not run; it is a note, never an input.
+            if let url = environment["AXOLOTY_CI_RUN_URL_\(normalized)"]?
+                .trimmingCharacters(in: .whitespacesAndNewlines), !url.isEmpty {
+                ciRunURLs[gate] = url
+            }
             let legacyKey = "AXOLOTY_ATTESTATION_\(normalized)_PATH"
             let path: String?
             if let root = environment["AXOLOTY_EVIDENCE_DIR"], !root.isEmpty {
@@ -540,7 +570,7 @@ struct AxolotyReleaseCommands: Sendable {
                 state: .loaded
             )
         }
-        return ReleaseEvidenceInput(bundles: bundles, swiftPMSBOM: swiftPMSBOM)
+        return ReleaseEvidenceInput(bundles: bundles, swiftPMSBOM: swiftPMSBOM, ciRunURLs: ciRunURLs)
     }
 
     private func generateSwiftPMSBOM() -> SwiftPMSBOMEvidence {
