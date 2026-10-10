@@ -9,6 +9,20 @@ fork, through CoatySwift 2.4.0, remain documented in the
 
 ## [Unreleased]
 
+### Changed
+
+- Zenoh's planned 1.0 wire format is recorded in
+  `docs/adr/0009-zenoh-carries-only-axoloty-1.md`. Zenoh will carry only the
+  `axoloty/1` CBOR profile, and MQTT keeps `coaty/3` JSON. The experimental
+  0.9 Zenoh encoding will not interoperate with 1.0 Zenoh peers. See
+  `docs/transports/zenoh.md`.
+
+### Documentation
+
+- The support matrix lists the `AxolotyZenohCore` Embedded-Swift compile gate
+  as an experimental Zenoh row, and the README links the Zenoh encoding
+  decision (ADR 0009) instead of only the earlier ADR 0008 note.
+
 ## [0.9.0] - 2026-10-08
 
 Axoloty 0.9.0 requires Swift 6.4, completes the embedded firmware split, and
