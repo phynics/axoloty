@@ -26,9 +26,11 @@ ships and validates against live CoatyJS; it reaches the runtime through a
 replaceable adapter (`AxolotyMQTT`) rather than defining what Axoloty
 networking is.
 An experimental [Zenoh](https://zenoh.io) adapter (`AxolotyZenoh`) carries the
-same Coaty routes and payloads over `zenohd` or peer-to-peer; see
+same Coaty routes and payloads over `zenohd` or peer-to-peer in 0.9; see
 [docs/transports/zenoh.md](./docs/transports/zenoh.md). It is consumed from a
-checkout of this repository, and its wire encoding may change (ADR 0008).
+checkout of this repository. From 1.0, Zenoh carries only the `axoloty/1` CBOR
+profile, so 0.9 Zenoh peers will not interoperate with 1.0 peers
+([ADR 0009](./docs/adr/0009-zenoh-carries-only-axoloty-1.md)).
 
 Axoloty provides an application and communication layer foundation for
 collaborative IoT prosumer scenarios where smart agents act in an autonomous,
