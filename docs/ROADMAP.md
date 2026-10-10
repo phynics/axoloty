@@ -8,34 +8,47 @@ Axoloty is a Swift runtime and protocol suite for collaborative distributed agen
 
 Historical release outcomes are preserved in [`docs/releases/`](./releases/) and [`CHANGELOG.md`](../CHANGELOG.md). They do not define current strategy.
 
-## Active direction: qualify firmware, then scope 1.0
+## Active direction: qualify Zenoh, then scope 1.0
 
-Axoloty 0.9.0 closes three programs, recorded in
-[`docs/releases/0.9.0.md`](./releases/0.9.0.md):
+Axoloty 0.9.0 closes [epic #845](https://github.com/phynics/axoloty/issues/845),
+which moved concrete firmware and device qualification into
+`phynics/axoloty-embedded`, and ships the host Zenoh transport from
+[epic #796](https://github.com/phynics/axoloty/issues/796) as experimental. The
+release record is [`docs/releases/0.9.0.md`](./releases/0.9.0.md).
 
-- [Epic #845](https://github.com/phynics/axoloty/issues/845) moved concrete
-  firmware, board integration, and device qualification into
-  `phynics/axoloty-embedded`. Axoloty keeps the portable protocol and runtime
-  and proves them Embedded-Swift compatible in required CI.
-- [Epic #878](https://github.com/phynics/axoloty/issues/878) adopted Swift 6.4.
-- [Epic #796](https://github.com/phynics/axoloty/issues/796) added the host
-  Zenoh transport, which is experimental in 0.9.
+### Zenoh status
 
-The next steps, in order:
+- **Host binding:** shipped experimental in 0.9.0 as the `AxolotyZenoh`
+  package, in client and peer modes.
+- **Embedded binding:** the build and carrier work is done in
+  `phynics/axoloty-embedded`. Device qualification is tracked in
+  [phynics/axoloty-embedded#8](https://github.com/phynics/axoloty-embedded/issues/8).
+- **Wire encoding will change.** [ADR 0009](./adr/0009-zenoh-carries-only-axoloty-1.md)
+  makes Zenoh carry only the `axoloty/1` CBOR profile. Zenoh peers built on
+  0.9.x will not interoperate with the next release.
+- **Consumption:** the adapter is consumed by path from a checkout, not through
+  a URL dependency ([ADR 0007](./adr/0007-zenoh-adapter-package-boundary.md)).
+  Zenoh stays experimental until its packaging is resolved.
 
-1. **Qualify firmware against 0.9.0.** `phynics/axoloty-embedded` locks to the
-   `v0.9.0` tag and requalifies both ESP32-C6 profiles on hardware
-   ([#796 plan](https://github.com/phynics/axoloty/issues/796)).
-2. **Scope 1.0.** Decide what the 1.0 API freeze covers, the remote packaging
-   of the Zenoh adapter, and the device performance budgets
-   ([#978](https://github.com/phynics/axoloty/issues/978),
-   [#987](https://github.com/phynics/axoloty/issues/987)).
-3. **Ship the `axoloty/1` CBOR profile as Zenoh's only wire format.**
-   [ADR 0008](./adr/0008-axoloty-1-cbor-extension-profile.md) defines the
-   profile and [ADR 0009](./adr/0009-zenoh-carries-only-axoloty-1.md) makes it
-   the only encoding on Zenoh. MQTT keeps `coaty/3` JSON for CoatyJS.
-   [Epic #977](https://github.com/phynics/axoloty/issues/977) settles the
-   profile details from device measurements.
+### 1.0 scope
+
+The 1.0 API freeze covers the following:
+
+- **Frozen core products:** `Axoloty`, `AxolotyWire`, `AxolotyProtocol`,
+  `AxolotyObjectModel`, `AxolotyStaticRuntime`, and `AxolotyMQTT`.
+- **Everything else is experimental** for 1.0, including the Zenoh transport,
+  the optional SensorThings and IO-routing products, and the first-party tools
+  under `Apps/` and `Tools/`.
+- **`axoloty/1` CBOR is in 1.0 scope.** [ADR 0009](./adr/0009-zenoh-carries-only-axoloty-1.md)
+  makes it the only Zenoh encoding, and `coaty/3` JSON stays sealed on MQTT for
+  CoatyJS compatibility. [Epic #977](https://github.com/phynics/axoloty/issues/977)
+  is the tracker for the profile details.
+- **Not frozen:** a JSON Zenoh encoding, or any JSON-only codec surface that the
+  CBOR profile would replace.
+
+Scoping decisions and the remaining pre-1.0 work are tracked in
+[#978](https://github.com/phynics/axoloty/issues/978) and
+[#987](https://github.com/phynics/axoloty/issues/987).
 
 ## Completed: 0.7 architecture stabilization and transport boundary
 
@@ -121,15 +134,11 @@ Implementation tickets are created lazily as each gate opens. [AT Protocol resea
 
 ## Explicit non-goals
 
-These remain out of scope through the 0.9 line:
+These remain out of scope through the 1.0 line:
 
-- shipping the `axoloty/1` CBOR extension profile, which
-  [ADR 0008](./adr/0008-axoloty-1-cbor-extension-profile.md) defines and
-  [ADR 0009](./adr/0009-zenoh-carries-only-axoloty-1.md) schedules for 1.0
-  as Zenoh's only wire format;
 - dynamic profile registration or live runtime reconfiguration;
 - a schema migration engine;
 - AT Protocol production integration;
 - WASM, BLE, or libp2p transports;
 - complete ESP32-C6 capability parity with the host profile;
-- a second compatibility runtime or 1.0 API stability.
+- a second compatibility runtime.

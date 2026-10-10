@@ -228,13 +228,10 @@ func repositoryAuthorityChecksEveryCurrentVersionClaim() throws {
     try "# Roadmap\ncurrent released version (`0.5.0`)\n".write(
         to: fixture.appendingPathComponent("docs/ROADMAP.md"), atomically: true, encoding: .utf8
     )
-    try "# Feature matrix\nfull 0.5.0 support\n".write(
-        to: fixture.appendingPathComponent("docs/FEATURE_MATRIX.md"), atomically: true, encoding: .utf8
-    )
 
     let paths = Set(AxolotyRepositoryAuthorityValidator(root: fixture).validate().findings
         .filter { $0.rule == "version.claim" }.compactMap(\.path))
-    #expect(paths.isSuperset(of: ["README.md", "docs/ROADMAP.md", "docs/FEATURE_MATRIX.md"]))
+    #expect(paths.isSuperset(of: ["README.md", "docs/ROADMAP.md"]))
 }
 
 @Test
@@ -505,7 +502,6 @@ private func makeAuthorityFixture(
         "ARCHITECTURE.md": "# Architecture\n- `INV-001` shared production processor (non-waivable)\n- `INV-002` bounded state\n",
         "CONTEXT.md": "# Context\n",
         "docs/ROADMAP.md": "# Roadmap\ncurrent released version (`\(version)`)\n[Issue #629](https://github.com/phynics/axoloty/issues/629)\n",
-        "docs/FEATURE_MATRIX.md": "# Feature matrix\nfull \(version) support\n",
         "docs/protocol/coaty-core-3.md": "# Profile\n",
         "AGENTS.md": "# Instructions\n## Documentation authority\n## Supported workflow\n## GitHub-centered work\n## Architectural invariants\n## Module ownership\n## Source conventions\n## Wire compatibility\n",
         "docs/architecture-exceptions.yml": exception,
