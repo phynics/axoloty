@@ -143,6 +143,16 @@ public struct TopicView: ~Sendable {
         return !proto.equals("coaty")
     }
 
+    /// The wire profile named by levels 0 and 1, or nil for an unknown prefix.
+    ///
+    /// Recognizes `coaty/3` and `axoloty/1`. The prefix is the authoritative
+    /// payload-encoding signal; callers must not infer the encoding from a
+    /// transport content-type hint alone.
+    public var profile: WireProfile? {
+        guard let proto = level(0), let version = level(1) else { return nil }
+        return WireProfile(protocolName: proto, protocolVersion: version)
+    }
+
     /// Access the raw topic bytes.
     public func withBytes<R>(_ body: (UnsafeRawPointer, Int) -> R) -> R {
         body(bytes, byteCount)
@@ -168,23 +178,30 @@ public struct TopicView: ~Sendable {
     /// the slicing accessors otherwise tolerate. Any topic that fails here
     /// must not be routed.
     ///
-    /// - Parameter maximumTopicLength: Maximum accepted topic length for this
-    ///   binding. The Embedded wire uses ``WireBufferConfig.maxTopicLength``;
-    ///   a host runtime may select a larger bounded budget for generated
-    ///   profile topics.
+    /// - Parameters:
+    ///   - maximumTopicLength: Maximum accepted topic length for this
+    ///     binding. The Embedded wire uses ``WireBufferConfig/maxTopicLength``;
+    ///     a host runtime may select a larger bounded budget for generated
+    ///     profile topics.
+    ///   - profile: The exact profile whose prefix levels 0 and 1 must carry.
+    ///     Defaults to ``WireProfile/coaty3JSON``, preserving the sealed
+    ///     `coaty/3` contract. Pass ``WireProfile/axoloty1CBOR`` to validate an
+    ///     `axoloty/1` route, which shares the same namespace, event, source-id,
+    ///     and correlation-id layout.
     /// - Throws: ``WireDecodeError`` with reason ``WireDecodeError/Reason/malformedTopic``
-    ///   when the layout or event code is not the exact Coaty form.
+    ///   when the layout or event code is not the exact profile form.
     public func validate(
-        maximumTopicLength: Int = WireBufferConfig.maxTopicLength
+        maximumTopicLength: Int = WireBufferConfig.maxTopicLength,
+        profile: WireProfile = .coaty3JSON
     ) throws(WireDecodeError) {
         guard maximumTopicLength >= 0, byteCount <= maximumTopicLength else {
             throw WireDecodeError(.malformedTopic)
         }
         guard levelCount >= 4 else { throw WireDecodeError(.malformedTopic) }
-        guard let proto = level(0), proto.equals("coaty") else {
+        guard let proto = level(0), proto.equals(profile.protocolName) else {
             throw WireDecodeError(.malformedTopic)
         }
-        guard let version = level(1), version.equals("3") else {
+        guard let version = level(1), version.equals(profile.protocolVersion) else {
             throw WireDecodeError(.malformedTopic)
         }
         guard let namespace = level(2), namespace.length > 0 else {

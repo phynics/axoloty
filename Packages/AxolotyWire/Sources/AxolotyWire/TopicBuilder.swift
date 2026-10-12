@@ -60,11 +60,25 @@ public struct TopicBuilder {
 
     /// Writes the protocol prefix: `coaty/3/`
     ///
+    /// Equivalent to ``writePrefix(_:)`` with ``WireProfile/coaty3JSON``.
+    ///
     /// - Throws: ``WireEncodeError`` if the destination buffer is too small.
     public mutating func writePrefix() throws(WireEncodeError) {
-        try writeBytes("coaty")
+        try writePrefix(.coaty3JSON)
+    }
+
+    /// Writes the protocol prefix for a wire profile, for example `coaty/3/`
+    /// or `axoloty/1/`.
+    ///
+    /// The prefix is the authoritative encoding signal for the payload that
+    /// follows on the same route.
+    ///
+    /// - Parameter profile: The profile whose name and version are written.
+    /// - Throws: ``WireEncodeError`` if the destination buffer is too small.
+    public mutating func writePrefix(_ profile: WireProfile) throws(WireEncodeError) {
+        try writeBytes(profile.protocolName)
         try writeSeparator()
-        try writeByte(0x33) // '3'
+        try writeBytes(profile.protocolVersion)
         try writeSeparator()
     }
 
