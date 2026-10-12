@@ -42,6 +42,13 @@ case "$*" in
         fi
         ;;
     "build") exit 0 ;;
+    "build --package-path "*"--disable-default-traits")
+        if [ "${AXOLOTY_FAKE_SWIFT_MODE:-}" = "bad-cbor-trait" ]; then
+            printf '%s\n' '_JSONCore'
+        fi
+        exit 0
+        ;;
+    "build --package-path "*) printf '%s\n' '_JSONCore' ;;
     "run --configuration debug DownstreamConsumer") printf '%s\n' 'AXOLOTY_WIRE_STANDALONE_CONSUMER_OK' ;;
     *) echo "unexpected swift invocation: $*" >&2; exit 1 ;;
 esac
@@ -50,7 +57,7 @@ chmod +x "$fake_bin/swift"
 
 PATH="$fake_bin:$PATH" sh "$checker"
 
-for mode in bad-root-resolution bad-root-build bad-root-runtime; do
+for mode in bad-root-resolution bad-root-build bad-root-runtime bad-cbor-trait; do
     if AXOLOTY_FAKE_SWIFT_MODE="$mode" PATH="$fake_bin:$PATH" sh "$checker" >/dev/null 2>&1; then
         echo "expected distribution checker to reject $mode" >&2
         exit 1

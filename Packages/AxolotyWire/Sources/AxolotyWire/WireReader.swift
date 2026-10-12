@@ -611,6 +611,11 @@ public struct WireReader: ~Sendable {
             if failure == nil { failure = error }
         }
         if let failure { throw failure }
+        #else
+        // A reader that reaches here without the CBOR marker can only be a
+        // JSON reader, which does not exist without `_JSONCore`. The `isCBOR`
+        // early return above is the only reachable path in a CBOR-only build.
+        throw WireDecodeError(.typeMismatch(expected: "uuid array"), field: key)
         #endif
     }
 

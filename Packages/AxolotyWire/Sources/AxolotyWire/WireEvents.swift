@@ -50,7 +50,8 @@ public enum BorrowedWireEvent {
         }
     }
 
-    /// Copies every borrowed field into an owned event after validating raw JSON.
+    /// Copies every borrowed field into an owned event after validating each
+    /// raw JSON or CBOR field.
     ///
     /// - Throws: ``WireDecodeError`` if a raw field is malformed or has the
     ///   semantic shape required by its event field.

@@ -37,6 +37,10 @@ public struct WireCodec: Sendable, Equatable {
     ///   - bytes: A pointer to the borrowed payload bytes.
     ///   - length: The number of valid payload bytes.
     /// - Returns: A reader over the payload in this codec's format.
+    ///
+    /// - Important: In a build without `_JSONCore`, requesting the
+    ///   `.coaty3JSON` profile is a programmer error and traps. A CBOR-only
+    ///   consumer selects `.axoloty1CBOR`.
     public func reader(bytes: UnsafePointer<UInt8>, length: Int) -> WireReader {
         switch profile {
         case .coaty3JSON:
@@ -79,6 +83,10 @@ public struct WireCodec: Sendable, Equatable {
     ///
     /// - Parameter payload: The borrowed bare-value payload to accept.
     /// - Returns: Whether the payload passes the profile's bare-value gate.
+    ///
+    /// - Important: In a build without `_JSONCore`, calling this method for the
+    ///   `.coaty3JSON` profile traps. A CBOR-only consumer selects
+    ///   `.axoloty1CBOR`.
     public func isValidBareValue(_ payload: ByteSlice) -> Bool {
         switch profile {
         case .coaty3JSON:
@@ -120,7 +128,7 @@ public struct WireCodec: Sendable, Equatable {
             #if canImport(_JSONCore)
             return try content.copyDecodedJSONString(into: &output)
             #else
-            throw WireDecodeError(.invalidValue)
+            throw WireDecodeError(.invalidValue, byteOffset: content.length)
             #endif
         case .axoloty1CBOR:
             guard content.isValidUTF8() else {

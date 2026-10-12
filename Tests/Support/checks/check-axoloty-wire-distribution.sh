@@ -92,4 +92,52 @@ if ! swift run --configuration debug DownstreamConsumer >"$work/standalone-run.l
 fi
 assert_marker "$work/standalone-run.log" "AXOLOTY_WIRE_STANDALONE_CONSUMER_OK"
 
+# The contract documents `--disable-default-traits` for a CBOR-only consumer.
+# Build the standalone wire package both ways under SwiftPM and prove the
+# default-enabled CoatyJSON trait is what links the JSON parser. The build
+# writes `Package.resolved` next to the standalone manifest; remove it unless
+# it existed before.
+standalone_wire="$root/Packages/AxolotyWire"
+standalone_resolved="$standalone_wire/Package.resolved"
+had_standalone_resolved=0
+if [ -e "$standalone_resolved" ]; then had_standalone_resolved=1; fi
+cleanup_standalone_resolved() {
+    if [ "$had_standalone_resolved" -eq 0 ] && [ -e "$standalone_resolved" ]; then
+        rm -f "$standalone_resolved"
+    fi
+    return 0
+}
+trap 'cleanup_standalone_resolved; rm -rf "$work"' EXIT
+
+if ! swift build \
+    --package-path "$standalone_wire" \
+    --scratch-path "$work/wire-default" \
+    --configuration debug >"$work/wire-default.log" 2>&1; then
+    echo "error: standalone AxolotyWire default build failed" >&2
+    cat "$work/wire-default.log" >&2
+    exit 1
+fi
+if ! grep -Eq '_JSONCore' "$work/wire-default.log"; then
+    echo "error: the default CoatyJSON trait did not build _JSONCore" >&2
+    cat "$work/wire-default.log" >&2
+    exit 1
+fi
+
+if ! swift build \
+    --package-path "$standalone_wire" \
+    --scratch-path "$work/wire-cbor" \
+    --configuration debug \
+    --disable-default-traits >"$work/wire-cbor.log" 2>&1; then
+    echo "error: standalone AxolotyWire failed to build with --disable-default-traits" >&2
+    cat "$work/wire-cbor.log" >&2
+    exit 1
+fi
+if grep -Eq '_JSONCore' "$work/wire-cbor.log"; then
+    echo "error: --disable-default-traits still built _JSONCore" >&2
+    cat "$work/wire-cbor.log" >&2
+    exit 1
+fi
+cleanup_standalone_resolved
+
+echo "AxolotyWire CoatyJSON trait gates the JSON parser under SwiftPM"
 echo "AxolotyWire root and standalone distribution boundaries validated"
