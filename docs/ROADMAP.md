@@ -46,6 +46,10 @@ The 1.0 API freeze covers the following:
 - **Not frozen:** a JSON Zenoh encoding, or any JSON-only codec surface that the
   CBOR profile would replace.
 
+The version numbers, deprecation window, and security support for these
+products are recorded in [the versioning and deprecation policy](./versioning.md)
+and [`SECURITY.md`](../SECURITY.md).
+
 Scoping decisions and the remaining pre-1.0 work are tracked in
 [#978](https://github.com/phynics/axoloty/issues/978) and
 [#987](https://github.com/phynics/axoloty/issues/987).
