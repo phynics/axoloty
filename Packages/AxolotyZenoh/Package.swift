@@ -6,10 +6,10 @@ import PackageDescription
 
 // The Zenoh adapter is its own SwiftPM package so that no existing Axoloty
 // product, and no build of the root package, resolves or links Zenoh. See
-// docs/adr/0007-zenoh-adapter-package-boundary.md. The host C façade is the
-// first target; the root package dependency and AxolotyZenohCore product arrive
-// with #804. The AxolotyZenoh host product starts here with the configuration
-// surface; its AxolotyRuntimeTransport conformance arrives with #807.
+// docs/adr/0007-zenoh-adapter-package-boundary.md. The package depends on the
+// root package by path and publishes AxolotyZenohCore, the
+// Embedded-Swift-compatible core, alongside AxolotyZenoh, the host product whose
+// ZenohBinding conforms to AxolotyRuntimeTransport.
 let package = Package(
     name: "AxolotyZenoh",
     platforms: [
