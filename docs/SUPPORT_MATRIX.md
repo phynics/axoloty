@@ -67,7 +67,7 @@ product surface. Support levels use a consistent vocabulary:
 | TLS | Supported | Platform-conditional implementation (NIOSSL on Linux, NIOTransportServices on Apple). Manual macOS oracle verification only — no automated TLS tests. |
 | mDNS discovery | Unsupported | The G4 runtime does not publish or discover brokers through mDNS. |
 | MQTT QoS configuration | Supported | The G4 MQTT binding uses QoS 0, which matches CoatyJS 2.4.0. Higher QoS is not supported by the current binding. |
-| Zenoh transport, host client mode | Experimental | `AxolotyZenoh` package over pinned `zenoh-c` 1.10.0. Evidence: the offline façade-contract and conformance tier (`zenoh-offline`) and the live pinned-`zenohd` tier (`zenoh-live`), both in Linux CI and runnable natively on macOS arm64, plus MQTT↔Zenoh protocol-trace parity tests. Experimental because the package is consumable only from a checkout (path dependency, ADR 0007) and its wire encoding moves to `axoloty/1` CBOR, the only Zenoh encoding from 1.0 ([ADR 0009](./adr/0009-zenoh-carries-only-axoloty-1.md)), so 0.9 Zenoh peers will not interoperate with 1.0 Zenoh peers. See [docs/transports/zenoh.md](./transports/zenoh.md). |
+| Zenoh transport, host client mode | Experimental | `AxolotyZenoh` package over pinned `zenoh-c` 1.10.0. Evidence: the offline façade-contract and conformance tier (`zenoh-offline`) and the live pinned-`zenohd` tier (`zenoh-live`), both on Linux x86_64 in the pinned container and natively on macOS arm64, plus MQTT↔Zenoh protocol-trace parity tests. Experimental because the package is consumable only from a checkout (path dependency, ADR 0007) and its wire encoding moves to `axoloty/1` CBOR, the only Zenoh encoding from 1.0 ([ADR 0009](./adr/0009-zenoh-carries-only-axoloty-1.md)), so 0.9 Zenoh peers will not interoperate with 1.0 Zenoh peers. See [docs/transports/zenoh.md](./transports/zenoh.md). |
 | Zenoh transport, host peer mode | Experimental | Routerless scenario in the `zenoh-live` tier. Same limits as client mode. Router loss is not reported in peer mode. |
 | Zenoh Embedded-Swift core (`AxolotyZenohCore`) | Experimental | Compiled and partially linked for RISC-V by the hardware-free `zenoh-core-embedded` pull-request node, which needs no zenoh-c archive, router, or device. No firmware session or device evidence exists in this repository. |
 | Zenoh transport, ESP32-C6 | Planned | Firmware builds reproducibly in `phynics/axoloty-embedded`; device qualification is pending ([axoloty-embedded#8](https://github.com/phynics/axoloty-embedded/issues/8)). |
@@ -80,6 +80,14 @@ product surface. Support levels use a consistent vocabulary:
 | macOS | Best effort | `Package.swift` declares macOS 26.0; the Apple MQTT path uses Network.framework. No automated macOS CI. Verification is manual: use the [macOS oracle procedure](./testing.md#manual-macos-oracle). Recorded [macOS arm64 Zenoh tier results](./dependencies/zenoh.md#host-macos-266-arm64-xcode-27-swift-64-native) cover that transport and configuration. |
 | iOS | Best effort | `Package.swift` declares iOS 26.0 and selects the Apple MQTT implementation. No dedicated iOS device/simulator tests or CI. Shared Apple code and macOS results do not establish iOS validation. |
 | ESP32-C6 Embedded Swift | Validated at 0.8 (embedded scope) | 313 on-device vector tests. Six physical harness scenarios: two-device exchange, host interop, CoatyJS bidirectional, last-will, broker-restart. Zero hot-path allocations. Scope: Advertise/Deadvertise, Discover/Resolve only. Device qualification now lives in `phynics/axoloty-embedded`. No profile holds an unrevoked certificate at the current Core revision, and requalification is tracked in [#796](https://github.com/phynics/axoloty/issues/796). |
+
+Host architecture is part of the Zenoh host contract. The pinned `zenoh-c`
+artifacts cover Linux x86_64 (container) and macOS arm64 (native) only. Linux
+aarch64 and macOS x86_64 are unsupported Zenoh hosts, per
+[ADR 0010](./adr/0010-zenoh-supported-host-matrix.md) and the
+[unsupported-hosts section of the Zenoh dependency record](./dependencies/zenoh.md#unsupported-hosts-and-device-evidence).
+The Linux and macOS rows above describe the portable core, not the Zenoh host
+artifacts.
 
 ## Wire compatibility evidence summary
 

@@ -54,7 +54,9 @@ lib/pkgconfig/zenohc.pc
 
 Consuming these archives is why building `zenoh-c` from source — and therefore
 requiring a Rust toolchain — is not necessary on the host. See
-[ADR 0006](../adr/0006-zenoh-host-dependency-packaging.md).
+[ADR 0006](../adr/0006-zenoh-host-dependency-packaging.md) for the packaging
+decision and [ADR 0010](../adr/0010-zenoh-supported-host-matrix.md) for the
+supported host set.
 
 `zenohc.pc` hardcodes `prefix=/usr/local`. When the archive is unpacked
 anywhere else, the `prefix` line must be rewritten before `pkg-config` will
@@ -235,7 +237,9 @@ sets the final numbers.
 - **macOS x86_64 and Linux aarch64 are unsupported hosts.** Upstream publishes
   archives for both, but Axoloty pins no checksum for them and provisioning
   refuses them. Supporting either requires pinning its archive and running
-  the `zenoh-offline` and `zenoh-live` tiers on it.
+  the `zenoh-offline` and `zenoh-live` tiers on it. The supported host set is
+  recorded in
+  [ADR 0010](../adr/0010-zenoh-supported-host-matrix.md).
 - **On-device `zenoh-pico` execution is qualified in
   [`phynics/axoloty-embedded`](https://github.com/phynics/axoloty-embedded/issues/8),**
   which owns firmware builds, flashing, and device evidence. This repository
