@@ -4,6 +4,11 @@ status: accepted
 
 # Consume prebuilt zenoh-c releases through a system-library target
 
+> **Host matrix superseded.** The statement that upstream's four-archive set
+> is "Axoloty's entire host matrix" is superseded by
+> [ADR 0010](./0010-zenoh-supported-host-matrix.md). The packaging decision
+> below is unchanged.
+
 The Zenoh transport ([epic #796](https://github.com/phynics/axoloty/issues/796))
 needs `zenoh-c` on the host. `zenoh-c` is a Rust crate exposing a C ABI; built
 from source it requires CMake and a Rust toolchain, and installs headers, a
