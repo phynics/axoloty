@@ -78,7 +78,7 @@ export function validateWirePackage(packageDirectory) {
     if (targetPath !== "Sources/AxolotyWire") errors.push("error: AxolotyWire must declare path: Sources/AxolotyWire");
     else if (/\bdependencies\s*:/.test(codeMask(target))) {
       const products = [...codeMask(target).matchAll(/\.product\s*\(/g)];
-      const approvedProduct = /\.product\s*\(\s*name\s*:\s*"IkigaJSONCore"\s*,\s*package\s*:\s*"swift-json"\s*\)/s;
+      const approvedProduct = /\.product\s*\(\s*name\s*:\s*"IkigaJSONCore"\s*,\s*package\s*:\s*"swift-json"\s*,\s*condition\s*:\s*\.when\s*\(\s*traits\s*:\s*\[\s*"CoatyJSON"\s*\]\s*\)\s*\)/s;
       if (products.length !== 1 || !approvedProduct.test(target)) {
         errors.push("error: AxolotyWire target may depend only on the IkigaJSONCore product");
       }

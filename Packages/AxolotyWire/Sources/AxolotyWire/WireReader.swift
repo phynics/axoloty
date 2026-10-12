@@ -1,6 +1,8 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
+#if canImport(_JSONCore)
 import _JSONCore
+#endif
 
 /// The token kind of one field visited in a JSON object.
 public enum WireObjectFieldKind: UInt8, Sendable {
@@ -48,6 +50,7 @@ public struct WireObjectField: ~Copyable, ~Sendable {
         body(ByteSlice(bytes: bytes.advanced(by: keyRange.lowerBound).assumingMemoryBound(to: UInt8.self), length: keyRange.count))
     }
 
+    #if canImport(_JSONCore)
     /// Borrows decoded key bytes as a noncopyable scoped view.
     public borrowing func withBorrowedKey(_ body: (borrowing WireValueView) -> Void) {
         body(WireValueView(
@@ -55,12 +58,14 @@ public struct WireObjectField: ~Copyable, ~Sendable {
             length: keyRange.count
         ))
     }
+    #endif
 
     /// Borrows the complete encoded value for the duration of `body`.
     public borrowing func withValue(_ body: (ByteSlice) -> Void) {
         body(ByteSlice(bytes: bytes.advanced(by: valueRange.lowerBound).assumingMemoryBound(to: UInt8.self), length: valueRange.count))
     }
 
+    #if canImport(_JSONCore)
     /// Borrows the complete encoded field value as a noncopyable scoped view.
     public borrowing func withBorrowedValue(_ body: (borrowing WireValueView) -> Void) {
         body(WireValueView(
@@ -68,6 +73,7 @@ public struct WireObjectField: ~Copyable, ~Sendable {
             length: valueRange.count
         ))
     }
+    #endif
 }
 
 /// The lexical kind retained for an indexed wire value.
@@ -271,6 +277,7 @@ public struct WireReader: ~Sendable {
     ///   messages no longer reserve the sealed maximum on every decode.
     ///   Embedded callers that require exact-zero allocation at the 2 KiB
     ///   boundary should reuse ``EmbeddedWireParserWorkspace``.
+    #if canImport(_JSONCore)
     public init(bytes: UnsafePointer<UInt8>, length: Int) {
         self.bytes = UnsafeRawPointer(bytes); self.length = max(0, length)
         self.isCBOR = false
@@ -293,6 +300,7 @@ public struct WireReader: ~Sendable {
         }
         self.index = index
     }
+    #endif
 
     /// Creates a reader using caller-owned tokenizer scratch storage.
     ///
@@ -305,6 +313,7 @@ public struct WireReader: ~Sendable {
     ///   - bytes: Pointer to the borrowed JSON input.
     ///   - length: Number of valid input bytes.
     ///   - workspace: Reusable tokenizer storage owned by the caller.
+    #if canImport(_JSONCore)
     public init<Workspace: WireParserWorkspace & ~Copyable>(
         bytes: UnsafePointer<UInt8>,
         length: Int,
@@ -334,6 +343,7 @@ public struct WireReader: ~Sendable {
         }
         self.index = index
     }
+    #endif
 
     /// Creates a reader over a borrowed CBOR map payload (`axoloty/1` engine).
     ///
@@ -422,6 +432,7 @@ public struct WireReader: ~Sendable {
         }
     }
 
+    #if canImport(_JSONCore)
     /// Returns whether the complete input is one JSON value.
     public static func isValidJSON(_ bytes: ByteSlice) -> Bool { isValidJSONValue(bytes) }
 
@@ -471,6 +482,7 @@ public struct WireReader: ~Sendable {
             currentOffset: tokenizer.currentOffset
         )
     }
+    #endif
 
     /// Returns the complete raw JSON value for a top-level key.
     public func readField(_ key: StaticString) -> ByteSlice? {
@@ -580,6 +592,7 @@ public struct WireReader: ~Sendable {
             if let elementFailure { throw elementFailure }
             return
         }
+        #if canImport(_JSONCore)
         var failure: WireDecodeError?
         do throws(WireDecodeError) {
             try value.withArrayElements { element in
@@ -598,6 +611,7 @@ public struct WireReader: ~Sendable {
             if failure == nil { failure = error }
         }
         if let failure { throw failure }
+        #endif
     }
 
     /// Reads an optional raw value, treating an explicit `null` as absent.
@@ -610,6 +624,7 @@ public struct WireReader: ~Sendable {
         guard range.lowerBound >= 0, range.lowerBound <= range.upperBound, range.upperBound <= length else { return nil }
         return ByteSlice(pointer: bytes.advanced(by: range.lowerBound), length: range.count)
     }
+    #if canImport(_JSONCore)
     @inline(__always) private static func isWhitespace(_ byte: UInt8) -> Bool { byte == 32 || byte == 9 || byte == 10 || byte == 13 }
 
     private static func finalizedIndex(
@@ -652,4 +667,5 @@ public struct WireReader: ~Sendable {
         }
         return .init(.unexpectedToken(expected: "valid JSON", actual: byte), byteOffset: offset)
     }
+    #endif
 }

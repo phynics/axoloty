@@ -49,6 +49,118 @@ func embeddedConsumerContractExportsZenohCoreBesideTheUnchangedFiveModules() thr
 }
 
 @Test
+func embeddedConsumerContractExportsWireProfiles() throws {
+    let root = embeddedContractRepositoryRoot()
+    let data = try Data(contentsOf: root.appendingPathComponent("docs/embedded-consumer-contract.json"))
+    let contract = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    let profiles = try #require(contract["wireProfiles"] as? [[String: Any]])
+    #expect(profiles.compactMap { $0["id"] as? String } == ["coaty3JSON", "axoloty1CBOR"])
+
+    let json = try #require(profiles.first { ($0["id"] as? String) == "coaty3JSON" })
+    #expect(json["protocolName"] as? String == "coaty")
+    #expect(json["protocolVersion"] as? String == "3")
+    #expect(json["encoding"] as? String == "json")
+    #expect(json["requiresJSONCore"] as? Bool == true)
+    #expect(json["default"] as? Bool == true)
+
+    let cbor = try #require(profiles.first { ($0["id"] as? String) == "axoloty1CBOR" })
+    #expect(cbor["protocolName"] as? String == "axoloty")
+    #expect(cbor["protocolVersion"] as? String == "1")
+    #expect(cbor["encoding"] as? String == "cbor")
+    #expect(cbor["requiresJSONCore"] as? Bool == false)
+    #expect(cbor["default"] as? Bool == false)
+}
+
+@Test
+func repositoryAuthorityRejectsEmbeddedContractWireProfileDrift() throws {
+    let fixture = try makeEmbeddedContractFixture()
+    defer { try? FileManager.default.removeItem(at: fixture) }
+
+    let contractURL = fixture.appendingPathComponent("docs/embedded-consumer-contract.json")
+    var contract = try JSONSerialization.jsonObject(with: Data(contentsOf: contractURL)) as! [String: Any]
+    var profiles = contract["wireProfiles"] as! [[String: Any]]
+    let cborIndex = profiles.firstIndex { ($0["id"] as? String) == "axoloty1CBOR" }!
+
+    profiles[cborIndex]["encoding"] = "json"
+    contract["wireProfiles"] = profiles
+    try JSONSerialization.data(withJSONObject: contract, options: [.sortedKeys]).write(to: contractURL)
+    let encodingFindings = AxolotyEmbeddedConsumerContractValidator(root: fixture).validate()
+    #expect(encodingFindings.contains { $0.rule == "embedded-contract.wireProfiles.axoloty1CBOR" })
+
+    profiles[cborIndex]["encoding"] = "cbor"
+    profiles[cborIndex]["default"] = true
+    contract["wireProfiles"] = profiles
+    try JSONSerialization.data(withJSONObject: contract, options: [.sortedKeys]).write(to: contractURL)
+    let defaultFindings = AxolotyEmbeddedConsumerContractValidator(root: fixture).validate()
+    #expect(defaultFindings.contains { $0.rule == "embedded-contract.wireProfiles.default" })
+
+    profiles[cborIndex]["default"] = false
+    profiles.append([
+        "id": "unknown0",
+        "protocolName": "x",
+        "protocolVersion": "0",
+        "encoding": "cbor",
+        "requiresJSONCore": false,
+        "default": false,
+    ])
+    contract["wireProfiles"] = profiles
+    try JSONSerialization.data(withJSONObject: contract, options: [.sortedKeys]).write(to: contractURL)
+    let unknownFindings = AxolotyEmbeddedConsumerContractValidator(root: fixture).validate()
+    #expect(unknownFindings.contains { $0.rule == "embedded-contract.wireProfiles.unknown" })
+
+    contract["wireProfiles"] = [[
+        "id": "coaty3JSON",
+        "protocolName": "coaty",
+        "protocolVersion": "3",
+        "encoding": "json",
+        "requiresJSONCore": true,
+        "default": true,
+    ]]
+    try JSONSerialization.data(withJSONObject: contract, options: [.sortedKeys]).write(to: contractURL)
+    let missingFindings = AxolotyEmbeddedConsumerContractValidator(root: fixture).validate()
+    #expect(missingFindings.contains { $0.rule == "embedded-contract.wireProfiles.missing" })
+}
+
+@Test
+func repositoryAuthorityRejectsEmbeddedContractDroppingJSONCoreWhileJSONProfileRemains() throws {
+    let fixture = try makeEmbeddedContractFixture()
+    defer { try? FileManager.default.removeItem(at: fixture) }
+
+    let contractURL = fixture.appendingPathComponent("docs/embedded-consumer-contract.json")
+    var contract = try JSONSerialization.jsonObject(with: Data(contentsOf: contractURL)) as! [String: Any]
+    contract.removeValue(forKey: "jsonCore")
+    try JSONSerialization.data(withJSONObject: contract, options: [.sortedKeys]).write(to: contractURL)
+
+    let findings = AxolotyEmbeddedConsumerContractValidator(root: fixture).validate()
+    #expect(findings.contains {
+        $0.rule == "embedded-contract.contract.jsonCore" &&
+            $0.message.contains("jsonCore is required")
+    })
+}
+
+@Test
+func repositoryAuthorityAcceptsEmbeddedContractCBOROnlyWithoutJSONCore() throws {
+    let fixture = try makeEmbeddedContractFixture()
+    defer { try? FileManager.default.removeItem(at: fixture) }
+
+    let contractURL = fixture.appendingPathComponent("docs/embedded-consumer-contract.json")
+    var contract = try JSONSerialization.jsonObject(with: Data(contentsOf: contractURL)) as! [String: Any]
+    contract.removeValue(forKey: "jsonCore")
+    contract["wireProfiles"] = [[
+        "id": "axoloty1CBOR",
+        "protocolName": "axoloty",
+        "protocolVersion": "1",
+        "encoding": "cbor",
+        "requiresJSONCore": false,
+        "default": true,
+    ]]
+    try JSONSerialization.data(withJSONObject: contract, options: [.sortedKeys]).write(to: contractURL)
+
+    let findings = AxolotyEmbeddedConsumerContractValidator(root: fixture).validate()
+    #expect(findings.isEmpty, "\(findings)")
+}
+
+@Test
 func repositoryAuthorityRejectsEmbeddedZenohPathAndTargetDrift() throws {
     let fixture = try makeEmbeddedContractFixture()
     defer { try? FileManager.default.removeItem(at: fixture) }

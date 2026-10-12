@@ -41,7 +41,42 @@ import Swift
 EOF
 sh "$checker" "$fixture"
 
-# The approved exact-version `_JSONCore` package seam passes.
+# The approved exact-version, trait-gated `_JSONCore` package seam passes.
+write_manifest <<'EOF'
+let package = Package(
+    name: "AxolotyWire",
+    traits: [
+        .default(enabledTraits: ["CoatyJSON"]),
+        .trait(name: "CoatyJSON", description: "JSON"),
+    ],
+    dependencies: [
+        .package(
+            url: "https://github.com/phynics/swift-json.git",
+            exact: "2.5.3",
+            traits: []
+        ),
+    ],
+    targets: [
+        .target(
+            name: "AxolotyWire",
+            dependencies: [
+                .product(
+                    name: "IkigaJSONCore",
+                    package: "swift-json",
+                    condition: .when(traits: ["CoatyJSON"])
+                ),
+            ],
+            path: "Sources/AxolotyWire"
+        ),
+    ]
+)
+EOF
+write_source <<'EOF'
+import _JSONCore
+EOF
+sh "$checker" "$fixture"
+
+# An ungated `_JSONCore` product is rejected.
 write_manifest <<'EOF'
 let package = Package(
     name: "AxolotyWire",
@@ -66,7 +101,7 @@ EOF
 write_source <<'EOF'
 import _JSONCore
 EOF
-sh "$checker" "$fixture"
+expect_failure
 
 # Target-level dependency is rejected.
 write_manifest <<'EOF'

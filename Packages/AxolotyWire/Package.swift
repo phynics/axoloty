@@ -27,6 +27,13 @@ let package = Package(
             targets: ["AxolotyWire"]
         ),
     ],
+    traits: [
+        .default(enabledTraits: ["CoatyJSON"]),
+        .trait(
+            name: "CoatyJSON",
+            description: "Link the pinned Foundation-free _JSONCore parser for the sealed coaty/3 JSON profile."
+        ),
+    ],
     dependencies: [
         .package(
             url: "https://github.com/phynics/swift-json.git",
@@ -38,7 +45,11 @@ let package = Package(
         .target(
             name: "AxolotyWire",
             dependencies: [
-                .product(name: "IkigaJSONCore", package: "swift-json"),
+                .product(
+                    name: "IkigaJSONCore",
+                    package: "swift-json",
+                    condition: .when(traits: ["CoatyJSON"])
+                ),
             ],
             path: "Sources/AxolotyWire",
             // The embedded-core-consumer gate remains the enforcing portability check.

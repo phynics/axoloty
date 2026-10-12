@@ -1,5 +1,6 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
+#if canImport(_JSONCore)
 import _JSONCore
 
 extension JSONTokenizer {
@@ -15,3 +16,4 @@ extension JSONTokenizer {
         }
     }
 }
+#endif

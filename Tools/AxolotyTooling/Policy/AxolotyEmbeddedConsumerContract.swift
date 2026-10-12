@@ -98,9 +98,14 @@ internal struct AxolotyEmbeddedConsumerContractValidator {
         validatePortableModulePolicy(contract.portablePackages, findings: &findings)
         validateZenohCore(contract.zenohCore, findings: &findings)
         validateMacro(contract.staticRuntimeMacro, findings: &findings)
-        validateJSONCore(contract.jsonCore, findings: &findings)
+        validateWireProfiles(contract.wireProfiles, jsonCore: contract.jsonCore, findings: &findings)
+        if let jsonCore = contract.jsonCore {
+            validateJSONCore(jsonCore, findings: &findings)
+        }
         validateWireBoundary(findings: &findings)
-        validateLocks(contract.jsonCore, findings: &findings)
+        if let jsonCore = contract.jsonCore {
+            validateLocks(jsonCore, findings: &findings)
+        }
 
         return sorted(findings)
     }
@@ -111,7 +116,8 @@ internal struct AxolotyEmbeddedConsumerContractValidator {
         let portablePackages: [[String: Any]]
         let zenohCore: [String: Any]
         let staticRuntimeMacro: [String: Any]
-        let jsonCore: JSONCore
+        let wireProfiles: [[String: Any]]
+        let jsonCore: JSONCore?
     }
 
     private struct Repository {
@@ -173,15 +179,20 @@ internal struct AxolotyEmbeddedConsumerContractValidator {
             findings.append(finding("contract.staticRuntimeMacro", path: path, "staticRuntimeMacro must be an object"))
             return nil
         }
-        guard let jsonCoreObject = object["jsonCore"] as? [String: Any] else {
-            findings.append(finding("contract.jsonCore", path: path, "jsonCore must be an object"))
+        guard let wireProfiles = object["wireProfiles"] as? [[String: Any]] else {
+            findings.append(finding("contract.wireProfiles", path: path, "wireProfiles must be an array of objects"))
             return nil
         }
+        let jsonCoreObject = object["jsonCore"] as? [String: Any]
 
         guard let repository = parseRepository(repositoryObject, findings: &findings),
-              let swift = parseSwift(swiftObject, findings: &findings),
-              let jsonCore = parseJSONCore(jsonCoreObject, findings: &findings) else {
+              let swift = parseSwift(swiftObject, findings: &findings) else {
             return nil
+        }
+        var jsonCore: JSONCore?
+        if let jsonCoreObject {
+            guard let parsed = parseJSONCore(jsonCoreObject, findings: &findings) else { return nil }
+            jsonCore = parsed
         }
         return Contract(
             repository: repository,
@@ -189,6 +200,7 @@ internal struct AxolotyEmbeddedConsumerContractValidator {
             portablePackages: portablePackages,
             zenohCore: zenohCore,
             staticRuntimeMacro: macroObject,
+            wireProfiles: wireProfiles,
             jsonCore: jsonCore
         )
     }
@@ -247,6 +259,131 @@ internal struct AxolotyEmbeddedConsumerContractValidator {
             sourcePath: sourcePath,
             lockPath: lockPath
         )
+    }
+
+    private struct WireProfile {
+        let id: String
+        let protocolName: String
+        let protocolVersion: String
+        let encoding: String
+        let requiresJSONCore: Bool
+        let isDefault: Bool
+    }
+
+    private static let expectedWireProfiles: [String: WireProfile] = [
+        "coaty3JSON": WireProfile(
+            id: "coaty3JSON",
+            protocolName: "coaty",
+            protocolVersion: "3",
+            encoding: "json",
+            requiresJSONCore: true,
+            isDefault: true
+        ),
+        "axoloty1CBOR": WireProfile(
+            id: "axoloty1CBOR",
+            protocolName: "axoloty",
+            protocolVersion: "1",
+            encoding: "cbor",
+            requiresJSONCore: false,
+            isDefault: false
+        ),
+    ]
+
+    private func validateWireProfiles(
+        _ entries: [[String: Any]],
+        jsonCore: JSONCore?,
+        findings: inout [AxolotyRepositoryAuthorityFinding]
+    ) {
+        let path = relativePath(contractURL)
+        if entries.isEmpty {
+            findings.append(finding("wireProfiles.count", path: path, "wireProfiles must declare at least one profile"))
+            return
+        }
+        var parsed: [String: WireProfile] = [:]
+        for entry in entries {
+            guard let id = stringValue(entry["id"]), !id.isEmpty,
+                  let protocolName = stringValue(entry["protocolName"]), !protocolName.isEmpty,
+                  let protocolVersion = stringValue(entry["protocolVersion"]), !protocolVersion.isEmpty,
+                  let encoding = stringValue(entry["encoding"]),
+                  let requiresJSONCore = entry["requiresJSONCore"] as? Bool,
+                  let isDefault = entry["default"] as? Bool else {
+                findings.append(finding(
+                    "wireProfiles.entry",
+                    path: path,
+                    "each wire profile needs id, protocolName, protocolVersion, encoding, requiresJSONCore, and default"
+                ))
+                continue
+            }
+            if encoding != "json" && encoding != "cbor" {
+                findings.append(finding("wireProfiles.encoding", path: path, "wire profile \(id) encoding must be json or cbor"))
+            }
+            if (encoding == "json") != requiresJSONCore {
+                findings.append(finding(
+                    "wireProfiles.encoding",
+                    path: path,
+                    "wire profile \(id) must require jsonCore exactly when its encoding is json"
+                ))
+            }
+            if parsed.keys.contains(id) {
+                findings.append(finding("wireProfiles.duplicate", path: path, "wire profile \(id) is declared more than once"))
+            } else {
+                parsed[id] = WireProfile(
+                    id: id,
+                    protocolName: protocolName,
+                    protocolVersion: protocolVersion,
+                    encoding: encoding,
+                    requiresJSONCore: requiresJSONCore,
+                    isDefault: isDefault
+                )
+            }
+        }
+        for id in parsed.keys.sorted() {
+            let actual = parsed[id]!
+            guard let expected = Self.expectedWireProfiles[id] else {
+                findings.append(finding("wireProfiles.unknown", path: path, "unsupported wire profile \(id)"))
+                continue
+            }
+            if actual.protocolName != expected.protocolName ||
+                actual.protocolVersion != expected.protocolVersion ||
+                actual.encoding != expected.encoding ||
+                actual.requiresJSONCore != expected.requiresJSONCore {
+                findings.append(finding(
+                    "wireProfiles.\(id)",
+                    path: path,
+                    "wire profile \(id) must be \(expected.protocolName)/\(expected.protocolVersion) \(expected.encoding) requiresJSONCore=\(expected.requiresJSONCore)"
+                ))
+            }
+        }
+        if parsed["axoloty1CBOR"] == nil {
+            findings.append(finding("wireProfiles.missing", path: path, "wireProfiles must declare axoloty1CBOR"))
+        }
+        let requiresJSONCore = parsed.values.contains(where: { $0.requiresJSONCore })
+        if requiresJSONCore && parsed["coaty3JSON"] == nil {
+            findings.append(finding(
+                "wireProfiles.missing",
+                path: path,
+                "wireProfiles must declare coaty3JSON because a profile requires jsonCore"
+            ))
+        }
+        let defaults = parsed.values.filter({ $0.isDefault })
+        if defaults.count != 1 {
+            findings.append(finding("wireProfiles.default", path: path, "exactly one wire profile must be the default"))
+        } else {
+            let expectedDefault = parsed["coaty3JSON"] != nil ? "coaty3JSON" : "axoloty1CBOR"
+            if defaults[0].id != expectedDefault {
+                findings.append(finding(
+                    "wireProfiles.default",
+                    path: path,
+                    "the default wire profile must be \(expectedDefault)"
+                ))
+            }
+        }
+        if (jsonCore != nil) != requiresJSONCore {
+            let message = requiresJSONCore
+                ? "jsonCore is required because a wire profile needs the JSON parser"
+                : "jsonCore must be absent because no wire profile needs the JSON parser"
+            findings.append(finding("contract.jsonCore", path: path, message))
+        }
     }
 
     private func validateRepository(
@@ -693,6 +830,22 @@ internal struct AxolotyEmbeddedConsumerContractValidator {
             firstCapture(#"\bname\s*:\s*"([^"]+)"#, in: products.first ?? "") != "IkigaJSONCore" ||
             firstCapture(#"\bpackage\s*:\s*"([^"]+)"#, in: products.first ?? "") != "swift-json" {
             findings.append(finding("wire.product", path: manifestPath, "AxolotyWire must depend only on swift-json product IkigaJSONCore"))
+        }
+        let traitBlocks = declarationBlocks(kind: "trait", in: manifest)
+        let declaresCoautyJSON = traitBlocks.contains {
+            firstCapture(#"\bname\s*:\s*"([^"]+)"#, in: $0) == "CoatyJSON"
+        }
+        let defaultEnablesCoautyJSON =
+            firstCapture(#"\.default\s*\(\s*enabledTraits\s*:\s*\[\s*"([^"]+)"#, in: manifest) == "CoatyJSON"
+        let conditionalProduct = products.first.map {
+            $0.contains("condition:") && $0.contains(".when(traits:") && $0.contains("\"CoatyJSON\"")
+        } ?? false
+        if !declaresCoautyJSON || !defaultEnablesCoautyJSON || !conditionalProduct {
+            findings.append(finding(
+                "wire.trait",
+                path: manifestPath,
+                "AxolotyWire must declare a default-enabled CoatyJSON trait and gate IkigaJSONCore behind it"
+            ))
         }
         let imports = swiftImports(in: root.appendingPathComponent("Packages/AxolotyWire/Sources/AxolotyWire"))
         let unexpected = imports.subtracting(["_JSONCore"])

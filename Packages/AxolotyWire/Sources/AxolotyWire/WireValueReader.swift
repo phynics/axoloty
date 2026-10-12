@@ -2,6 +2,7 @@
 
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
+#if canImport(_JSONCore)
 import _JSONCore
 
 /// The lexical kind of one complete JSON value.
@@ -360,3 +361,4 @@ struct WireArrayContext {
     let start: Int
     let isRoot: Bool
 }
+#endif

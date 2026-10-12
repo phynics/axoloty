@@ -21,6 +21,7 @@ public enum BorrowedWireEvent {
     case call(CallWireData)
     case returnEvent(ReturnWireData)
 
+    #if canImport(_JSONCore)
     /// Decodes and selects an event directly from a validated borrowed message.
     public init(message: BorrowedMessage) throws(WireDecodeError) {
         guard let eventType = message.eventType else {
@@ -28,6 +29,7 @@ public enum BorrowedWireEvent {
         }
         self = try Self(eventType: eventType, from: message.reader())
     }
+    #endif
 
     /// Encodes the selected event through the centralized wire dispatch.
     public func encode(to writer: inout WireWriter) throws(WireEncodeError) {

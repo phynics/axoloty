@@ -1,5 +1,6 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
+#if canImport(_JSONCore)
 import _JSONCore
 
 private let maxOwnedJSONSize = 16 * 1_024 * 1_024
@@ -162,3 +163,46 @@ func validateOptionalEncodedString(
 private func isJSONWhitespace(_ byte: UInt8) -> Bool {
     byte == 0x20 || byte == 0x09 || byte == 0x0A || byte == 0x0D
 }
+#else
+/// The owned-data validation shapes the JSON engine provides.
+enum OwnedJSONShape {
+    case any
+    case object
+    case array
+    case objectOrArray
+    case encodedString
+}
+
+@inline(__always)
+private func ownedValidationUnavailable(field: StaticString) -> WireDecodeError {
+    WireDecodeError(.invalidValue, field: field)
+}
+
+/// Rejects owned-data validation because the JSON engine is not linked.
+func validateOwnedJSON(
+    _ bytes: [UInt8],
+    field: StaticString,
+    shape: OwnedJSONShape = .any
+) throws(WireDecodeError) {
+    _ = shape
+    throw ownedValidationUnavailable(field: field)
+}
+
+/// Rejects present owned data because the JSON engine is not linked.
+func validateOptionalOwnedJSON(
+    _ bytes: [UInt8]?,
+    field: StaticString,
+    shape: OwnedJSONShape
+) throws(WireDecodeError) {
+    _ = shape
+    if bytes != nil { throw ownedValidationUnavailable(field: field) }
+}
+
+/// Rejects present owned encoded strings because the JSON engine is not linked.
+func validateOptionalEncodedString(
+    _ bytes: [UInt8]?,
+    field: StaticString
+) throws(WireDecodeError) {
+    if bytes != nil { throw ownedValidationUnavailable(field: field) }
+}
+#endif

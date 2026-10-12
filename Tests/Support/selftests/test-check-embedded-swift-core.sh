@@ -31,7 +31,10 @@ if ! AXOLOTY_SOURCE_DIR="$source_root" \
     exit 1
 fi
 grep -Fq 'five portable modules' "$tmpdir/pass.log"
+grep -Fq 'CBOR-only consumer link' "$tmpdir/pass.log"
+grep -Fq 'CBOR behavior: axoloty/1 encode and decode passed without _JSONCore' "$tmpdir/pass.log"
 echo "  PASS: five portable modules and real StaticIoActor consumer compile/link"
+echo "  PASS: CBOR-only consumer compiles, links, and runs without _JSONCore"
 echo "  PASS: missing firmware and SDK paths are irrelevant"
 
 # Reuse the macro/dependency preparation from the successful run. This keeps
@@ -111,6 +114,29 @@ if ! grep -Fq 'partial link leaves unexpected unresolved symbols' "$tmpdir/unres
 fi
 echo "  PASS: unresolved Embedded consumer symbols are rejected"
 
+# A CBOR-only consumer must not reach the JSON-only WireReader initializer.
+# This proves the CBOR leg compiles with `_JSONCore` absent instead of silently
+# reusing the JSON module.
+cp "$source_root/Tests/Support/fixtures/embedded-cbor-consumer.swift" "$tmpdir/JSONInitConsumer.swift"
+cat >> "$tmpdir/JSONInitConsumer.swift" <<'SWIFT'
+
+@inline(never)
+func embeddedJSONInitProbe(_ pointer: UnsafePointer<UInt8>, _ length: Int) -> Bool {
+    let reader = WireReader(bytes: pointer, length: length)
+    return reader.length >= 0
+}
+SWIFT
+if AXOLOTY_SOURCE_DIR="$source_root" \
+    AXOLOTY_STATIC_RUNTIME_MACRO_SCRATCH_DIR="$macro_scratch" \
+    AXOLOTY_STATIC_RUNTIME_MACRO_TOOL="$macro_tool" \
+    AXOLOTY_EMBEDDED_CBOR_FIXTURE="$tmpdir/JSONInitConsumer.swift" \
+    "$checker" >"$tmpdir/cbor-fail.log" 2>&1; then
+    cat "$tmpdir/cbor-fail.log" >&2
+    echo "CBOR-only consumer with a JSON initializer unexpectedly passed" >&2
+    exit 1
+fi
+echo "  PASS: JSON-only WireReader initializer is rejected in a CBOR-only build"
+
 # Keep this check auditable: this gate must not grow a hidden firmware/SDK
 # dependency while its manifest remains a hardware-free CI requirement.
 if grep -Eq 'Embedded/swift|ESP-IDF|idf\.py|IDF_PATH' "$checker"; then
@@ -120,4 +146,4 @@ fi
 echo "  PASS: checker source has no firmware or ESP-IDF dependency"
 
 echo ""
-echo "SELF-TEST OK (6 checks passed, 0 failed)"
+echo "SELF-TEST OK (8 checks passed, 0 failed)"
