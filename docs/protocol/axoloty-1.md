@@ -152,9 +152,13 @@ specific reasons are `cborIndefiniteLength`, `cborInvalidAdditionalInfo`,
 | `WireDecodable`/`WireEncodable` DTO codec seam (format-neutral, [ADR 0011](../adr/0011-codec-format-seam.md)) | Implemented |
 | Raw/custom CBOR payload retention | Follow-up under #977 |
 | Zenoh binding on `axoloty/1` only | Follow-up under #977 |
-| Golden corpus and trace-parity gate | Follow-up under #977 |
+| Golden `coaty/3`/`axoloty/1` corpus with independent CBOR decode | Implemented |
+| Trace-parity gate | Follow-up under #977 |
 | Embedded consumer contract surface | Follow-up under #977 |
 
 The first increment ships `AxolotyWire`'s CBOR primitives and `axoloty/1`
-routes with RFC 8949 Appendix A conformance vectors. The remaining rows are
-tracked by epic #977 and do not change the decisions above.
+routes with RFC 8949 Appendix A conformance vectors. The frozen golden corpus
+under `Tests/AxolotyTests/WireCompatibility/Golden` covers every event family
+and DTO field-presence variant, and the wire tool independently decodes every
+CBOR golden with `cbor-x`. The remaining rows are tracked by epic #977 and do
+not change the decisions above.

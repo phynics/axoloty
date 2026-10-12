@@ -284,6 +284,7 @@ let package = Package(
             path: "Tests/AxolotyTests",
             resources: [
                 .process("WireCompatibility/Fixtures"),
+                .process("WireCompatibility/Golden"),
             ]
         ),
         .testTarget(

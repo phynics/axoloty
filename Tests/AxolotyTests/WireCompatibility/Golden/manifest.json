@@ -1,0 +1,269 @@
+{
+  "schemaVersion": 1,
+  "description": "Frozen coaty/3 JSON and axoloty/1 CBOR goldens. Regenerate only in a dedicated, reviewed wire change.",
+  "cases": [
+    {
+      "id": "associate-minimal",
+      "family": "associate",
+      "variant": "minimal",
+      "json": "associate-minimal.json",
+      "cbor": "associate-minimal.cbor",
+      "uuidPointers": [
+        "/ioSourceId",
+        "/ioActorId"
+      ]
+    },
+    {
+      "id": "associate-full",
+      "family": "associate",
+      "variant": "full",
+      "json": "associate-full.json",
+      "cbor": "associate-full.cbor",
+      "uuidPointers": [
+        "/ioSourceId",
+        "/ioActorId"
+      ]
+    },
+    {
+      "id": "associate-rate-zero",
+      "family": "associate",
+      "variant": "special",
+      "json": "associate-rate-zero.json",
+      "cbor": "associate-rate-zero.cbor",
+      "uuidPointers": [
+        "/ioSourceId",
+        "/ioActorId"
+      ]
+    },
+    {
+      "id": "advertise-minimal",
+      "family": "advertise",
+      "variant": "minimal",
+      "json": "advertise-minimal.json",
+      "cbor": "advertise-minimal.cbor",
+      "uuidPointers": []
+    },
+    {
+      "id": "advertise-full",
+      "family": "advertise",
+      "variant": "full",
+      "json": "advertise-full.json",
+      "cbor": "advertise-full.cbor",
+      "uuidPointers": []
+    },
+    {
+      "id": "advertise-object-uuid",
+      "family": "advertise",
+      "variant": "special",
+      "json": "advertise-object-uuid.json",
+      "cbor": "advertise-object-uuid.cbor",
+      "uuidPointers": [
+        "/object/objectId"
+      ]
+    },
+    {
+      "id": "deadvertise-single",
+      "family": "deadvertise",
+      "variant": "minimal",
+      "json": "deadvertise-single.json",
+      "cbor": "deadvertise-single.cbor",
+      "uuidPointers": [
+        "/objectIds/*"
+      ]
+    },
+    {
+      "id": "deadvertise-multiple",
+      "family": "deadvertise",
+      "variant": "full",
+      "json": "deadvertise-multiple.json",
+      "cbor": "deadvertise-multiple.cbor",
+      "uuidPointers": [
+        "/objectIds/*"
+      ]
+    },
+    {
+      "id": "channel-empty",
+      "family": "channel",
+      "variant": "empty",
+      "json": "channel-empty.json",
+      "cbor": "channel-empty.cbor",
+      "uuidPointers": []
+    },
+    {
+      "id": "channel-minimal",
+      "family": "channel",
+      "variant": "minimal",
+      "json": "channel-minimal.json",
+      "cbor": "channel-minimal.cbor",
+      "uuidPointers": []
+    },
+    {
+      "id": "channel-full",
+      "family": "channel",
+      "variant": "full",
+      "json": "channel-full.json",
+      "cbor": "channel-full.cbor",
+      "uuidPointers": []
+    },
+    {
+      "id": "iovalue-array",
+      "family": "ioValue",
+      "variant": "minimal",
+      "json": "iovalue-array.json",
+      "cbor": "iovalue-array.cbor",
+      "uuidPointers": []
+    },
+    {
+      "id": "iovalue-object",
+      "family": "ioValue",
+      "variant": "full",
+      "json": "iovalue-object.json",
+      "cbor": "iovalue-object.cbor",
+      "uuidPointers": []
+    },
+    {
+      "id": "discover-empty",
+      "family": "discover",
+      "variant": "empty",
+      "json": "discover-empty.json",
+      "cbor": "discover-empty.cbor",
+      "uuidPointers": []
+    },
+    {
+      "id": "discover-full",
+      "family": "discover",
+      "variant": "full",
+      "json": "discover-full.json",
+      "cbor": "discover-full.cbor",
+      "uuidPointers": []
+    },
+    {
+      "id": "resolve-minimal",
+      "family": "resolve",
+      "variant": "minimal",
+      "json": "resolve-minimal.json",
+      "cbor": "resolve-minimal.cbor",
+      "uuidPointers": []
+    },
+    {
+      "id": "resolve-full",
+      "family": "resolve",
+      "variant": "full",
+      "json": "resolve-full.json",
+      "cbor": "resolve-full.cbor",
+      "uuidPointers": []
+    },
+    {
+      "id": "query-empty",
+      "family": "query",
+      "variant": "empty",
+      "json": "query-empty.json",
+      "cbor": "query-empty.cbor",
+      "uuidPointers": []
+    },
+    {
+      "id": "query-full",
+      "family": "query",
+      "variant": "full",
+      "json": "query-full.json",
+      "cbor": "query-full.cbor",
+      "uuidPointers": []
+    },
+    {
+      "id": "retrieve-minimal",
+      "family": "retrieve",
+      "variant": "minimal",
+      "json": "retrieve-minimal.json",
+      "cbor": "retrieve-minimal.cbor",
+      "uuidPointers": []
+    },
+    {
+      "id": "retrieve-full",
+      "family": "retrieve",
+      "variant": "full",
+      "json": "retrieve-full.json",
+      "cbor": "retrieve-full.cbor",
+      "uuidPointers": []
+    },
+    {
+      "id": "update-full",
+      "family": "update",
+      "variant": "full",
+      "json": "update-full.json",
+      "cbor": "update-full.cbor",
+      "uuidPointers": []
+    },
+    {
+      "id": "complete-empty",
+      "family": "complete",
+      "variant": "empty",
+      "json": "complete-empty.json",
+      "cbor": "complete-empty.cbor",
+      "uuidPointers": []
+    },
+    {
+      "id": "complete-full",
+      "family": "complete",
+      "variant": "full",
+      "json": "complete-full.json",
+      "cbor": "complete-full.cbor",
+      "uuidPointers": []
+    },
+    {
+      "id": "call-empty",
+      "family": "call",
+      "variant": "empty",
+      "json": "call-empty.json",
+      "cbor": "call-empty.cbor",
+      "uuidPointers": []
+    },
+    {
+      "id": "call-full",
+      "family": "call",
+      "variant": "full",
+      "json": "call-full.json",
+      "cbor": "call-full.cbor",
+      "uuidPointers": []
+    },
+    {
+      "id": "return-empty",
+      "family": "return",
+      "variant": "empty",
+      "json": "return-empty.json",
+      "cbor": "return-empty.cbor",
+      "uuidPointers": []
+    },
+    {
+      "id": "return-full",
+      "family": "return",
+      "variant": "full",
+      "json": "return-full.json",
+      "cbor": "return-full.cbor",
+      "uuidPointers": []
+    },
+    {
+      "id": "iostate-minimal",
+      "family": "ioState",
+      "variant": "minimal",
+      "json": "iostate-minimal.json",
+      "cbor": "iostate-minimal.cbor",
+      "uuidPointers": []
+    },
+    {
+      "id": "iostate-rate",
+      "family": "ioState",
+      "variant": "full",
+      "json": "iostate-rate.json",
+      "cbor": "iostate-rate.cbor",
+      "uuidPointers": []
+    },
+    {
+      "id": "iostate-rate-zero",
+      "family": "ioState",
+      "variant": "special",
+      "json": "iostate-rate-zero.json",
+      "cbor": "iostate-rate-zero.cbor",
+      "uuidPointers": []
+    }
+  ]
+}
