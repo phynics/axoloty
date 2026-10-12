@@ -832,15 +832,15 @@ internal struct AxolotyEmbeddedConsumerContractValidator {
             findings.append(finding("wire.product", path: manifestPath, "AxolotyWire must depend only on swift-json product IkigaJSONCore"))
         }
         let traitBlocks = declarationBlocks(kind: "trait", in: manifest)
-        let declaresCoautyJSON = traitBlocks.contains {
+        let declaresCoatyJSON = traitBlocks.contains {
             firstCapture(#"\bname\s*:\s*"([^"]+)"#, in: $0) == "CoatyJSON"
         }
-        let defaultEnablesCoautyJSON =
+        let defaultEnablesCoatyJSON =
             firstCapture(#"\.default\s*\(\s*enabledTraits\s*:\s*\[\s*"([^"]+)"#, in: manifest) == "CoatyJSON"
         let conditionalProduct = products.first.map {
             $0.contains("condition:") && $0.contains(".when(traits:") && $0.contains("\"CoatyJSON\"")
         } ?? false
-        if !declaresCoautyJSON || !defaultEnablesCoautyJSON || !conditionalProduct {
+        if !declaresCoatyJSON || !defaultEnablesCoatyJSON || !conditionalProduct {
             findings.append(finding(
                 "wire.trait",
                 path: manifestPath,
