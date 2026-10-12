@@ -18,6 +18,11 @@ public enum WireObjectFieldKind: UInt8, Sendable {
     case falseValue
     /// Null value.
     case null
+    /// A CBOR byte string. Produced only by the `axoloty/1` engine.
+    case byteString
+    /// A tagged CBOR item, for example a tag-37 UUID. Produced only by the
+    /// `axoloty/1` engine.
+    case tag
 }
 
 /// A borrowed top-level object field produced by ``WireReader/withObjectFields(_:)``.
@@ -65,8 +70,15 @@ public struct WireObjectField: ~Copyable, ~Sendable {
     }
 }
 
-/// The lexical kind retained for an indexed JSON value.
-@usableFromInline enum WireTokenKind: UInt8 { case object, array, string, number, trueValue, falseValue, nullValue }
+/// The lexical kind retained for an indexed wire value.
+///
+/// The first seven cases are produced by the JSON tokenizer. The CBOR
+/// engine additionally produces ``byteString`` and ``tag`` for the CBOR-only
+/// lexical kinds.
+@usableFromInline enum WireTokenKind: UInt8 {
+    case object, array, string, number, trueValue, falseValue, nullValue
+    case byteString, tag
+}
 
 struct WireKeyCursor {
     private let bytes: UnsafeRawPointer
@@ -232,11 +244,19 @@ func wireSemanticKeysEqual(bytes: UnsafeBufferPointer<UInt8>, lhs: Range<Int>, r
     return wireSemanticKeysEqual(&first, &second)
 }
 
-/// A Foundation-free reader which tokenizes once into bounded borrowed slots.
+/// A format-neutral Foundation-free reader which indexes once into bounded
+/// borrowed slots.
+///
+/// The default engine tokenizes JSON exactly as before; a reader constructed
+/// through ``WireCodec`` with ``WireProfile/axoloty1CBOR`` instead indexes one
+/// deterministic CBOR map. Both engines fill the same bounded field index and
+/// serve the same accessor names, so every wire DTO decodes both profiles
+/// from one implementation.
 public struct WireReader: ~Sendable {
     @usableFromInline let bytes: UnsafeRawPointer
     public let length: Int
     @usableFromInline let index: WireFieldIndex
+    @usableFromInline let isCBOR: Bool
 
     /// Creates a reader over a borrowed JSON byte buffer.
     ///
@@ -253,6 +273,7 @@ public struct WireReader: ~Sendable {
     ///   boundary should reuse ``EmbeddedWireParserWorkspace``.
     public init(bytes: UnsafePointer<UInt8>, length: Int) {
         self.bytes = UnsafeRawPointer(bytes); self.length = max(0, length)
+        self.isCBOR = false
         let buffer = UnsafeBufferPointer(start: bytes, count: max(0, length))
         var index = WireFieldIndex()
         guard buffer.count <= WireBufferConfig.maxPayloadSize else {
@@ -290,6 +311,7 @@ public struct WireReader: ~Sendable {
         workspace: inout Workspace
     ) {
         self.bytes = UnsafeRawPointer(bytes); self.length = max(0, length)
+        self.isCBOR = false
         let buffer = UnsafeBufferPointer(start: bytes, count: max(0, length))
         var index = WireFieldIndex()
         guard buffer.count <= WireBufferConfig.maxPayloadSize else {
@@ -313,7 +335,67 @@ public struct WireReader: ~Sendable {
         self.index = index
     }
 
-    /// Validates that the complete input is one JSON object.
+    /// Creates a reader over a borrowed CBOR map payload (`axoloty/1` engine).
+    ///
+    /// The top-level map is indexed once into bounded borrowed slots, mirroring
+    /// the JSON tokenizer, so every accessor call is allocation-free and
+    /// independent of call order. No tokenizer scratch storage is needed: the
+    /// walk reads the caller's buffer in place.
+    ///
+    /// - Parameters:
+    ///   - bytes: Pointer to the borrowed CBOR payload bytes.
+    ///   - length: Number of valid payload bytes.
+    @usableFromInline
+    init(cborBytes: UnsafePointer<UInt8>, length: Int) {
+        let clamped = max(0, length)
+        self.bytes = UnsafeRawPointer(cborBytes)
+        self.length = clamped
+        self.index = Self.cborIndex(bytes: UnsafeRawPointer(cborBytes), length: clamped)
+        self.isCBOR = true
+    }
+
+    /// Builds the borrowed field index for one CBOR map payload.
+    ///
+    /// The walk mirrors the JSON tokenizer: the top-level map is indexed once
+    /// into bounded slots, text keys are compared bytewise, duplicate keys are
+    /// rejected, and trailing bytes after the map are a decode failure.
+    private static func cborIndex(bytes: UnsafeRawPointer, length: Int) -> WireFieldIndex {
+        var index = WireFieldIndex()
+        guard length <= WireBufferConfig.maxPayloadSize else {
+            index.failure = WireDecodeError(.payloadExceedsLimit, byteOffset: length)
+            return index
+        }
+        let buffer = UnsafeBufferPointer(
+            start: bytes.assumingMemoryBound(to: UInt8.self), count: length
+        )
+        var reader = CBORReader(
+            bytes: buffer.baseAddress ?? UnsafePointer(bitPattern: 1)!,
+            length: length
+        )
+        do throws(WireDecodeError) {
+            let pairCount = try reader.readMapHeader()
+            index.rootObject = true
+            for _ in 0..<pairCount {
+                let keyRange = try reader.readTextKeyRange()
+                let item = try reader.readIndexedItem()
+                index.append(
+                    WireFieldSlot(key: keyRange, value: item.value, content: item.content, kind: item.kind),
+                    bytes: buffer
+                )
+            }
+            guard reader.isAtEnd else {
+                throw WireDecodeError(
+                    .unexpectedToken(expected: "end of input", actual: reader.bytes[reader.offset]),
+                    byteOffset: reader.offset
+                )
+            }
+        } catch {
+            if index.failure == nil { index.failure = error }
+        }
+        return index
+    }
+
+    /// Validates that the complete input is one object of the active profile's format.
     public func validate() throws(WireDecodeError) {
         if let failure = index.failure { throw failure }
         guard index.rootObject else { throw WireDecodeError(.typeMismatch(expected: "object")) }
@@ -403,13 +485,38 @@ public struct WireReader: ~Sendable {
         return slice(slot.content)
     }
 
-    /// Reads a canonical JSON UUID string.
-    public func readUUID(_ key: StaticString) -> UUID16? { readString(key).flatMap(UUID16.init(parsing:)) }
+    /// Reads a canonical JSON UUID string, or a CBOR UUID item.
+    ///
+    /// The JSON engine reads a canonical 36-byte hyphenated string. The CBOR
+    /// engine reads a tag-37 16-byte byte string or the canonical text form.
+    public func readUUID(_ key: StaticString) -> UUID16? {
+        if isCBOR {
+            guard index.failure == nil,
+                  let slot = index.find(bytes: bytes, key: key),
+                  let value = slice(slot.value) else { return nil }
+            return value.withBytes { pointer, count -> UUID16? in
+                var reader = CBORReader(bytes: pointer.assumingMemoryBound(to: UInt8.self), length: count)
+                return try? reader.readUUID()
+            }
+        }
+        return readString(key).flatMap(UUID16.init(parsing:))
+    }
 
-    /// Reads a JSON integer, rejecting other token kinds and overflow.
+    /// Reads an integer, rejecting other token kinds and overflow.
+    ///
+    /// The JSON engine parses ASCII digits. The CBOR engine decodes a
+    /// minimally encoded integer item; floating-point and tagged values are
+    /// rejected.
     public func readInt(_ key: StaticString) -> Int? {
         guard index.failure == nil, let slot = index.find(bytes: bytes, key: key), slot.kind == .number,
               let value = slice(slot.value) else { return nil }
+        if isCBOR {
+            return value.withBytes { pointer, count -> Int? in
+                var reader = CBORReader(bytes: pointer.assumingMemoryBound(to: UInt8.self), length: count)
+                guard let decoded = try? reader.readInteger() else { return nil }
+                return Int(exactly: decoded)
+            }
+        }
         var result = 0; var negative = false; var offset = 0
         if value.byte(at: 0) == 0x2D { negative = true; offset = 1 }
         let first = offset
@@ -429,7 +536,71 @@ public struct WireReader: ~Sendable {
         if slot.kind == .trueValue { return true }; if slot.kind == .falseValue { return false }; return nil
     }
 
-    /// Reads an optional raw value, treating an explicit JSON `null` as absent.
+    /// Visits every UUID element of an array field.
+    ///
+    /// The JSON engine reads an array of canonical hyphenated UUID strings.
+    /// The CBOR engine reads an array of UUID items (tag-37 byte string or
+    /// canonical text form). An absent field, a non-array field, or a malformed
+    /// element is a structured decode failure.
+    ///
+    /// - Parameters:
+    ///   - key: The array field to read.
+    ///   - body: A synchronous visitor receiving each decoded UUID.
+    /// - Throws: ``WireDecodeError`` when the field is missing, is not an
+    ///   array, or holds a non-UUID element.
+    public func readUUIDElements(
+        _ key: StaticString,
+        _ body: (UUID16) throws(WireDecodeError) -> Void
+    ) throws(WireDecodeError) {
+        guard index.failure == nil, let slot = index.find(bytes: bytes, key: key) else {
+            throw WireDecodeError(.missingField, field: key)
+        }
+        guard let value = slice(slot.value) else {
+            throw WireDecodeError(.unexpectedEndOfInput, byteOffset: length)
+        }
+        guard slot.kind == .array else {
+            throw WireDecodeError(.typeMismatch(expected: "array"), field: key)
+        }
+        if isCBOR {
+            var elementFailure: WireDecodeError?
+            value.withBytes { pointer, count in
+                var reader = CBORReader(bytes: pointer.assumingMemoryBound(to: UInt8.self), length: count)
+                do throws(WireDecodeError) {
+                    let elementCount = try reader.readArrayHeader()
+                    for _ in 0..<elementCount {
+                        try body(try reader.readUUID())
+                    }
+                    guard reader.isAtEnd else {
+                        throw WireDecodeError(.typeMismatch(expected: "uuid array"), field: key)
+                    }
+                } catch {
+                    elementFailure = error
+                }
+            }
+            if let elementFailure { throw elementFailure }
+            return
+        }
+        var failure: WireDecodeError?
+        do throws(WireDecodeError) {
+            try value.withArrayElements { element in
+                guard element.wireValueKind == .string, element.length >= 2,
+                      let objectID = UUID16(parsing: element.subSlice(from: 1, length: element.length - 2)) else {
+                    if failure == nil {
+                        failure = WireDecodeError(.typeMismatch(expected: "uuid string"), field: key)
+                    }
+                    return
+                }
+                do throws(WireDecodeError) { try body(objectID) } catch {
+                    if failure == nil { failure = error }
+                }
+            }
+        } catch {
+            if failure == nil { failure = error }
+        }
+        if let failure { throw failure }
+    }
+
+    /// Reads an optional raw value, treating an explicit `null` as absent.
     public func readOptionalRaw(_ key: StaticString) -> ByteSlice? {
         guard index.failure == nil, let slot = index.find(bytes: bytes, key: key), slot.kind != .nullValue else { return nil }
         return slice(slot.value)
