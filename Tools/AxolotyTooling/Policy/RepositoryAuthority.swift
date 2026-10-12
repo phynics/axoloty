@@ -145,8 +145,9 @@ public struct AxolotyRepositoryAuthorityValidator: Sendable {
 
     private func validateDocuments(findings: inout [AxolotyRepositoryAuthorityFinding]) {
         let required = [
-            "ARCHITECTURE.md", "CONTEXT.md", "docs/ROADMAP.md",
-            "docs/SUPPORT_MATRIX.md", "docs/protocol/coaty-core-3.md",
+            "SECURITY.md", "ARCHITECTURE.md", "CONTEXT.md", "docs/ROADMAP.md",
+            "docs/versioning.md", "docs/SUPPORT_MATRIX.md",
+            "docs/protocol/coaty-core-3.md",
             "docs/architecture-exceptions.yml",
         ]
         for path in required where !fileExists(path) {
