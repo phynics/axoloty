@@ -89,9 +89,12 @@ print(UUID16.zero)
 
 **Dependency closure:**
 ```
-AxolotyWire -> swift-json/IkigaJSONCore
+AxolotyWire -> swift-json/IkigaJSONCore (default-enabled CoatyJSON trait)
 ```
-The standalone package may resolve `swift-nio` as a transitive dependency of
+The standalone package declares the `CoatyJSON` trait default-enabled and gates
+its `IkigaJSONCore` product on it; `--disable-default-traits` drops the product
+and the `_JSONCore` module for a CBOR-only consumer. The standalone package may
+resolve `swift-nio` as a transitive dependency of
 `swift-json`, but it must not build or link NIO targets. Host-only packages
 (MQTTNIO, NIOSSL, NIOTransportServices, swift-log, ErrorKit, and the host
 `IkigaJSON` product) are absent. The target is Foundation-free and isolated

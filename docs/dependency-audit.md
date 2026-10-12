@@ -84,7 +84,10 @@ possible once the policy surface is stable, but is out of scope here.
 ### swift-json (`2.5.3` exact, phynics fork, MIT)
 
 `AxolotyWire` depends on the `IkigaJSONCore` product, which exposes the
-Foundation-free `_JSONCore` target, and is the only target that does. Upstream
+Foundation-free `_JSONCore` target, and is the only target that does. The
+product is gated behind the default-enabled `CoatyJSON` SwiftPM trait, so a
+CBOR-only consumer can build `AxolotyWire` with `--disable-default-traits` and
+link no JSON parser. Upstream
 swift-json declared no such product for Swift 6.2+
 ([orlandos-nl/swift-json#63](https://github.com/orlandos-nl/swift-json/issues/63));
 the minimal manifest fix was submitted as
