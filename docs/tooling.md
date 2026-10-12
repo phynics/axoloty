@@ -115,6 +115,32 @@ publishing uses a GHCR-backed
 BuildKit cache; ordinary source checks pull the reviewed image by digest instead
 of rebuilding it.
 
+## Wire capture tool
+
+The Node tool under `Tests/Support/WireCompatibility/tool` reads and writes
+both JSON and CBOR capture payloads. It uses CBOR diagnostic notation
+(RFC 8949 §8) for human-readable payloads and the deterministic encoding of
+RFC 8949 §4.2.1 for CBOR output.
+
+```sh
+npm --prefix Tests/Support/WireCompatibility/tool test
+npm --prefix Tests/Support/WireCompatibility/tool run build
+```
+
+The built `dist/index.js` exposes `decode` and `encode`:
+
+```sh
+node Tests/Support/WireCompatibility/tool/dist/index.js decode capture.jsonl --record 1
+node Tests/Support/WireCompatibility/tool/dist/index.js encode --diagnostic '{1: 2, 3: 4}'
+node Tests/Support/WireCompatibility/tool/dist/index.js encode --json '{"a": 1}' --base64
+```
+
+`decode` classifies each payload as JSON or CBOR and prints its diagnostic
+notation (default) or a JSON projection (`--format json`). `encode` accepts
+exactly one of `--json`, `--json-file`, or `--diagnostic` and prints
+hexadecimal bytes by default or base64 with `--base64`. The command writes
+only the payload to standard output.
+
 ## Fixture bundling vs fresh wire evidence
 
 Release validation produces two distinct, deliberately separated evidence

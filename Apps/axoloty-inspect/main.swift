@@ -22,8 +22,28 @@ case let .error(error):
     FileHandle.standardError.write(Data("error: \(error.userFriendlyMessage)\n".utf8))
     Foundation.exit(error.exitCode)
 case let .run(config):
+    if case let .decode(command) = config.command {
+        Foundation.exit(runDecode(command))
+    }
     let exitCode = await runInspector(config)
     Foundation.exit(exitCode)
+}
+
+/// Renders a local decode payload and writes it to stdout.
+///
+/// The payload text is the only stdout output; every failure goes to stderr.
+///
+/// - Parameter command: The decode command parsed from the arguments.
+/// - Returns: A process exit code.
+func runDecode(_ command: DecodeCommand) -> Int32 {
+    do {
+        let text = try InspectorDecodeRunner.render(command)
+        print(text)
+        return 0
+    } catch {
+        FileHandle.standardError.write(Data("error: \(error.userFriendlyMessage)\n".utf8))
+        return 64
+    }
 }
 
 @MainActor
@@ -109,6 +129,9 @@ func runInspector(
             signalHandler: signalHandler
         )
         result = await app.run()
+    case .decode:
+        // The decode command is handled before session creation.
+        return 0
     }
 
     if let error = result {

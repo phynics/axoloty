@@ -223,6 +223,7 @@ struct InspectorArgumentParserTests {
         Commands:
           catalog              Observe Advertise/Deadvertise and build an object catalogue.
           discover             Send a Discover request and collect Resolve responses.
+          decode               Render a captured payload as CBOR diagnostic notation or JSON.
 
         Common options:
           --host HOST          Broker host (default: localhost, env: AXOLOTY_MQTT_HOST)
@@ -249,6 +250,12 @@ struct InspectorArgumentParserTests {
           --object-type TYPE   Select by full object type.
           --object-id UUID     Select by object UUID.
           --timeout D          Response collection timeout (e.g. 5s; default: unlimited).
+
+        Decode options:
+          --payload HEX        Decode a hexadecimal payload.
+          --base64 TEXT        Decode a base64 payload.
+          --file PATH          Decode a payload read from a file.
+          --format MODE        Output format: diagnostic|json (default: diagnostic).
 
         Other:
           -h, --help           Show this help.

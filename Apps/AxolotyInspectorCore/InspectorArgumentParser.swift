@@ -29,6 +29,7 @@ public struct InspectorArgumentParser: Sendable {
     Commands:
       catalog              Observe Advertise/Deadvertise and build an object catalogue.
       discover             Send a Discover request and collect Resolve responses.
+      decode               Render a captured payload as CBOR diagnostic notation or JSON.
 
     \(InspectorCommonOptionParser.helpText)
 
@@ -46,6 +47,12 @@ public struct InspectorArgumentParser: Sendable {
       --object-type TYPE   Select by full object type.
       --object-id UUID     Select by object UUID.
       --timeout D          Response collection timeout (e.g. 5s; default: unlimited).
+
+    Decode options:
+      --payload HEX        Decode a hexadecimal payload.
+      --base64 TEXT        Decode a base64 payload.
+      --file PATH          Decode a payload read from a file.
+      --format MODE        Output format: diagnostic|json (default: diagnostic).
 
     Other:
       -h, --help           Show this help.
@@ -76,6 +83,7 @@ public struct InspectorArgumentParser: Sendable {
         case "--version", "-v": return .version
         case "catalog": return parseCatalog(Array(arguments.dropFirst()), environment: environment)
         case "discover": return parseDiscover(Array(arguments.dropFirst()), environment: environment)
+        case "decode": return parseDecode(Array(arguments.dropFirst()))
         default: return .error(.invalidArguments(reason: "unknown command: \(arguments[0])"))
         }
     }
@@ -203,6 +211,47 @@ private extension InspectorArgumentParser {
             output: common.output,
             logLevel: common.logLevel.rawValue,
             passwordFromStdin: common.passwordFromStdin
+        ))
+    }
+
+    func parseDecode(_ args: [String]) -> InspectorParseOutcome {
+        var source: InspectorDecodeSource?
+        var render = InspectorDecodeRender.diagnostic
+        var i = 0
+        while i < args.count {
+            let arg = args[i]
+            switch arg {
+            case "--payload":
+                guard let (value, next) = consumeValue(args, at: i) else { return .error(.invalidArguments(reason: "--payload requires a value")) }
+                guard source == nil else { return .error(.invalidArguments(reason: "decode accepts only one payload source")) }
+                source = .hex(value); i = next
+            case "--base64":
+                guard let (value, next) = consumeValue(args, at: i) else { return .error(.invalidArguments(reason: "--base64 requires a value")) }
+                guard source == nil else { return .error(.invalidArguments(reason: "decode accepts only one payload source")) }
+                source = .base64(value); i = next
+            case "--file":
+                guard let (value, next) = consumeValue(args, at: i) else { return .error(.invalidArguments(reason: "--file requires a value")) }
+                guard source == nil else { return .error(.invalidArguments(reason: "decode accepts only one payload source")) }
+                source = .file(value); i = next
+            case "--format":
+                guard let (value, next) = consumeValue(args, at: i) else { return .error(.invalidArguments(reason: "--format requires a value")) }
+                guard let parsed = InspectorDecodeRender(rawValue: value) else {
+                    return .error(.invalidConfiguration(field: "format", reason: "must be one of: diagnostic, json"))
+                }
+                render = parsed; i = next
+            default:
+                return .error(.invalidArguments(reason: "unknown option: \(arg)"))
+            }
+        }
+
+        guard let source else {
+            return .error(.invalidArguments(reason: "decode requires one of --payload, --base64, or --file"))
+        }
+        return .run(InspectorConfiguration(
+            command: .decode(DecodeCommand(source: source, render: render)),
+            connection: InspectorConnectionConfiguration(host: "localhost", port: 1883, namespace: "-"),
+            output: .auto,
+            logLevel: "info"
         ))
     }
 }

@@ -36,6 +36,28 @@ axoloty-inspect discover --object-id abc-123-def-456
 A zero-result discovery is successful (`timedOut: true, objects: []`).
 A broker failure is distinguishable from no responses (nonzero exit code).
 
+### `decode` — local payload rendering
+
+Render a captured payload as RFC 8949 §8 CBOR diagnostic notation or as
+sorted JSON. The command is broker-independent: it uses no connection and
+writes only the rendered payload to stdout.
+
+```sh
+axoloty-inspect decode --payload a26161016162820203
+axoloty-inspect decode --base64 oWFhAQ== --format json
+axoloty-inspect decode --file payload.cbor
+```
+
+Provide exactly one of `--payload HEX`, `--base64 TEXT`, or `--file PATH`.
+`--format` selects `diagnostic` (default) or `json`. JSON payloads pass
+through for diagnostic rendering and are normalized to sorted JSON for JSON
+rendering. A CBOR payload that cannot be projected into a JSON object fails
+the `json` render with exit code 64.
+
+The `axoloty-mcp` server exposes the same rendering as the
+`axoloty_decode_payload` tool with `payload`, `encoding` (`hex` or `base64`),
+and `format` (`diagnostic` or `json`) arguments.
+
 ## Connection options
 
 | Option | Default | Environment | Description |
@@ -76,6 +98,9 @@ fields.
 | `human` | One-line-per-event terminal output |
 | `ndjson` | Newline-delimited JSON, one self-contained object per line |
 | `json` | One sorted-key JSON array emitted when the finite command completes |
+
+The `decode` command ignores connection and output options: it prints the
+rendered payload text and nothing else.
 
 **stdout** carries data records only. **stderr** carries diagnostics,
 progress, and errors. Connection messages are never written to stdout.
