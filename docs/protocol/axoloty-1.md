@@ -149,7 +149,7 @@ specific reasons are `cborIndefiniteLength`, `cborInvalidAdditionalInfo`,
 |---|---|
 | Route prefix, profile enum, profile-scoped validation | Implemented |
 | Bounded deterministic CBOR reader and writer | Implemented |
-| `WireDecodeable`/`WireEncodable` DTO codec seam (format-neutral) | Follow-up under #977 |
+| `WireDecodable`/`WireEncodable` DTO codec seam (format-neutral, [ADR 0011](../adr/0011-codec-format-seam.md)) | Implemented |
 | Raw/custom CBOR payload retention | Follow-up under #977 |
 | Zenoh binding on `axoloty/1` only | Follow-up under #977 |
 | Golden corpus and trace-parity gate | Follow-up under #977 |

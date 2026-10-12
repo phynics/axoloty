@@ -632,4 +632,107 @@ struct WireCodecTests {
         }
         #expect(String(decoding: encodedOutput[..<encodedCount], as: UTF8.self) == #"{"externalId":"line\nbreak"}"#)
     }
+
+    // MARK: - WireCodec profile dispatch
+
+    @Test
+    func wireCodecReaderDispatchesByProfile() throws {
+        let json = Array(#"{"updateRate":250,"flag":true,"label":"abc"}"#.utf8)
+        // A CBOR map: {"flag": true, "label": "abc", "updateRate": 250}
+        // in deterministic key order.
+        let cbor: [UInt8] = [0xA3]
+            + [0x64] + Array("flag".utf8) + [0xF5]
+            + [0x65] + Array("label".utf8) + [0x63] + Array("abc".utf8)
+            + [0x6A] + Array("updateRate".utf8) + [0x18, 0xFA]
+
+        json.withUnsafeBufferPointer { buffer in
+            let reader = WireCodec(profile: .coaty3JSON).reader(
+                bytes: buffer.baseAddress!, length: buffer.count
+            )
+            #expect(reader.readInt("updateRate") == 250)
+            #expect(reader.readBool("flag") == true)
+        }
+        try cbor.withUnsafeBufferPointer { buffer in
+            let reader = WireCodec(profile: .axoloty1CBOR).reader(
+                bytes: buffer.baseAddress!, length: buffer.count
+            )
+            #expect(reader.readInt("updateRate") == 250)
+            #expect(reader.readBool("flag") == true)
+            #expect(reader.readString("label")?.equals("abc") == true)
+            #expect(reader.readOptionalRaw("updateRate") != nil)
+            try reader.validate()
+        }
+    }
+
+    @Test
+    func wireCodecJSONWriterMatchesTheDirectWriter() throws {
+        // The default engine and the coaty/3 codec produce identical bytes.
+        let value = Array(#"line\nbreak"#.utf8)
+        var direct = [UInt8](repeating: 0, count: 64)
+        var throughCodec = [UInt8](repeating: 0, count: 64)
+        let directCount = try direct.withUnsafeMutableBufferPointer { output in
+            var writer = WireWriter(buffer: output.baseAddress!, capacity: output.count)
+            try value.withUnsafeBufferPointer { input in
+                try writer.writeStringField(
+                    "value", ByteSlice(bytes: input.baseAddress!, length: input.count)
+                )
+            }
+            return writer.position
+        }
+        let codecCount = try throughCodec.withUnsafeMutableBufferPointer { output in
+            var writer = WireCodec(profile: .coaty3JSON).writer(
+                buffer: output.baseAddress!, capacity: output.count
+            )
+            try value.withUnsafeBufferPointer { input in
+                try writer.writeStringField(
+                    "value", ByteSlice(bytes: input.baseAddress!, length: input.count)
+                )
+            }
+            return writer.position
+        }
+        #expect(direct[0..<directCount] == throughCodec[0..<codecCount])
+    }
+
+    @Test
+    func wireCodecAppliesTheProfilesBareValueGate() {
+        let binary: [UInt8] = [0x00, 0x01, 0x02]
+        let invalidJSON: [UInt8] = [0x22, 0x61, 0x22, 0x22] // "a""
+        let jsonCodec = WireCodec(profile: .coaty3JSON)
+        let cborCodec = WireCodec(profile: .axoloty1CBOR)
+        for bytes in [binary, invalidJSON] {
+            let slice = bytes.withUnsafeBufferPointer {
+                ByteSlice(bytes: $0.baseAddress!, length: $0.count)
+            }
+            // coaty/3 keeps the sealed first-byte sniff.
+            #expect(jsonCodec.isValidBareValue(slice) == (bytes == binary))
+            // axoloty/1 cannot sniff, so the gate accepts and the bounded
+            // decode owns validation.
+            #expect(cborCodec.isValidBareValue(slice))
+        }
+    }
+
+    @Test
+    func wireCodecCopiesDecodedStringContentByProfile() throws {
+        // coaty/3 decodes JSON escape sequences while copying.
+        let escaped = Array(#"line\nbreak"#.utf8)
+        var decoded = InlineArray<16, UInt8>(repeating: 0)
+        let jsonCount = try escaped.withUnsafeBufferPointer { buffer in
+            let slice = ByteSlice(bytes: buffer.baseAddress!, length: buffer.count)
+            return try WireCodec(profile: .coaty3JSON).copyDecodedString(slice, into: &decoded)
+        }
+        #expect(jsonCount == 10)
+        #expect(decoded[0] == 0x6C && decoded[4] == 0x0A)
+
+        // axoloty/1 copies plain UTF-8 content unchanged.
+        let plain = Array("line\nbreak".utf8)
+        var copied = InlineArray<16, UInt8>(repeating: 0)
+        let cborCount = try plain.withUnsafeBufferPointer { buffer in
+            let slice = ByteSlice(bytes: buffer.baseAddress!, length: buffer.count)
+            return try WireCodec(profile: .axoloty1CBOR).copyDecodedString(slice, into: &copied)
+        }
+        #expect(cborCount == plain.count)
+        for (index, byte) in plain.enumerated() {
+            #expect(copied[index] == byte)
+        }
+    }
 }

@@ -9,8 +9,8 @@
 
 // MARK: - AssociateEventData
 
-/// Wire DTO mirroring `AssociateEventData`, decoded from JSON via
-/// ``WireReader`` and encoded via ``WireWriter``.
+/// Wire DTO mirroring `AssociateEventData`, decoded via ``WireReader``
+/// and encoded via ``WireWriter``.
 public struct AssociateWireData: WireDecodable, WireEncodable, Equatable {
     /// The UUID of the IO source being associated.
     public let ioSourceId: UUID16
@@ -28,7 +28,7 @@ public struct AssociateWireData: WireDecodable, WireEncodable, Equatable {
     /// `ioSourceId` and `ioActorId` are required; the remaining fields are
     /// optional and default to nil when absent.
     ///
-    /// - Parameter reader: A ``WireReader`` over the JSON payload.
+    /// - Parameter reader: A ``WireReader`` over the payload bytes.
     /// - Throws: ``WireDecodeError`` if `ioSourceId` or `ioActorId` is missing.
     public init(from reader: WireReader) throws(WireDecodeError) {
         try reader.validate()
@@ -45,7 +45,7 @@ public struct AssociateWireData: WireDecodable, WireEncodable, Equatable {
         self.updateRate = reader.readInt("updateRate")
     }
 
-    /// Encodes this event into `writer` as a JSON object.
+    /// Encodes this event into `writer` as an object.
     ///
     /// `ioSourceId` and `ioActorId` are always written; the optional fields
     /// are written only when present (`isExternalRoute` only when `true`).
@@ -76,18 +76,18 @@ public struct AssociateWireData: WireDecodable, WireEncodable, Equatable {
 // MARK: - AdvertiseEventData
 
 /// Wire DTO mirroring `AdvertiseEventData`, carrying the advertised object
-/// as a raw JSON fragment.
+/// as a raw payload fragment in the active profile's format.
 public struct AdvertiseWireData: WireDecodable, WireEncodable, Equatable {
-    /// The raw JSON bytes of the advertised object.
+    /// The raw wire bytes of the advertised object.
     public let object: ByteSlice
-    /// The optional private data as raw JSON bytes.
+    /// The optional private data as raw wire bytes.
     public let privateData: ByteSlice?
 
     /// Decodes an advertise event from `reader`.
     ///
     /// `object` is required; `privateData` is optional.
     ///
-    /// - Parameter reader: A ``WireReader`` over the JSON payload.
+    /// - Parameter reader: A ``WireReader`` over the payload bytes.
     /// - Throws: ``WireDecodeError`` if the `object` field is missing.
     public init(from reader: WireReader) throws(WireDecodeError) {
         try reader.validate()
@@ -98,7 +98,7 @@ public struct AdvertiseWireData: WireDecodable, WireEncodable, Equatable {
         self.privateData = reader.readOptionalRaw("privateData")
     }
 
-    /// Encodes this event into `writer` as a JSON object wrapping `object`,
+    /// Encodes this event into `writer` as an object wrapping `object`,
     /// writing `privateData` only when present.
     ///
     /// - Parameter writer: The ``WireWriter`` to encode into.
@@ -119,15 +119,15 @@ public struct AdvertiseWireData: WireDecodable, WireEncodable, Equatable {
 /// Wire DTO mirroring `DeadvertiseEventData`, carrying the list of object IDs
 /// to remove as parsed ``UUID16`` values.
 public struct DeadvertiseWireData: WireDecodable, WireEncodable, Equatable {
-    /// The raw JSON bytes of the `objectIds` array (a JSON array of
-    /// hyphenated UUID strings).
+    /// The raw wire bytes of the `objectIds` array (an array of UUID items
+    /// in the active profile's format).
     public let objectIds: ByteSlice
 
     /// Decodes a deadvertise event from `reader`, capturing the `objectIds`
-    /// array as raw JSON bytes so the host can decode the original UUID
-    /// strings without normalizing them through ``UUID16``.
+    /// array as raw wire bytes so the host can decode the original UUID
+    /// items without normalizing them through ``UUID16``.
     ///
-    /// - Parameter reader: A ``WireReader`` over the JSON payload.
+    /// - Parameter reader: A ``WireReader`` over the payload bytes.
     /// - Throws: ``WireDecodeError`` if the `objectIds` field is missing.
     public init(from reader: WireReader) throws(WireDecodeError) {
         try reader.validate()
@@ -137,7 +137,7 @@ public struct DeadvertiseWireData: WireDecodable, WireEncodable, Equatable {
         self.objectIds = ids
     }
 
-    /// Encodes this event into `writer`, serializing `objectIds` as a JSON
+    /// Encodes this event into `writer`, serializing `objectIds` as an
     /// array.
     ///
     /// - Parameter writer: The ``WireWriter`` to encode into.
@@ -152,14 +152,14 @@ public struct DeadvertiseWireData: WireDecodable, WireEncodable, Equatable {
 // MARK: - IoValueEventData
 
 /// Wire DTO mirroring `IoValueEventData`, carrying the IO value payload as a
-/// raw JSON fragment.
+/// raw payload fragment in the active profile's format.
 public struct IoValueWireData: WireDecodable, WireEncodable, Equatable {
-    /// The raw JSON bytes of the IO value payload.
+    /// The raw wire bytes of the IO value payload.
     public let payload: ByteSlice
 
     /// Decodes an IoValue event from `reader`.
     ///
-    /// - Parameter reader: A ``WireReader`` over the JSON payload.
+    /// - Parameter reader: A ``WireReader`` over the payload bytes.
     /// - Throws: ``WireDecodeError`` if the `payload` field is missing.
     public init(from reader: WireReader) throws(WireDecodeError) {
         try reader.validate()
@@ -169,7 +169,7 @@ public struct IoValueWireData: WireDecodable, WireEncodable, Equatable {
         self.payload = p
     }
 
-    /// Encodes this event into `writer` as a JSON object wrapping `payload`.
+    /// Encodes this event into `writer` as an object wrapping `payload`.
     ///
     /// - Parameter writer: The ``WireWriter`` to encode into.
     /// - Throws: ``WireEncodeError`` if the buffer overflows.
@@ -185,11 +185,11 @@ public struct IoValueWireData: WireDecodable, WireEncodable, Equatable {
 /// Wire DTO mirroring `ChannelEventData`, carrying optional object and
 /// private-data fragments.
 public struct ChannelWireData: WireDecodable, WireEncodable, Equatable {
-    /// The optional channel object as raw JSON bytes.
+    /// The optional channel object as raw wire bytes.
     public let object: ByteSlice?
-    /// The optional array of channel objects as raw JSON bytes.
+    /// The optional array of channel objects as raw wire bytes.
     public let objects: ByteSlice?
-    /// The optional private data as raw JSON bytes.
+    /// The optional private data as raw wire bytes.
     public let privateData: ByteSlice?
 
     /// Decodes a channel event from `reader`.
@@ -197,7 +197,7 @@ public struct ChannelWireData: WireDecodable, WireEncodable, Equatable {
     /// `object`, `objects`, and `privateData` are all optional; absent fields
     /// default to nil.
     ///
-    /// - Parameter reader: A ``WireReader`` over the JSON payload.
+    /// - Parameter reader: A ``WireReader`` over the payload bytes.
     public init(from reader: WireReader) throws(WireDecodeError) {
         try reader.validate()
         self.object = reader.readOptionalRaw("object")
@@ -205,7 +205,7 @@ public struct ChannelWireData: WireDecodable, WireEncodable, Equatable {
         self.privateData = reader.readOptionalRaw("privateData")
     }
 
-    /// Encodes this event into `writer` as a JSON object, writing only the
+    /// Encodes this event into `writer` as an object, writing only the
     /// fields that are present.
     ///
     /// - Parameter writer: The ``WireWriter`` to encode into.
@@ -239,20 +239,20 @@ public struct ChannelWireData: WireDecodable, WireEncodable, Equatable {
 
 /// Wire DTO mirroring `DiscoverEventData`, carrying optional filter criteria.
 public struct DiscoverWireData: WireDecodable, WireEncodable, Equatable {
-    /// The optional external ID as raw JSON bytes (a JSON string).
+    /// The optional external ID as raw wire bytes (a string value).
     public let externalId: ByteSlice?
-    /// The optional object UUID as raw JSON bytes (a JSON string).
+    /// The optional object UUID as raw wire bytes (a string value).
     public let objectId: ByteSlice?
-    /// The optional object types filter as raw JSON bytes (a JSON array).
+    /// The optional object types filter as raw wire bytes (an array value).
     public let objectTypes: ByteSlice?
-    /// The optional core types filter as raw JSON bytes (a JSON array).
+    /// The optional core types filter as raw wire bytes (an array value).
     public let coreTypes: ByteSlice?
 
     /// Decodes a discover event from `reader`.
     ///
     /// All fields are optional; absent fields default to nil.
     ///
-    /// - Parameter reader: A ``WireReader`` over the JSON payload.
+    /// - Parameter reader: A ``WireReader`` over the payload bytes.
     public init(from reader: WireReader) throws(WireDecodeError) {
         try reader.validate()
         self.externalId = reader.readString("externalId")
@@ -261,7 +261,7 @@ public struct DiscoverWireData: WireDecodable, WireEncodable, Equatable {
         self.coreTypes = reader.readOptionalRaw("coreTypes")
     }
 
-    /// Encodes this event into `writer` as a JSON object, writing only the
+    /// Encodes this event into `writer` as an object, writing only the
     /// fields that are present.
     ///
     /// - Parameter writer: The ``WireWriter`` to encode into.
@@ -293,13 +293,13 @@ public struct DiscoverWireData: WireDecodable, WireEncodable, Equatable {
 
 /// Wire DTO mirroring `QueryEventData`, carrying optional filter criteria.
 public struct QueryWireData: WireDecodable, WireEncodable, Equatable {
-    /// The optional object types filter as raw JSON bytes.
+    /// The optional object types filter as raw wire bytes.
     public let objectTypes: ByteSlice?
-    /// The optional core types filter as raw JSON bytes.
+    /// The optional core types filter as raw wire bytes.
     public let coreTypes: ByteSlice?
-    /// The optional object filter as raw JSON bytes.
+    /// The optional object filter as raw wire bytes.
     public let objectFilter: ByteSlice?
-    /// The optional join conditions as raw JSON bytes (a JSON array of
+    /// The optional join conditions as raw wire bytes (an array of
     /// objects).
     public let objectJoinConditions: ByteSlice?
 
@@ -307,7 +307,7 @@ public struct QueryWireData: WireDecodable, WireEncodable, Equatable {
     ///
     /// All fields are optional; absent fields default to nil.
     ///
-    /// - Parameter reader: A ``WireReader`` over the JSON payload.
+    /// - Parameter reader: A ``WireReader`` over the payload bytes.
     public init(from reader: WireReader) throws(WireDecodeError) {
         try reader.validate()
         self.objectTypes = reader.readOptionalRaw("objectTypes")
@@ -316,7 +316,7 @@ public struct QueryWireData: WireDecodable, WireEncodable, Equatable {
         self.objectJoinConditions = reader.readOptionalRaw("objectJoinConditions")
     }
 
-    /// Encodes this event into `writer` as a JSON object, writing only the
+    /// Encodes this event into `writer` as an object, writing only the
     /// fields that are present.
     ///
     /// - Parameter writer: The ``WireWriter`` to encode into.
@@ -348,9 +348,9 @@ public struct QueryWireData: WireDecodable, WireEncodable, Equatable {
 
 /// Wire DTO mirroring `CallEventData`, carrying a remote operation request.
 public struct CallWireData: WireDecodable, WireEncodable, Equatable {
-    /// The operation parameters as raw JSON bytes.
+    /// The operation parameters as raw wire bytes.
     public let parameters: ByteSlice?
-    /// The optional context filter as raw JSON bytes.
+    /// The optional context filter as raw wire bytes.
     public let filter: ByteSlice?
 
     /// Decodes a call event from `reader`.
@@ -358,8 +358,8 @@ public struct CallWireData: WireDecodable, WireEncodable, Equatable {
     /// `parameters` and `filter` are optional. The topic carries the operation
     /// name; the legacy `operationType` member is accepted and ignored.
     ///
-    /// - Parameter reader: A ``WireReader`` over the JSON payload.
-    /// - Throws: ``WireDecodeError`` if the JSON is malformed.
+    /// - Parameter reader: A ``WireReader`` over the payload bytes.
+    /// - Throws: ``WireDecodeError`` if the payload is malformed.
     public init(from reader: WireReader) throws(WireDecodeError) {
         try reader.validate()
         self.parameters = reader.readOptionalRaw("parameters")

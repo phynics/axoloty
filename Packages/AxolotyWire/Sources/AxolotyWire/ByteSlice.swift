@@ -236,6 +236,41 @@ public struct ByteSlice: Equatable, Hashable, ~Sendable {
 }
 
 extension ByteSlice {
+    /// Returns whether every borrowed byte forms valid UTF-8.
+    ///
+    /// Rejects truncated sequences, overlong encodings, surrogate halves,
+    /// and continuation bytes without a lead byte. Shared by the
+    /// profile-neutral codec paths that must validate text before accepting
+    /// or writing it.
+    func isValidUTF8() -> Bool {
+        var index = 0
+        while index < length {
+            guard let lead = byte(at: index) else { return false }
+            let sequenceLength: Int
+            switch lead {
+            case 0..<0x80:
+                index += 1
+                continue
+            case 0xC2...0xDF: sequenceLength = 2
+            case 0xE0...0xEF: sequenceLength = 3
+            case 0xF0...0xF4: sequenceLength = 4
+            default: return false
+            }
+            guard index + sequenceLength <= length else { return false }
+            guard let second = byte(at: index + 1), second >= 0x80, second <= 0xBF else { return false }
+            if (lead == 0xE0 && second < 0xA0) || (lead == 0xED && second >= 0xA0) ||
+               (lead == 0xF0 && second < 0x90) || (lead == 0xF4 && second >= 0x90) {
+                return false
+            }
+            for offset in 2..<sequenceLength {
+                guard let continuation = byte(at: index + offset),
+                      continuation >= 0x80, continuation <= 0xBF else { return false }
+            }
+            index += sequenceLength
+        }
+        return true
+    }
+
     /// Runs a synchronous callback with a noncopyable view of this value.
     public func withBorrowedWireValue(_ body: (borrowing WireValueView) -> Void) {
         withBytes { pointer, count in

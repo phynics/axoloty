@@ -692,3 +692,98 @@ extension CBORReader {
         return Double(bitPattern: sign | biasedExponent | (fraction << 29))
     }
 }
+
+// MARK: - Borrowed field-index support
+
+extension CBORReader {
+    /// Reads one map key as a text string and returns its content range.
+    ///
+    /// The `axoloty/1` profile carries only text keys, so a map key that is
+    /// not a text string is a decode failure rather than an unmatched entry.
+    /// The key's bytes are validated as UTF-8 with the same rules as
+    /// ``readTextString()``.
+    ///
+    /// - Returns: The key's content range, excluding the head.
+    /// - Throws: ``WireDecodeError`` when the key is not a text string, is
+    ///   not minimally encoded, is not valid UTF-8, or the input ends early.
+    @usableFromInline
+    mutating func readTextKeyRange() throws(WireDecodeError) -> Range<Int> {
+        let start = offset
+        let (major, additional, _) = try readInitial()
+        guard major == 3 else {
+            throw WireDecodeError(.cborUnexpectedMajorType(expected: 3), byteOffset: start)
+        }
+        let contentStart = try validatedContentStart(major: major, additional: additional, start: start)
+        let content = ByteSlice(pointer: bytes.advanced(by: contentStart), length: offset - contentStart)
+        guard Self.isValidUTF8(content) else {
+            throw WireDecodeError(.invalidUTF8, byteOffset: contentStart)
+        }
+        return contentStart..<offset
+    }
+
+    /// Reads one complete item and reports its lexical kind and byte ranges.
+    ///
+    /// The item is validated with the same deterministic rules as
+    /// ``skipItem()``. The value range covers the complete encoded item
+    /// including its head; the content range excludes the head for byte and
+    /// text strings.
+    ///
+    /// - Returns: The item's ``WireTokenKind``, its complete value range, and
+    ///   its content range.
+    /// - Throws: ``WireDecodeError`` when the item is malformed, is not
+    ///   minimally encoded, exceeds a bound, or the input ends early.
+    @usableFromInline
+    mutating func readIndexedItem() throws(WireDecodeError) -> (kind: WireTokenKind, value: Range<Int>, content: Range<Int>) {
+        let start = offset
+        let (major, additional, argumentStart) = try readInitial()
+        switch major {
+        case 0, 1:
+            _ = try readArgument(major: major, additional: additional, start: argumentStart)
+            return (.number, start..<offset, start..<offset)
+        case 2, 3:
+            let contentStart = try validatedContentStart(major: major, additional: additional, start: start)
+            if major == 3 {
+                let content = ByteSlice(pointer: bytes.advanced(by: contentStart), length: offset - contentStart)
+                guard Self.isValidUTF8(content) else {
+                    throw WireDecodeError(.invalidUTF8, byteOffset: contentStart)
+                }
+            }
+            let kind: WireTokenKind = major == 3 ? .string : .byteString
+            return (kind, start..<offset, contentStart..<offset)
+        case 4, 5, 6:
+            try skipItemBody(major: major, additional: additional, start: argumentStart, depth: 0)
+            let kind: WireTokenKind = major == 4 ? .array : (major == 5 ? .object : .tag)
+            return (kind, start..<offset, start..<offset)
+        case 7:
+            try skipSimpleOrFloat(additional: additional, start: argumentStart)
+            let kind: WireTokenKind
+            switch additional {
+            case 20: kind = .falseValue
+            case 21: kind = .trueValue
+            case 22: kind = .nullValue
+            default: kind = .number
+            }
+            return (kind, start..<offset, start..<offset)
+        default:
+            throw WireDecodeError(.cborUnexpectedMajorType(expected: 0), byteOffset: start)
+        }
+    }
+
+    /// Parses a string head, validates its bounds, and advances past the
+    /// content. Returns the content start offset.
+    private mutating func validatedContentStart(
+        major: UInt8, additional: UInt8, start: Int
+    ) throws(WireDecodeError) -> Int {
+        let length = try readArgument(major: major, additional: additional, start: start)
+        guard length <= UInt64(maximumStringLength), length <= UInt64(Int.max) else {
+            throw WireDecodeError(.payloadExceedsLimit, byteOffset: start)
+        }
+        let count = Int(length)
+        guard offset + count <= byteCount else {
+            throw WireDecodeError(.unexpectedEndOfInput, byteOffset: offset)
+        }
+        let contentStart = offset
+        offset = contentStart + count
+        return contentStart
+    }
+}
