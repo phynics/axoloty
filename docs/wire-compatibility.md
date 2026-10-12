@@ -33,9 +33,14 @@ representation (tag 37 byte string) are recorded in
 [protocol/axoloty-1.md](./protocol/axoloty-1.md). The first implementation
 increment ships the bounded CBOR codec, route support, DTO wiring, and a
 frozen golden corpus with an independent `cbor-x` decode of every CBOR golden
-(RFC 8949 Appendix A conformance vectors remain in the codec tests). The Zenoh
-binding and the trace-parity gate are tracked by epic #977. No `coaty/3` field
-presence or wire bytes change in this corpus.
+(RFC 8949 Appendix A conformance vectors remain in the codec tests). Owned raw
+fields retain the exact bytes of the profile that produced them and are tagged
+with that profile; a cross-profile re-encode is rejected as
+`WireEncodeError.profileMismatch` rather than transcoded. The value classes
+and the lossy cases are recorded in
+[wire-value-mapping.md](./wire-value-mapping.md). The Zenoh binding and the
+trace-parity gate are tracked by epic #977. No `coaty/3` field presence or
+wire bytes change in this corpus.
 
 ### G5 host typed IO evidence
 

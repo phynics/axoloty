@@ -132,9 +132,14 @@ public struct BorrowedMessage: ~Sendable {
     #if canImport(_JSONCore)
     /// Creates a WireReader for the payload, enabling typed field access
     /// without allocating a String or intermediate JSON tree.
+    ///
+    /// The reader's engine follows the route profile: `coaty/3` reads JSON and
+    /// `axoloty/1` reads deterministic CBOR. A raw (non-Coaty) topic keeps the
+    /// JSON engine.
     public func reader() -> WireReader {
-        payload.withBytes { ptr, len in
-            WireReader(
+        let codec = WireCodec(profile: profile ?? .coaty3JSON)
+        return payload.withBytes { ptr, len in
+            codec.reader(
                 bytes: UnsafeRawPointer(ptr).assumingMemoryBound(to: UInt8.self),
                 length: len
             )
@@ -144,17 +149,40 @@ public struct BorrowedMessage: ~Sendable {
     /// Creates a reader with caller-owned tokenizer scratch storage.
     ///
     /// The returned reader still borrows this message's payload; the
-    /// workspace is used only during construction and is not retained.
+    /// workspace is used only during construction and is not retained. The
+    /// workspace is used for the `coaty/3` JSON engine; an `axoloty/1` route
+    /// selects the CBOR engine, which needs no workspace.
     public func reader<Workspace: WireParserWorkspace & ~Copyable>(
         workspace: inout Workspace
     ) -> WireReader {
-        payload.withBytes { ptr, len in
+        guard profile != .axoloty1CBOR else { return reader() }
+        return payload.withBytes { ptr, len in
             WireReader(
                 bytes: UnsafeRawPointer(ptr).assumingMemoryBound(to: UInt8.self),
                 length: len,
                 workspace: &workspace
             )
         }
+    }
+    #endif
+
+    /// The wire profile selected by the route prefix, or nil for a raw topic.
+    public var profile: WireProfile? {
+        topic.profile
+    }
+
+    /// Decodes and owns this message's event in the route profile.
+    ///
+    /// The owned event retains the raw field bytes in the profile that
+    /// produced them. It is the correct ownership step for asynchronous
+    /// delivery: it validates and copies every borrowed field before the
+    /// pinned buffers are released.
+    ///
+    /// - Throws: ``WireDecodeError`` if the topic is not a Coaty event or a
+    ///   raw field is malformed or not a legal value of the route profile.
+    #if canImport(_JSONCore)
+    public func ownedEvent() throws(WireDecodeError) -> OwnedWireEvent {
+        try BorrowedWireEvent(message: self).owned(profile: profile ?? .coaty3JSON)
     }
     #endif
 

@@ -50,26 +50,40 @@ public enum BorrowedWireEvent {
         }
     }
 
-    /// Copies every borrowed field into an owned event after validating each
-    /// raw JSON or CBOR field.
+    /// Copies every borrowed field into an owned `coaty/3` event after validating raw JSON.
     ///
     /// - Throws: ``WireDecodeError`` if a raw field is malformed or has the
     ///   semantic shape required by its event field.
     public func owned() throws(WireDecodeError) -> OwnedWireEvent {
+        try owned(profile: .coaty3JSON)
+    }
+
+    /// Copies every borrowed field into an owned event tagged with `profile`.
+    ///
+    /// The raw field bytes retain their exact encoding. A field that is not a
+    /// legal value of `profile` is rejected rather than transcoded, so a
+    /// `coaty/3` JSON field cannot silently enter an `axoloty/1` CBOR event
+    /// (or the reverse).
+    ///
+    /// - Parameter profile: The profile whose encoding the borrowed fields
+    ///   carry.
+    /// - Throws: ``WireDecodeError`` if a raw field is malformed, has the
+    ///   wrong shape, or is not a legal value of `profile`.
+    public func owned(profile: WireProfile) throws(WireDecodeError) -> OwnedWireEvent {
         switch self {
-        case .advertise(let x): return .advertise(try OwnedAdvertiseWireData(object: x.object.ownedBytes(), privateData: x.privateData.map { $0.ownedBytes() }))
-        case .deadvertise(let x): return .deadvertise(try OwnedDeadvertiseWireData(objectIds: x.objectIds.ownedBytes()))
-        case .channel(let x): return .channel(try OwnedChannelWireData(object: x.object.map { $0.ownedBytes() }, objects: x.objects.map { $0.ownedBytes() }, privateData: x.privateData.map { $0.ownedBytes() }))
-        case .associate(let x): return .associate(try OwnedAssociateWireData(ioSourceId: x.ioSourceId, ioActorId: x.ioActorId, associatingRoute: x.associatingRoute.map { $0.ownedBytes() }, isExternalRoute: x.isExternalRoute, updateRate: x.updateRate))
-        case .ioValue(let x): return .ioValue(try OwnedIoValueWireData(payload: x.payload.ownedBytes()))
-        case .discover(let x): return .discover(try OwnedDiscoverWireData(externalId: x.externalId.map { $0.ownedBytes() }, objectId: x.objectId.map { $0.ownedBytes() }, objectTypes: x.objectTypes.map { $0.ownedBytes() }, coreTypes: x.coreTypes.map { $0.ownedBytes() }))
-        case .resolve(let x): return .resolve(try OwnedResolveWireData(object: x.object.ownedBytes(), relatedObjects: x.relatedObjects.map { $0.ownedBytes() }, privateData: x.privateData.map { $0.ownedBytes() }))
-        case .query(let x): return .query(try OwnedQueryWireData(objectTypes: x.objectTypes.map { $0.ownedBytes() }, coreTypes: x.coreTypes.map { $0.ownedBytes() }, objectFilter: x.objectFilter.map { $0.ownedBytes() }, objectJoinConditions: x.objectJoinConditions.map { $0.ownedBytes() }))
-        case .retrieve(let x): return .retrieve(try OwnedRetrieveWireData(objects: x.objects.ownedBytes(), privateData: x.privateData.map { $0.ownedBytes() }))
-        case .update(let x): return .update(try OwnedUpdateWireData(object: x.object.ownedBytes()))
-        case .complete(let x): return .complete(try OwnedCompleteWireData(object: x.object.map { $0.ownedBytes() }, privateData: x.privateData.map { $0.ownedBytes() }))
-        case .call(let x): return .call(try OwnedCallWireData(parameters: x.parameters.map { $0.ownedBytes() }, filter: x.filter.map { $0.ownedBytes() }))
-        case .returnEvent(let x): return .returnEvent(try OwnedReturnWireData(result: x.result.map { $0.ownedBytes() }, executionInfo: x.executionInfo.map { $0.ownedBytes() }, error: x.error.map { $0.ownedBytes() }))
+        case .advertise(let x): return .advertise(try OwnedAdvertiseWireData(profile: profile, object: x.object.ownedBytes(), privateData: x.privateData.map { $0.ownedBytes() }))
+        case .deadvertise(let x): return .deadvertise(try OwnedDeadvertiseWireData(profile: profile, objectIds: x.objectIds.ownedBytes()))
+        case .channel(let x): return .channel(try OwnedChannelWireData(profile: profile, object: x.object.map { $0.ownedBytes() }, objects: x.objects.map { $0.ownedBytes() }, privateData: x.privateData.map { $0.ownedBytes() }))
+        case .associate(let x): return .associate(try OwnedAssociateWireData(profile: profile, ioSourceId: x.ioSourceId, ioActorId: x.ioActorId, associatingRoute: x.associatingRoute.map { $0.ownedBytes() }, isExternalRoute: x.isExternalRoute, updateRate: x.updateRate))
+        case .ioValue(let x): return .ioValue(try OwnedIoValueWireData(profile: profile, payload: x.payload.ownedBytes()))
+        case .discover(let x): return .discover(try OwnedDiscoverWireData(profile: profile, externalId: x.externalId.map { $0.ownedBytes() }, objectId: x.objectId.map { $0.ownedBytes() }, objectTypes: x.objectTypes.map { $0.ownedBytes() }, coreTypes: x.coreTypes.map { $0.ownedBytes() }))
+        case .resolve(let x): return .resolve(try OwnedResolveWireData(profile: profile, object: x.object.ownedBytes(), relatedObjects: x.relatedObjects.map { $0.ownedBytes() }, privateData: x.privateData.map { $0.ownedBytes() }))
+        case .query(let x): return .query(try OwnedQueryWireData(profile: profile, objectTypes: x.objectTypes.map { $0.ownedBytes() }, coreTypes: x.coreTypes.map { $0.ownedBytes() }, objectFilter: x.objectFilter.map { $0.ownedBytes() }, objectJoinConditions: x.objectJoinConditions.map { $0.ownedBytes() }))
+        case .retrieve(let x): return .retrieve(try OwnedRetrieveWireData(profile: profile, objects: x.objects.ownedBytes(), privateData: x.privateData.map { $0.ownedBytes() }))
+        case .update(let x): return .update(try OwnedUpdateWireData(profile: profile, object: x.object.ownedBytes()))
+        case .complete(let x): return .complete(try OwnedCompleteWireData(profile: profile, object: x.object.map { $0.ownedBytes() }, privateData: x.privateData.map { $0.ownedBytes() }))
+        case .call(let x): return .call(try OwnedCallWireData(profile: profile, parameters: x.parameters.map { $0.ownedBytes() }, filter: x.filter.map { $0.ownedBytes() }))
+        case .returnEvent(let x): return .returnEvent(try OwnedReturnWireData(profile: profile, result: x.result.map { $0.ownedBytes() }, executionInfo: x.executionInfo.map { $0.ownedBytes() }, error: x.error.map { $0.ownedBytes() }))
         }
     }
 
@@ -98,8 +112,36 @@ public enum BorrowedWireEvent {
 public enum OwnedWireEvent: Sendable, Equatable {
     case advertise(OwnedAdvertiseWireData), deadvertise(OwnedDeadvertiseWireData), channel(OwnedChannelWireData), associate(OwnedAssociateWireData), ioValue(OwnedIoValueWireData), discover(OwnedDiscoverWireData), resolve(OwnedResolveWireData), query(OwnedQueryWireData), retrieve(OwnedRetrieveWireData), update(OwnedUpdateWireData), complete(OwnedCompleteWireData), call(OwnedCallWireData), returnEvent(OwnedReturnWireData)
 
+    /// The wire profile whose encoding every owned field carries.
+    public var profile: WireProfile {
+        switch self {
+        case .advertise(let x): return x.profile
+        case .deadvertise(let x): return x.profile
+        case .channel(let x): return x.profile
+        case .associate(let x): return x.profile
+        case .ioValue(let x): return x.profile
+        case .discover(let x): return x.profile
+        case .resolve(let x): return x.profile
+        case .query(let x): return x.profile
+        case .retrieve(let x): return x.profile
+        case .update(let x): return x.profile
+        case .complete(let x): return x.profile
+        case .call(let x): return x.profile
+        case .returnEvent(let x): return x.profile
+        }
+    }
+
     /// Encodes every owned event through the fixed-buffer wire writer.
+    ///
+    /// - Parameter writer: The destination writer. Its profile must match
+    ///   ``profile``.
+    /// - Throws: ``WireEncodeError`` with ``WireEncodeError/profileMismatch``
+    ///   when `writer` emits a different profile, because re-encoding raw
+    ///   field bytes under another profile would transcode or corrupt them.
+    ///   ``WireEncodeError/bufferOverflow`` is thrown when the encoding does
+    ///   not fit.
     public func encode(to writer: inout WireWriter) throws(WireEncodeError) {
+        guard writer.profile == profile else { throw WireEncodeError.profileMismatch }
         switch self {
         case .advertise(let x):
             try writer.beginObject(); try ownedRaw(&writer, "object", x.object)
