@@ -23,6 +23,19 @@ Reference versions must be pinned before captured fixtures become normative:
 | Topics above 256 bytes | Intentional divergence: rejected by Axoloty | Intentional divergence: Axoloty does not emit | Intentional divergence: rejected by Axoloty | Intentional divergence: Axoloty does not emit | Boundary fixtures and ESP32 vectors |
 | Payloads above 2,048 bytes | Intentional divergence: rejected by Axoloty | Intentional divergence: Axoloty does not emit | Intentional divergence: rejected by Axoloty | Intentional divergence: Axoloty does not emit | Boundary fixtures and ESP32 vectors |
 
+### `axoloty/1` CBOR profile
+
+`axoloty/1` is a separate route prefix and payload encoding for the same
+Coaty Core Profile 3 event families. It is not a change to `coaty/3`.
+`coaty/3` remains JSON-only and byte-identical. The profile's route layout,
+deterministic-encoding rules, map-key decision (text keys), and UUID
+representation (tag 37 byte string) are recorded in
+[protocol/axoloty-1.md](./protocol/axoloty-1.md). The first implementation
+increment ships the bounded CBOR codec and route support with RFC 8949
+Appendix A conformance vectors. DTO wiring, the Zenoh binding, and the
+trace-parity gate are tracked by epic #977. No `coaty/3` field presence or
+wire bytes change in this increment.
+
 ### G5 host typed IO evidence
 
 Host typed IO uses the same bounded `ProtocolProcessor` path as static IO for

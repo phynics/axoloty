@@ -52,6 +52,23 @@ public struct WireDecodeError: Error, Sendable {
         case invalidNesting
         /// A JSON literal was misspelled or truncated.
         case invalidLiteral
+        /// A CBOR item used an indefinite-length encoding, which the
+        /// deterministic profile forbids.
+        case cborIndefiniteLength
+        /// A CBOR initial byte used a reserved additional-information value.
+        case cborInvalidAdditionalInfo
+        /// A CBOR integer or length was not encoded in its shortest form.
+        case cborNonMinimalInteger
+        /// A CBOR item declared a major type other than the one expected.
+        case cborUnexpectedMajorType(expected: UInt8)
+        /// A CBOR semantic tag was outside the profile allow-list.
+        case cborUnsupportedTag
+        /// A CBOR map contained the same key more than once.
+        case cborDuplicateMapKey
+        /// CBOR containers exceeded the configured nesting bound.
+        case cborNestingTooDeep
+        /// A CBOR simple value was reserved or undefined.
+        case cborUnsupportedSimpleValue
     }
 
     /// Creates a decode error.

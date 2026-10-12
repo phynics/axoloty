@@ -21,4 +21,10 @@ public enum WireBufferConfig {
     /// Maximum topic levels in a Coaty topic (protocol, version, namespace,
     /// event, sourceId, correlationId, postfix = 7).
     public static let maxTopicLevels: Int = TopicLevelStorage.count
+
+    /// Maximum CBOR container nesting accepted by ``CBORReader``.
+    ///
+    /// Bounds recursive descent for arrays, maps, and tagged items so a
+    /// hostile payload cannot exhaust the stack.
+    public static let maxCBORNestingDepth: Int = 32
 }
