@@ -283,7 +283,7 @@ extension CBORWriter {
             guard fraction & 0x1FFF_FFFF == 0 else { return nil }
             return sign | (UInt32(unbiased + 127) << 23) | UInt32(fraction >> 29)
         }
-        if unbiased >= -149 {
+        if unbiased >= -149 && unbiased < -126 {
             let drop = 29 + (-126 - unbiased)
             let significand = fraction | 0x0010_0000_0000_0000
             guard (significand & ((UInt64(1) << drop) - 1)) == 0 else { return nil }

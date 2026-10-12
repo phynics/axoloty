@@ -254,6 +254,21 @@ struct CBORCodecTests {
         )
     }
 
+    @Test
+    func floatLargeMagnitudeValuesEncodeAsDouble() throws {
+        // Large finite doubles have an unbiased exponent far above the single
+        // range; the width check must not compute a negative shift.
+        #expect(try encoded { try $0.writeFloat64(1e100) }.first == 0xFB)
+        #expect(try encoded { try $0.writeFloat64(1e300) }.first == 0xFB)
+        // The largest finite single is still exact, and the sign is preserved.
+        #expect(
+            try encoded { try $0.writeFloat64(3.4028234663852886e+38) }
+                == [0xFA, 0x7F, 0x7F, 0xFF, 0xFF]
+        )
+        #expect(try encoded { try $0.writeFloat64(-1.0) } == [0xFA, 0xBF, 0x80, 0x00, 0x00])
+        #expect(try encoded { try $0.writeFloat64(-0.0) } == [0xFA, 0x80, 0x00, 0x00, 0x00])
+    }
+
     // MARK: - Tags and UUID
 
     @Test
