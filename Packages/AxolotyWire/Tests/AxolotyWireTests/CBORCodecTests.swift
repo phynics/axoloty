@@ -233,6 +233,27 @@ struct CBORCodecTests {
         )
     }
 
+    @Test
+    func floatSubnormalSingleRoundTrips() throws {
+        // Smallest single-precision subnormal, 2^-149, uses the widest single
+        // exponent path in the bit-manipulation widening.
+        let smallest = 0x1p-149
+        #expect(try encoded { try $0.writeFloat64(smallest) } == [0xFA, 0x00, 0x00, 0x00, 0x01])
+        let single: [UInt8] = [0xFA, 0x00, 0x00, 0x00, 0x01]
+        let decoded = try single.withUnsafeBufferPointer { buffer -> Double in
+            var reader = CBORReader(bytes: buffer.baseAddress!, length: buffer.count)
+            return try reader.readFloat()
+        }
+        #expect(decoded == smallest)
+        // 2^-150 is below the single-precision range, so it needs a double.
+        #expect(try encoded { try $0.writeFloat64(0x1p-150) }.first == 0xFB)
+        // The largest single subnormal is still exact.
+        #expect(
+            try encoded { try $0.writeFloat64(0x1.fffffcp-127) }
+                == [0xFA, 0x00, 0x7F, 0xFF, 0xFF]
+        )
+    }
+
     // MARK: - Tags and UUID
 
     @Test
@@ -247,6 +268,46 @@ struct CBORCodecTests {
         }
         #expect(decoded == uuid)
         #expect(try skipAll(bytes))
+    }
+
+    @Test
+    func uuidCanonicalTextFormIsAccepted() throws {
+        let text = "11111111-1111-4111-8111-111111111111"
+        let bytes = try encodedTextString(Array(text.utf8))
+        let decoded = try bytes.withUnsafeBufferPointer { buffer -> UUID16 in
+            var reader = CBORReader(bytes: buffer.baseAddress!, length: buffer.count)
+            return try reader.readUUID()
+        }
+        #expect(decoded == (try #require(UUID16(parsing: text))))
+    }
+
+    @Test
+    func malformedTextUUIDIsRejected() throws {
+        // Same 36-byte length as a canonical UUID, but not hexadecimal.
+        let text = "11111111-1111-4111-8111-11111111111Z"
+        let bytes = try encodedTextString(Array(text.utf8))
+        bytes.withUnsafeBufferPointer { buffer in
+            var reader = CBORReader(bytes: buffer.baseAddress!, length: buffer.count)
+            #expect(throws: WireDecodeError.self) {
+                _ = try reader.readUUID()
+            }
+        }
+    }
+
+    @Test
+    func emptyTagPolicyRejectsUUIDTag() throws {
+        let uuid = try #require(UUID16(parsing: "11111111-1111-4111-8111-111111111111"))
+        let bytes = try encoded { writer in try writer.writeUUID(uuid) }
+        bytes.withUnsafeBufferPointer { buffer in
+            var reader = CBORReader(
+                bytes: buffer.baseAddress!,
+                length: buffer.count,
+                tagPolicy: .none
+            )
+            #expect(throws: WireDecodeError.self) {
+                _ = try reader.readUUID()
+            }
+        }
     }
 
     @Test

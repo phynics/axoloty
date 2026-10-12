@@ -197,6 +197,11 @@ extension CBORWriter {
 
     /// Writes a map header (CBOR major type 5).
     ///
+    /// - Note: The deterministic profile requires map keys to appear in
+    ///   ascending order of their encoded bytes (text keys sort by length
+    ///   first, then bytewise). The writer emits the header only; the caller
+    ///   owns ordering the key/value pairs that follow.
+    ///
     /// - Parameter count: The number of key/value pairs that follow.
     /// - Throws: ``WireEncodeError`` when the count is negative or the buffer
     ///   is too small.
@@ -244,14 +249,47 @@ extension CBORWriter {
     /// - Parameter value: The value to encode.
     /// - Throws: ``WireEncodeError`` when the buffer is too small.
     public mutating func writeFloat64(_ value: Double) throws(WireEncodeError) {
-        let single = Float(value)
-        if Double(single) == value {
+        if let single = Self.exactSingleBits(value) {
             try writeByte(0xFA)
-            try writeBigEndian(UInt64(single.bitPattern), 4)
+            try writeBigEndian(UInt64(single), 4)
         } else {
             try writeByte(0xFB)
             try writeBigEndian(value.bitPattern, 8)
         }
+    }
+
+    /// Returns the single-precision bit pattern when `value` is exactly
+    /// representable as a `Float`, or `nil` when it needs double precision.
+    ///
+    /// The check uses bit manipulation rather than `Float(value)` so the
+    /// portable code stays free of the compiler-rt float helpers that the
+    /// Embedded Swift partial link cannot resolve.
+    ///
+    /// - Parameter value: The value to test.
+    /// - Returns: The single-precision bit pattern, or `nil`.
+    private static func exactSingleBits(_ value: Double) -> UInt32? {
+        let bits = value.bitPattern
+        let sign = UInt32((bits >> 63) & 1) << 31
+        let exponent = Int((bits >> 52) & 0x7FF)
+        let fraction = bits & 0x000F_FFFF_FFFF_FFFF
+        if exponent == 0x7FF {
+            return fraction == 0 ? (sign | 0x7F80_0000) : nil
+        }
+        if exponent == 0 {
+            return fraction == 0 ? sign : nil
+        }
+        let unbiased = exponent - 1023
+        if unbiased >= -126 && unbiased <= 127 {
+            guard fraction & 0x1FFF_FFFF == 0 else { return nil }
+            return sign | (UInt32(unbiased + 127) << 23) | UInt32(fraction >> 29)
+        }
+        if unbiased >= -149 {
+            let drop = 29 + (-126 - unbiased)
+            let significand = fraction | 0x0010_0000_0000_0000
+            guard (significand & ((UInt64(1) << drop) - 1)) == 0 else { return nil }
+            return sign | UInt32(significand >> drop)
+        }
+        return nil
     }
 
     // MARK: - Helpers

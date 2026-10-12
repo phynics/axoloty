@@ -138,9 +138,11 @@ public struct TopicView: ~Sendable {
     }
 
     /// Whether this topic is a raw (non-Coaty) topic.
+    ///
+    /// A topic is raw when its prefix does not name a known ``WireProfile``,
+    /// including `axoloty/1`. A recognized profile route is never raw.
     public var isRawTopic: Bool {
-        guard let proto = level(0) else { return true }
-        return !proto.equals("coaty")
+        profile == nil
     }
 
     /// The wire profile named by levels 0 and 1, or nil for an unknown prefix.
@@ -158,13 +160,13 @@ public struct TopicView: ~Sendable {
         body(bytes, byteCount)
     }
 
-    /// Strictly validates the Coaty topic layout and event code.
+    /// Validates the topic layout and event code for the given profile.
     ///
-    /// Enforces the exact wire contract
-    /// `coaty/3/<namespace>/<eventType>[:<filter>]/<sourceId>[/<correlationId>]`:
+    /// Enforces the profile's exact wire contract
+    /// `<protocol>/<version>/<namespace>/<eventType>[:<filter>]/<sourceId>[/<correlationId>]`:
     ///
-    /// * level 0 is exactly `coaty`
-    /// * level 1 is exactly the protocol version `3`
+    /// * level 0 is exactly the profile's protocol name
+    /// * level 1 is exactly the profile's protocol version
     /// * the namespace level is non-empty
     /// * the event level is exactly a recognized three-byte code with an
     ///   optional filter

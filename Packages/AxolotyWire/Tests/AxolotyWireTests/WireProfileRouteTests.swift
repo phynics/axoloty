@@ -49,6 +49,21 @@ struct WireProfileRouteTests {
     }
 
     @Test
+    func recognizedProfileRoutesAreNotRaw() {
+        #expect(!rawTopic(of: "coaty/3/ns/ADV/\(sourceId)"))
+        #expect(!rawTopic(of: "axoloty/1/ns/ADV/\(sourceId)"))
+        #expect(rawTopic(of: "external/1/ns/ADV/\(sourceId)"))
+        #expect(rawTopic(of: "coaty/4/ns/ADV/\(sourceId)"))
+    }
+
+    private func rawTopic(of topic: String) -> Bool {
+        let bytes = Array(topic.utf8)
+        return bytes.withUnsafeBufferPointer { buffer in
+            TopicView(topicBytes: buffer.baseAddress!, length: buffer.count).isRawTopic
+        }
+    }
+
+    @Test
     func builderWritesBothPrefixes() throws {
         #expect(try prefixBytes { try $0.writePrefix() } == Array("coaty/3/".utf8))
         #expect(try prefixBytes { try $0.writePrefix(.coaty3JSON) } == Array("coaty/3/".utf8))

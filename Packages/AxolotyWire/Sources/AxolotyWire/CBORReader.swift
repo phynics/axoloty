@@ -318,31 +318,53 @@ extension CBORReader {
         return tag
     }
 
-    /// Reads a UUID encoded as tag 37 followed by a 16-byte byte string.
+    /// Reads a UUID as tag 37 followed by a 16-byte byte string, or as the
+    /// canonical 36-byte hyphenated text string.
     ///
-    /// - Throws: ``WireDecodeError`` when the item is not a tag-37 UUID or the
-    ///   byte string is not 16 bytes long.
+    /// The tag-37 byte-string form is the canonical `axoloty/1` form. Readers
+    /// accept the text form as well so a non-conforming peer stays decodable.
+    /// The tag is validated against ``tagPolicy``, so a `.none` policy rejects
+    /// tag 37 exactly as it does on the skip path.
+    ///
+    /// - Throws: ``WireDecodeError`` when the item is neither a tag-37 UUID nor
+    ///   a canonical text UUID, the tag is not allowed, or the byte string is
+    ///   not 16 bytes long.
     public mutating func readUUID() throws(WireDecodeError) -> UUID16 {
         let start = offset
-        let tag = try readHead(major: 6)
-        guard tag == 37 else {
-            throw WireDecodeError(.cborUnsupportedTag, byteOffset: start)
+        guard offset < byteCount else {
+            throw WireDecodeError(.unexpectedEndOfInput, byteOffset: start)
         }
-        let slice = try readByteString()
-        guard slice.length == 16 else {
-            throw WireDecodeError(.malformedUUID, byteOffset: start)
-        }
-        var raw: (UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
-                  UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8) =
-            (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
-        withUnsafeMutableBytes(of: &raw) { destination in
-            slice.withBytes { source, length in
-                for index in 0..<length {
-                    destination[index] = source.load(fromByteOffset: index, as: UInt8.self)
+        let major = bytes[offset] >> 5
+        switch major {
+        case 6:
+            let tag = try readTag()
+            guard tag == 37 else {
+                throw WireDecodeError(.cborUnsupportedTag, byteOffset: start)
+            }
+            let slice = try readByteString()
+            guard slice.length == 16 else {
+                throw WireDecodeError(.malformedUUID, byteOffset: start)
+            }
+            var raw: (UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+                      UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8) =
+                (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
+            withUnsafeMutableBytes(of: &raw) { destination in
+                slice.withBytes { source, length in
+                    for index in 0..<length {
+                        destination[index] = source.load(fromByteOffset: index, as: UInt8.self)
+                    }
                 }
             }
+            return UUID16(bytes: raw)
+        case 3:
+            let slice = try readTextString()
+            guard let uuid = UUID16(parsing: slice) else {
+                throw WireDecodeError(.malformedUUID, byteOffset: start)
+            }
+            return uuid
+        default:
+            throw WireDecodeError(.cborUnexpectedMajorType(expected: 6), byteOffset: start)
         }
-        return UUID16(bytes: raw)
     }
 
     // MARK: - Floating point
@@ -365,7 +387,7 @@ extension CBORReader {
             return Self.halfToDouble(UInt16(truncatingIfNeeded: bits))
         case 26:
             let bits = try readBigEndian(4)
-            return Double(Float(bitPattern: UInt32(truncatingIfNeeded: bits)))
+            return Self.singleToDouble(UInt32(truncatingIfNeeded: bits))
         case 27:
             let bits = try readBigEndian(8)
             return Double(bitPattern: bits)
@@ -400,6 +422,9 @@ extension CBORReader {
             _ = try readArgument(major: major, additional: additional, start: start)
         case 2, 3:
             let length = try readArgument(major: major, additional: additional, start: start)
+            guard length <= UInt64(maximumStringLength) else {
+                throw WireDecodeError(.payloadExceedsLimit, byteOffset: start)
+            }
             guard length <= UInt64(remaining) else {
                 throw WireDecodeError(.unexpectedEndOfInput, byteOffset: start)
             }
@@ -446,12 +471,13 @@ extension CBORReader {
 
     private mutating func skipSimpleOrFloat(additional: UInt8, start: Int) throws(WireDecodeError) {
         switch additional {
-        case 0...23:
-            // Simple values 20, 21, and 22 are false, true, and null. Value 23
-            // is `undefined`, which the profile does not carry.
-            guard additional != 23 else {
-                throw WireDecodeError(.cborUnsupportedSimpleValue, byteOffset: start)
-            }
+        case 0...19, 23:
+            // 0-19 are unassigned and 23 is `undefined`; the profile carries
+            // only false, true, and null.
+            throw WireDecodeError(.cborUnsupportedSimpleValue, byteOffset: start)
+        case 20, 21, 22:
+            // false, true, and null use the direct form.
+            break
         case 24:
             let value = try readBigEndian(1)
             // Preferred serialization requires simple values 0-23 to use the
@@ -459,6 +485,9 @@ extension CBORReader {
             guard value >= 24 else {
                 throw WireDecodeError(.cborNonMinimalInteger, byteOffset: start)
             }
+            // Every extended-form simple value (24-255) is reserved or
+            // unassigned, so the profile rejects it.
+            throw WireDecodeError(.cborUnsupportedSimpleValue, byteOffset: start)
         case 25:
             _ = try readBigEndian(2)
         case 26:
@@ -497,6 +526,11 @@ extension CBORReader {
         }
     }
 
+    /// The inline duplicate-key index.
+    ///
+    /// `InlineArray` requires a literal count, so this mirrors
+    /// ``WireBufferConfig/maxIndexedFields``. ``skipMapItems`` enforces the
+    /// configuration constant and never indexes past this storage.
     private typealias CBORKeyStorage = InlineArray<24, CBORKeyRecord>
 
     private mutating func skipMapItems(_ count: Int, depth: Int) throws(WireDecodeError) {
@@ -508,10 +542,12 @@ extension CBORReader {
                 for index in 0..<keyCount where keys[index].matches(record, bytes: bytes) {
                     throw WireDecodeError(.cborDuplicateMapKey, byteOffset: record.start)
                 }
-                if keyCount < CBORKeyStorage.count {
-                    keys[keyCount] = record
-                    keyCount += 1
+                guard keyCount < WireBufferConfig.maxIndexedFields,
+                      keyCount < CBORKeyStorage.count else {
+                    throw WireDecodeError(.fieldIndexOverflow, byteOffset: record.start)
                 }
+                keys[keyCount] = record
+                keyCount += 1
             }
             try skipItemNested(depth: depth)
         }
@@ -526,6 +562,9 @@ extension CBORReader {
             return CBORKeyRecord(major: major, start: start, length: offset - start, integerValue: value)
         case 2, 3:
             let length = try readArgument(major: major, additional: additional, start: start)
+            guard length <= UInt64(maximumStringLength) else {
+                throw WireDecodeError(.payloadExceedsLimit, byteOffset: start)
+            }
             guard length <= UInt64(remaining) else {
                 throw WireDecodeError(.unexpectedEndOfInput, byteOffset: start)
             }
@@ -617,5 +656,39 @@ extension CBORReader {
         let fraction = mantissa << 42
         let biasedExponent = (exponent - 15 + 1023) << 52
         return Double(bitPattern: sign | biasedExponent | fraction)
+    }
+
+    /// Widens a single-precision bit pattern to `Double` without a compiler-rt
+    /// float conversion.
+    ///
+    /// The Embedded Swift partial link rejects unresolved `__extendsfdf2`, so
+    /// the widening is done with bit manipulation. The value is exact: every
+    /// `Float` maps to a `Double` with the same sign, a widened exponent, and a
+    /// fraction shifted left by 29 bits.
+    ///
+    /// - Parameter bits: The single-precision bit pattern.
+    /// - Returns: The equivalent double-precision value.
+    private static func singleToDouble(_ bits: UInt32) -> Double {
+        let sign = UInt64(bits & 0x8000_0000) << 32
+        let exponent = UInt64((bits >> 23) & 0xFF)
+        let fraction = UInt64(bits & 0x007F_FFFF)
+        if exponent == 0xFF {
+            return Double(bitPattern: sign | 0x7FF0_0000_0000_0000 | (fraction << 29))
+        }
+        if exponent == 0 {
+            if fraction == 0 { return Double(bitPattern: sign) }
+            // Subnormal: normalize the leading one into the double exponent.
+            var shift = 0
+            var significand = fraction
+            repeat {
+                shift += 1
+                significand <<= 1
+            } while significand & 0x0080_0000 == 0
+            let mantissa = (significand & 0x007F_FFFF) << 29
+            let biasedExponent = UInt64(897 - shift) << 52
+            return Double(bitPattern: sign | biasedExponent | mantissa)
+        }
+        let biasedExponent = (exponent - 127 + 1023) << 52
+        return Double(bitPattern: sign | biasedExponent | (fraction << 29))
     }
 }

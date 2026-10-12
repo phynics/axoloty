@@ -24,6 +24,8 @@ private enum ReasonTag: Equatable {
     case invalidUTF8
     case integerOverflow
     case malformedUUID
+    case fieldIndexOverflow
+    case payloadExceedsLimit
     case other
 }
 
@@ -41,13 +43,22 @@ private func tag(_ reason: WireDecodeError.Reason) -> ReasonTag {
     case .invalidUTF8: return .invalidUTF8
     case .integerOverflow: return .integerOverflow
     case .malformedUUID: return .malformedUUID
+    case .fieldIndexOverflow: return .fieldIndexOverflow
+    case .payloadExceedsLimit: return .payloadExceedsLimit
     default: return .other
     }
 }
 
-private func skipReason(_ bytes: [UInt8]) -> ReasonTag? {
+private func skipReason(
+    _ bytes: [UInt8],
+    maximumStringLength: Int = WireBufferConfig.maxPayloadSize
+) -> ReasonTag? {
     bytes.withUnsafeBufferPointer { buffer in
-        var reader = CBORReader(bytes: buffer.baseAddress!, length: buffer.count)
+        var reader = CBORReader(
+            bytes: buffer.baseAddress!,
+            length: buffer.count,
+            maximumStringLength: maximumStringLength
+        )
         do {
             try reader.skipItem()
             return nil
@@ -57,6 +68,23 @@ private func skipReason(_ bytes: [UInt8]) -> ReasonTag? {
             return .other
         }
     }
+}
+
+/// Builds a map whose keys are distinct one-byte text strings.
+private func singleKeyMapBytes(pairCount: Int) -> [UInt8] {
+    var bytes: [UInt8] = []
+    if pairCount < 24 {
+        bytes.append(0xA0 | UInt8(pairCount))
+    } else {
+        bytes.append(0xB8)
+        bytes.append(UInt8(pairCount))
+    }
+    for index in 0..<pairCount {
+        bytes.append(0x61)
+        bytes.append(UInt8(0x61 + index))
+        bytes.append(0x00)
+    }
+    return bytes
 }
 
 // MARK: - Bounds
@@ -96,10 +124,16 @@ struct CBORBoundsTests {
     func truncatedItemsAreRejected() {
         #expect(skipReason([0x18]) == .unexpectedEndOfInput)
         #expect(skipReason([0x19, 0x03]) == .unexpectedEndOfInput)
-        #expect(skipReason([0x5A, 0x00, 0x01, 0x00, 0x00]) == .unexpectedEndOfInput)
         #expect(skipReason([0x44, 0x01, 0x02]) == .unexpectedEndOfInput)
         #expect(skipReason([0x83, 0x01, 0x02]) == .unexpectedEndOfInput)
         #expect(skipReason([0x82, 0x61, 0x61]) == .unexpectedEndOfInput)
+    }
+
+    @Test
+    func overlongStringIsRejectedBeforeTruncation() {
+        // The declared length exceeds both the string limit and the input, so
+        // the limit reason wins, matching `readString`.
+        #expect(skipReason([0x5A, 0x00, 0x01, 0x00, 0x00]) == .payloadExceedsLimit)
     }
 
     @Test
@@ -108,12 +142,27 @@ struct CBORBoundsTests {
     }
 
     @Test
+    func unassignedAndReservedSimpleValuesAreRejected() {
+        // Direct form: simple value 0 and 19 are unassigned.
+        #expect(skipReason([0xE0]) == .cborUnsupportedSimpleValue)
+        #expect(skipReason([0xF3]) == .cborUnsupportedSimpleValue)
+        // Extended form: 24 is reserved and 32 is unassigned.
+        #expect(skipReason([0xF8, 0x18]) == .cborUnsupportedSimpleValue)
+        #expect(skipReason([0xF8, 0x20]) == .cborUnsupportedSimpleValue)
+        // false, true, and null stay accepted.
+        #expect(skipReason([0xF4]) == nil)
+        #expect(skipReason([0xF5]) == nil)
+        #expect(skipReason([0xF6]) == nil)
+    }
+
+    @Test
     func nonPreferredSimpleValueExtensionIsRejected() {
         // 0xF8 0x00 encodes simple value 0 in the extended form; the direct
         // form 0xE0 is required.
         #expect(skipReason([0xF8, 0x00]) == .cborNonMinimalInteger)
-        // 0xF8 0x18 is simple value 24, which is a valid extended form.
-        #expect(skipReason([0xF8, 0x18]) == nil)
+        // 0xF8 0x18 is simple value 24, a reserved extended-form value the
+        // profile does not carry.
+        #expect(skipReason([0xF8, 0x18]) == .cborUnsupportedSimpleValue)
     }
 
     @Test
@@ -145,6 +194,15 @@ struct CBORBoundsTests {
     }
 
     @Test
+    func mapKeyIndexSaturatesWithStructuredOverflow() {
+        // The configured field bound is indexed; one more key fails atomically.
+        let within = singleKeyMapBytes(pairCount: WireBufferConfig.maxIndexedFields)
+        #expect(skipReason(within) == nil)
+        let over = singleKeyMapBytes(pairCount: WireBufferConfig.maxIndexedFields + 1)
+        #expect(skipReason(over) == .fieldIndexOverflow)
+    }
+
+    @Test
     func invalidUTF8TextStringsAreRejected() {
         #expect(skipReason([0x61, 0xFF]) == .invalidUTF8)
         // An overlong two-byte encoding of NUL is invalid.
@@ -159,7 +217,7 @@ struct CBORBoundsTests {
     func stringLengthLimitIsEnforced() throws {
         // 0x65 is a five-byte text string; the reader is limited to four.
         let content: [UInt8] = [0x65, 0x61, 0x61, 0x61, 0x61, 0x61]
-        try content.withUnsafeBufferPointer { buffer in
+        content.withUnsafeBufferPointer { buffer in
             var reader = CBORReader(
                 bytes: buffer.baseAddress!,
                 length: buffer.count,
@@ -172,16 +230,26 @@ struct CBORBoundsTests {
     }
 
     @Test
+    func skipPathEnforcesStringLengthLimit() {
+        // The skip path must enforce the same bound as `readString` before it
+        // consumes the declared length.
+        let content: [UInt8] = [0x65, 0x61, 0x61, 0x61, 0x61, 0x61]
+        #expect(skipReason(content, maximumStringLength: 4) == .payloadExceedsLimit)
+        // The same bytes decode when the bound is large enough.
+        #expect(skipReason(content, maximumStringLength: 5) == nil)
+    }
+
+    @Test
     func readUUIDRejectsWrongTagAndLength() throws {
         // Tag 1 followed by a byte string is not a UUID.
-        try [UInt8]([0xC1, 0x50]).withUnsafeBufferPointer { buffer in
+        [UInt8]([0xC1, 0x50]).withUnsafeBufferPointer { buffer in
             var reader = CBORReader(bytes: buffer.baseAddress!, length: buffer.count)
             #expect(throws: WireDecodeError.self) {
                 _ = try reader.readUUID()
             }
         }
         // Tag 37 followed by a non-16-byte string is not a UUID.
-        try [UInt8]([0xD8, 0x25, 0x41, 0x00]).withUnsafeBufferPointer { buffer in
+        [UInt8]([0xD8, 0x25, 0x41, 0x00]).withUnsafeBufferPointer { buffer in
             var reader = CBORReader(bytes: buffer.baseAddress!, length: buffer.count)
             #expect(throws: WireDecodeError.self) {
                 _ = try reader.readUUID()
