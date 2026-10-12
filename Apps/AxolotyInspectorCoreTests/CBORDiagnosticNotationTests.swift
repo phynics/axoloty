@@ -124,6 +124,30 @@ struct CBORDiagnosticNotationTests {
         #expect(throws: CBORParseError.self) { try CBORDiagnosticNotation.parse("h'abc'") }
         #expect(throws: CBORParseError.self) { try CBORDiagnosticNotation.parse("(_ h'01', \"a\")") }
         #expect(throws: CBORParseError.self) { try CBORDiagnosticNotation.parse("wat") }
+        #expect(throws: CBORParseError.self) { try CBORDiagnosticNotation.parse("1.") }
+        #expect(throws: CBORParseError.self) { try CBORDiagnosticNotation.parse("1e") }
+        #expect(throws: CBORParseError.self) { try CBORDiagnosticNotation.parse("1e+") }
+        #expect(throws: CBORParseError.self) { try CBORDiagnosticNotation.parse("1 (2)") }
+    }
+
+    @Test
+    func parsePreservesNegativeFloatSigns() throws {
+        #expect(try CBORDiagnosticNotation.parse("-1.5") == .float(-1.5))
+        #expect(CBORDiagnosticNotation.render(try CBORDiagnosticNotation.parse("-0.0")) == "-0.0")
+        #expect(try CBORDiagnosticNotation.parse("-0") == .unsigned(0))
+    }
+
+    @Test
+    func parseCanonicalizesEmptyChunkedStringToText() throws {
+        #expect(try CBORDiagnosticNotation.parse("(_)") == .chunkedTextString([]))
+    }
+
+    @Test
+    func decoderRejectsMismatchedIndefiniteChunks() {
+        // Indefinite byte string containing a definite text chunk.
+        #expect(throws: CBORDecodingError.self) { try decode("5f6161ff") }
+        // Indefinite text string containing a definite byte chunk.
+        #expect(throws: CBORDecodingError.self) { try decode("7f4161ff") }
     }
 
     @Test
@@ -169,5 +193,7 @@ struct CBORDiagnosticNotationTests {
         #expect(CBOREncoder.encode(.float(100_000.0)) == [0xFA, 0x47, 0xC3, 0x50, 0x00])
         #expect(CBOREncoder.encode(.float(1.1)) == [0xFB, 0x3F, 0xF1, 0x99, 0x99, 0x99, 0x99, 0x99, 0x9A])
         #expect(CBOREncoder.encode(.float(.nan)) == [0xF9, 0x7E, 0x00])
+        #expect(CBOREncoder.encode(.float(.infinity)) == [0xFA, 0x7F, 0x80, 0x00, 0x00])
+        #expect(CBOREncoder.encode(.float(-.infinity)) == [0xFA, 0xFF, 0x80, 0x00, 0x00])
     }
 }

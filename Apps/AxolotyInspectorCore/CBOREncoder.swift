@@ -5,8 +5,9 @@ import Foundation
 /// A deterministic CBOR encoder.
 ///
 /// The encoder emits RFC 8949 §4.2.1 core deterministic encoding: definite
-/// lengths only, shortest-form heads, preferred simple-value form, shortest
-/// lossless float width, and map keys sorted by their encoded bytes. It is the
+/// lengths only, shortest-form heads, preferred simple-value form, the
+/// shortest of single or double precision for floats, and map keys sorted by
+/// their encoded bytes. Half-precision is read but never emitted. It is the
 /// write half of the inspector's "read and write CBOR captures" capability.
 public enum CBOREncoder {
     /// Encodes a value as deterministic CBOR.
@@ -97,13 +98,12 @@ public enum CBOREncoder {
         if number.isNaN {
             // Canonical NaN: half-precision quiet NaN.
             output.append(contentsOf: [0xF9, 0x7E, 0x00])
-        } else if number.isFinite, let single = Float(exactly: number) {
-            let bits = single.bitPattern
+        } else if let single = singlePrecisionBits(number) {
             output.append(0xFA)
-            output.append(UInt8((bits >> 24) & 0xFF))
-            output.append(UInt8((bits >> 16) & 0xFF))
-            output.append(UInt8((bits >> 8) & 0xFF))
-            output.append(UInt8(bits & 0xFF))
+            output.append(UInt8((single >> 24) & 0xFF))
+            output.append(UInt8((single >> 16) & 0xFF))
+            output.append(UInt8((single >> 8) & 0xFF))
+            output.append(UInt8(single & 0xFF))
         } else {
             let bits = number.bitPattern
             output.append(0xFB)
@@ -113,6 +113,21 @@ public enum CBOREncoder {
                 shift -= 8
             }
         }
+    }
+
+    /// Returns the single-precision bit pattern when `number` is exactly
+    /// representable as a `Float`, including both infinities, or `nil` when it
+    /// needs double precision.
+    ///
+    /// - Parameter number: The value to test.
+    /// - Returns: The single-precision bit pattern, or `nil`.
+    private static func singlePrecisionBits(_ number: Double) -> UInt32? {
+        if number.isFinite {
+            return Float(exactly: number)?.bitPattern
+        }
+        // ±Infinity is exactly representable in single precision; NaN is
+        // handled by the caller before reaching this point.
+        return number.isInfinite ? Float(number).bitPattern : nil
     }
 
     private static func writeHead(major: UInt8, argument: UInt64, to output: inout [UInt8]) {

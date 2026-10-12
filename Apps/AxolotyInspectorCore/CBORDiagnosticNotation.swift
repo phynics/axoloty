@@ -400,7 +400,6 @@ public enum CBORDiagnosticNotation {
                 guard let number = Double(token) else { throw CBORParseError.invalidNumber(token) }
                 return .float(number)
             }
-            skipWhitespace()
             if match("(") {
                 guard !negative, let tag = UInt64(digits) else { throw CBORParseError.invalidTag }
                 let inner = try parseItem()

@@ -151,12 +151,12 @@ public struct CBORDecoder {
         case 1:
             return .negative(try readArgument(additional))
         case 2:
-            switch try readStringBody(additional) {
+            switch try readStringBody(additional, major: 2) {
             case .definite(let bytes): return .byteString(bytes)
             case .chunked(let chunks): return .chunkedByteString(chunks)
             }
         case 3:
-            switch try readStringBody(additional) {
+            switch try readStringBody(additional, major: 3) {
             case .definite(let bytes):
                 guard let text = String(bytes: bytes, encoding: .utf8) else { throw .invalidUTF8 }
                 return .textString(text)
@@ -240,9 +240,16 @@ public struct CBORDecoder {
 
     /// Reads the body of a byte or text string, definite or indefinite.
     ///
-    /// The major type is read by the caller, so this routine serves both major
-    /// type 2 and major type 3 by returning raw bytes.
-    private mutating func readStringBody(_ additional: UInt8) throws(CBORDecodingError) -> StringBody {
+    /// - Parameters:
+    ///   - additional: The additional information of the string head.
+    ///   - major: The string's major type, either 2 (bytes) or 3 (text).
+    /// - Returns: The string body.
+    /// - Throws: ``CBORDecodingError`` when the body is malformed or exceeds
+    ///   the configured limits.
+    private mutating func readStringBody(
+        _ additional: UInt8,
+        major: UInt8
+    ) throws(CBORDecodingError) -> StringBody {
         if additional == 31 {
             var chunks: [[UInt8]] = []
             while true {
@@ -253,7 +260,7 @@ public struct CBORDecoder {
                 let chunkHead = try readByte()
                 let chunkMajor = chunkHead >> 5
                 let chunkAdditional = chunkHead & 0x1F
-                guard chunkMajor == 2 || chunkMajor == 3, chunkAdditional != 31 else {
+                guard chunkMajor == major, chunkAdditional != 31 else {
                     throw .invalidAdditionalInformation(chunkAdditional)
                 }
                 let length = try readArgument(chunkAdditional)

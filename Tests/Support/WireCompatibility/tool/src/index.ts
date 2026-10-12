@@ -267,7 +267,9 @@ function payloadBytes(record: unknown): Buffer | undefined {
   const { encoding, bytes } = payload as { encoding?: unknown; bytes?: unknown };
   if (typeof bytes !== "string") return undefined;
   if (encoding === "hex") return Buffer.from(bytes, "hex");
-  return Buffer.from(bytes, "base64");
+  if (encoding === "base64") return Buffer.from(bytes, "base64");
+  process.stderr.write(`decode: skipping payload with unsupported encoding ${JSON.stringify(encoding)}\n`);
+  return undefined;
 }
 
 function runDecodeCommand(args: string[]): void {

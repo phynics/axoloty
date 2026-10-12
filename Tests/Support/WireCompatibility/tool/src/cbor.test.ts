@@ -129,6 +129,43 @@ test("parses negative integers and floats", () => {
   assert.equal(renderDiagnostic(parseDiagnostic("-Infinity")), "-Infinity");
 });
 
+test("preserves the sign of negative floats and zero", () => {
+  assert.equal(renderDiagnostic(parseDiagnostic("-1.5")), "-1.5");
+  assert.equal(encodeCbor(parseDiagnostic("-1.5")).toString("hex"), "fabfc00000");
+  assert.equal(renderDiagnostic(parseDiagnostic("-0.0")), "-0.0");
+  assert.equal(encodeCbor(parseDiagnostic("-0.0")).toString("hex"), "fa80000000");
+  // `-0` canonicalizes to unsigned zero, matching the Swift parser.
+  const zero = parseDiagnostic("-0");
+  assert.equal(zero.type, "unsigned");
+  assert.equal(encodeCbor(zero).toString("hex"), "00");
+});
+
+test("rejects malformed floats instead of synthesizing a value", () => {
+  assert.throws(() => parseDiagnostic("1."));
+  assert.throws(() => parseDiagnostic("1e"));
+  assert.throws(() => parseDiagnostic("1e+"));
+  assert.throws(() => parseDiagnostic("1e-"));
+});
+
+test("canonicalizes an empty chunked string to text", () => {
+  const value = parseDiagnostic("(_)");
+  assert.equal(value.type, "text");
+  assert.equal(renderDiagnostic(value), "(_ )");
+});
+
+test("renders large integral doubles in a re-parseable form", () => {
+  const rendered = renderDiagnostic(parseDiagnostic("1e300"));
+  assert.equal(rendered, "1e+300");
+  assert.equal(renderDiagnostic(parseDiagnostic(rendered)), rendered);
+});
+
+test("enforces decoder byte and container bounds", () => {
+  // A declared array length above the container cap.
+  assert.throws(() => decodeCbor(fromHex("9a000186a0")));
+  // Input larger than the byte cap.
+  assert.throws(() => decodeCbor(Buffer.alloc((1 << 20) + 1, 0x00)));
+});
+
 test("rejects malformed diagnostic notation", () => {
   assert.throws(() => parseDiagnostic("[1, 2"));
   assert.throws(() => parseDiagnostic("h'0'"));

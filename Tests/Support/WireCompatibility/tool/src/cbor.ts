@@ -7,7 +7,10 @@
  * reads diagnostic notation back into deterministic CBOR bytes. The decoder is
  * deliberately lenient (it accepts indefinite-length items and non-minimal
  * heads) so it can read external producers; the encoder is deterministic per
- * RFC 8949 section 4.2.1.
+ * RFC 8949 section 4.2.1 (preferred serialization): shortest-form heads,
+ * bytewise-sorted map keys, and the shortest of single or double precision for
+ * floats. Half-precision is read but never emitted, matching the authoritative
+ * Swift `CBORWriter`.
  */
 
 /** A decoded CBOR data item. */
@@ -28,16 +31,29 @@ export type CborValue =
 /** A structured CBOR decoding failure. */
 export class CborError extends Error {}
 
+// Bounds mirror the Swift `CBORDecodeLimits.profile` so a hostile or corrupt
+// capture cannot exhaust memory in the tool.
+const MAX_BYTES = 1 << 20;
 const MAX_DEPTH = 32;
+const MAX_ITEMS = 65_536;
+const MAX_CONTAINER_LENGTH = 65_536;
 const BREAK = 0xff;
 
 class Reader {
   private offset = 0;
+  private items = 0;
 
   constructor(private readonly bytes: Buffer) {}
 
   get remaining(): number {
     return this.bytes.length - this.offset;
+  }
+
+  countItem(): void {
+    this.items += 1;
+    if (this.items > MAX_ITEMS) {
+      throw new CborError("CBOR item count exceeded");
+    }
   }
 
   peekByte(): number {
@@ -91,6 +107,7 @@ function decodeItem(reader: Reader, depth: number): CborValue {
   if (depth > MAX_DEPTH) {
     throw new CborError("CBOR nesting depth exceeded");
   }
+  reader.countItem();
   const initial = reader.readByte();
   const major = initial >> 5;
   const additional = initial & 0x1f;
@@ -149,6 +166,9 @@ function decodeStringChunks(
     return { chunks, indefinite: true };
   }
   const length = Number(readArgument(reader, additional));
+  if (length > MAX_CONTAINER_LENGTH) {
+    throw new CborError("CBOR container length exceeded");
+  }
   return { chunks: [reader.read(length)], indefinite: false };
 }
 
@@ -162,6 +182,9 @@ function decodeArray(reader: Reader, additional: number, depth: number): CborVal
     return { type: "array", value: items, indefinite: true };
   }
   const length = Number(readArgument(reader, additional));
+  if (length > MAX_CONTAINER_LENGTH) {
+    throw new CborError("CBOR container length exceeded");
+  }
   const items: CborValue[] = [];
   for (let index = 0; index < length; index++) {
     items.push(decodeItem(reader, depth + 1));
@@ -181,6 +204,9 @@ function decodeMap(reader: Reader, additional: number, depth: number): CborValue
     return { type: "map", value: entries, indefinite: true };
   }
   const length = Number(readArgument(reader, additional));
+  if (length > MAX_CONTAINER_LENGTH) {
+    throw new CborError("CBOR container length exceeded");
+  }
   for (let index = 0; index < length; index++) {
     const key = decodeItem(reader, depth + 1);
     const value = decodeItem(reader, depth + 1);
@@ -208,6 +234,9 @@ function decodeSimple(reader: Reader, additional: number): CborValue {
 
 /** Decodes exactly one CBOR item from `bytes`. */
 export function decodeCbor(bytes: Buffer): CborValue {
+  if (bytes.length > MAX_BYTES) {
+    throw new CborError("CBOR input exceeds maximum byte length");
+  }
   const reader = new Reader(bytes);
   const value = decodeItem(reader, 0);
   if (reader.remaining !== 0) {
@@ -253,7 +282,10 @@ function renderFloat(value: number): string {
   if (value === Infinity) return "Infinity";
   if (value === -Infinity) return "-Infinity";
   if (Object.is(value, -0)) return "-0.0";
-  return Number.isInteger(value) ? `${value}.0` : String(value);
+  const literal = String(value);
+  // Only append the integral `.0` when `String` did not switch to exponent
+  // form, so the rendered token stays parseable by `parseNumber`.
+  return Number.isInteger(value) && !/[eE]/.test(literal) ? `${literal}.0` : literal;
 }
 
 /** Renders a decoded value as RFC 8949 section 8 diagnostic notation. */
@@ -660,17 +692,19 @@ class Parser {
     this.expect(")");
     const byteChunks = chunks.every((chunk) => chunk.type === "bytes");
     const textChunks = chunks.every((chunk) => chunk.type === "text");
-    if (byteChunks) {
-      return {
-        type: "bytes",
-        chunks: chunks.flatMap((chunk) => (chunk.type === "bytes" ? chunk.chunks : [])),
-        indefinite: true,
-      };
-    }
+    // An empty `(_)` has no chunk to disambiguate it. Match the Swift parser,
+    // which canonicalizes it to an empty indefinite text string.
     if (textChunks) {
       return {
         type: "text",
         chunks: chunks.flatMap((chunk) => (chunk.type === "text" ? chunk.chunks : [])),
+        indefinite: true,
+      };
+    }
+    if (byteChunks) {
+      return {
+        type: "bytes",
+        chunks: chunks.flatMap((chunk) => (chunk.type === "bytes" ? chunk.chunks : [])),
         indefinite: true,
       };
     }
@@ -752,13 +786,16 @@ class Parser {
   }
 
   private parseNumber(): { kind: "tag"; tag: bigint } | { kind: "value"; value: CborValue } {
+    // Record `start` before consuming the sign so the signed token is used for
+    // float parsing; the magnitude is derived from the unsigned digits only.
+    const start = this.index;
     const negative = this.match("-");
     if (negative && this.matchKeyword("Infinity")) {
       return { kind: "value", value: { type: "float", value: -Infinity } };
     }
-    const start = this.index;
+    const digitsStart = this.index;
     while (this.current !== undefined && /[0-9]/.test(this.current)) this.index += 1;
-    const integerPart = this.text.slice(start, this.index);
+    const integerPart = this.text.slice(digitsStart, this.index);
     if (integerPart.length === 0) {
       throw new DiagnosticParseError(`invalid number at offset ${this.index}`);
     }
@@ -766,14 +803,22 @@ class Parser {
     if (this.current === ".") {
       isFloat = true;
       this.index += 1;
+      const fractionStart = this.index;
       while (this.current !== undefined && /[0-9]/.test(this.current)) this.index += 1;
+      if (this.index === fractionStart) {
+        throw new DiagnosticParseError(`invalid number at offset ${start}`);
+      }
     }
     if (this.current === "e" || this.current === "E") {
       isFloat = true;
       this.index += 1;
       const exponentSign = this.text[this.index];
       if (exponentSign === "+" || exponentSign === "-") this.index += 1;
+      const exponentStart = this.index;
       while (this.current !== undefined && /[0-9]/.test(this.current)) this.index += 1;
+      if (this.index === exponentStart) {
+        throw new DiagnosticParseError(`invalid number at offset ${start}`);
+      }
     }
     const literal = this.text.slice(start, this.index);
     const magnitude = BigInt(integerPart);
@@ -782,9 +827,17 @@ class Parser {
       return { kind: "tag", tag: magnitude };
     }
     if (isFloat) {
-      return { kind: "value", value: { type: "float", value: Number(literal) } };
+      const value = Number(literal);
+      if (Number.isNaN(value)) {
+        throw new DiagnosticParseError(`invalid number at offset ${start}`);
+      }
+      return { kind: "value", value: { type: "float", value } };
     }
     if (negative) {
+      // `-0` canonicalizes to unsigned zero, matching the Swift parser.
+      if (integerPart === "0") {
+        return { kind: "value", value: { type: "unsigned", value: 0n } };
+      }
       return { kind: "value", value: { type: "negative", value: magnitude - 1n } };
     }
     return { kind: "value", value: { type: "unsigned", value: magnitude } };
