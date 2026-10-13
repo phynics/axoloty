@@ -5,111 +5,82 @@ import _JSONCore
 #endif
 
     @usableFromInline struct WireFieldSlot {
-        let key: Range<Int>; let value: Range<Int>; let content: Range<Int>; let kind: WireTokenKind
+        @usableFromInline var keyStart: UInt16
+        @usableFromInline var keyLength: UInt16
+        @usableFromInline var valueStart: UInt16
+        @usableFromInline var valueLength: UInt16
+        @usableFromInline var contentStart: UInt16
+        @usableFromInline var contentLength: UInt16
+        @usableFromInline var kind: WireTokenKind
+
+        @usableFromInline init(key: Range<Int>, value: Range<Int>, content: Range<Int>, kind: WireTokenKind) {
+            self.keyStart = UInt16(key.lowerBound); self.keyLength = UInt16(key.count)
+            self.valueStart = UInt16(value.lowerBound); self.valueLength = UInt16(value.count)
+            self.contentStart = UInt16(content.lowerBound); self.contentLength = UInt16(content.count)
+            self.kind = kind
+        }
+
+        // Offsets fit in UInt16 because a payload is bounded by
+        // WireBufferConfig.maxPayloadSize (2,048) before the tokenizer runs.
+        var key: Range<Int> { Int(keyStart)..<(Int(keyStart) + Int(keyLength)) }
+        var value: Range<Int> { Int(valueStart)..<(Int(valueStart) + Int(valueLength)) }
+        var content: Range<Int> { Int(contentStart)..<(Int(contentStart) + Int(contentLength)) }
+
+        @usableFromInline static var empty: WireFieldSlot {
+            WireFieldSlot(key: 0..<0, value: 0..<0, content: 0..<0, kind: .object)
+        }
     }
 
     @usableFromInline struct WireFieldIndex {
         var rootObject = false; var completeValue = false; var failure: WireDecodeError?; var count = 0
-        var slots = (WireFieldSlot?.none, WireFieldSlot?.none, WireFieldSlot?.none, WireFieldSlot?.none, WireFieldSlot?.none, WireFieldSlot?.none, WireFieldSlot?.none, WireFieldSlot?.none, WireFieldSlot?.none, WireFieldSlot?.none, WireFieldSlot?.none, WireFieldSlot?.none, WireFieldSlot?.none, WireFieldSlot?.none, WireFieldSlot?.none, WireFieldSlot?.none, WireFieldSlot?.none, WireFieldSlot?.none, WireFieldSlot?.none, WireFieldSlot?.none, WireFieldSlot?.none, WireFieldSlot?.none, WireFieldSlot?.none, WireFieldSlot?.none)
+        // Contiguous storage; valid entries are 0..<count. The capacity must
+        // equal WireBufferConfig.maxIndexedFields (24); a static property is not
+        // accepted as an InlineArray value argument. The previous 24-tuple of
+        // optionals plus its switch-tree accessors copied and zero-initialized
+        // roughly 0.8 KB on every reader construction.
+        var slots = InlineArray<24, WireFieldSlot>(repeating: .empty)
+
         func slot(_ n: Int) -> WireFieldSlot? {
-            switch n {
-            case 0...7: return firstSlot(n)
-            case 8...15: return secondSlot(n)
-            case 16...23: return thirdSlot(n)
-            default: return nil
-            }
+            guard n >= 0 && n < count else { return nil }
+            return slots[n]
         }
 
-        private func firstSlot(_ n: Int) -> WireFieldSlot? {
-            switch n {
-            case 0: return slots.0; case 1: return slots.1; case 2: return slots.2; case 3: return slots.3
-            case 4: return slots.4; case 5: return slots.5; case 6: return slots.6; case 7: return slots.7
-            default: return nil
-            }
-        }
-
-        private func secondSlot(_ n: Int) -> WireFieldSlot? {
-            switch n {
-            case 8: return slots.8; case 9: return slots.9; case 10: return slots.10; case 11: return slots.11
-            case 12: return slots.12; case 13: return slots.13; case 14: return slots.14; case 15: return slots.15
-            default: return nil
-            }
-        }
-
-        private func thirdSlot(_ n: Int) -> WireFieldSlot? {
-            switch n {
-            case 16: return slots.16; case 17: return slots.17; case 18: return slots.18; case 19: return slots.19
-            case 20: return slots.20; case 21: return slots.21; case 22: return slots.22; case 23: return slots.23
-            default: return nil
-            }
-        }
         func find(bytes: UnsafeRawPointer, key: StaticString) -> WireFieldSlot? {
             for n in 0..<count {
-                guard let value = slot(n) else { continue }
+                let value = slots[n]
                 if wireSemanticKeysEqual(bytes: bytes, range: value.key, key: key) { return value }
             }
             return nil
         }
-    mutating func append(_ value: WireFieldSlot, bytes: UnsafeBufferPointer<UInt8>) {
-        guard validRanges(for: value, bytes: bytes) else {
-            if failure == nil { failure = WireDecodeError(.unexpectedEndOfInput, byteOffset: bytes.count) }
-            return
-        }
-        guard !hasDuplicate(value, bytes: bytes) else {
-            if failure == nil { failure = WireDecodeError(.duplicateField, byteOffset: value.key.lowerBound) }
-            return
-        }
-        guard count < WireBufferConfig.maxIndexedFields else {
-            failure = WireDecodeError(.fieldIndexOverflow, byteOffset: value.key.lowerBound)
-            return
-        }
-        store(value)
-        count += 1
-    }
 
-    private func validRanges(for value: WireFieldSlot, bytes: UnsafeBufferPointer<UInt8>) -> Bool {
-        isBounded(value.key, bytes: bytes) && isBounded(value.value, bytes: bytes) && isBounded(value.content, bytes: bytes)
-    }
-
-    private func hasDuplicate(_ value: WireFieldSlot, bytes: UnsafeBufferPointer<UInt8>) -> Bool {
-        for n in 0..<count where slot(n).map({ wireSemanticKeysEqual(bytes: bytes, lhs: $0.key, rhs: value.key) }) == true {
-            return true
+        mutating func append(_ value: WireFieldSlot, bytes: UnsafeBufferPointer<UInt8>) {
+            guard validRanges(for: value, bytes: bytes) else {
+                if failure == nil { failure = WireDecodeError(.unexpectedEndOfInput, byteOffset: bytes.count) }
+                return
+            }
+            guard !hasDuplicate(value, bytes: bytes) else {
+                if failure == nil { failure = WireDecodeError(.duplicateField, byteOffset: value.key.lowerBound) }
+                return
+            }
+            guard count < WireBufferConfig.maxIndexedFields else {
+                failure = WireDecodeError(.fieldIndexOverflow, byteOffset: value.key.lowerBound)
+                return
+            }
+            slots[count] = value
+            count += 1
         }
-        return false
-    }
 
-    private mutating func store(_ value: WireFieldSlot) {
-        switch count {
-        case 0...7: storeFirst(value)
-        case 8...15: storeSecond(value)
-        case 16...23: storeThird(value)
-        default: break
+        private func validRanges(for value: WireFieldSlot, bytes: UnsafeBufferPointer<UInt8>) -> Bool {
+            isBounded(value.key, bytes: bytes) && isBounded(value.value, bytes: bytes) && isBounded(value.content, bytes: bytes)
         }
-    }
 
-    private mutating func storeFirst(_ value: WireFieldSlot) {
-        switch count {
-        case 0: slots.0 = value; case 1: slots.1 = value; case 2: slots.2 = value; case 3: slots.3 = value
-        case 4: slots.4 = value; case 5: slots.5 = value; case 6: slots.6 = value; case 7: slots.7 = value
-        default: break
+        private func hasDuplicate(_ value: WireFieldSlot, bytes: UnsafeBufferPointer<UInt8>) -> Bool {
+            for n in 0..<count where wireSemanticKeysEqual(bytes: bytes, lhs: slots[n].key, rhs: value.key) {
+                return true
+            }
+            return false
         }
-    }
 
-    private mutating func storeSecond(_ value: WireFieldSlot) {
-        switch count {
-        case 8: slots.8 = value; case 9: slots.9 = value; case 10: slots.10 = value; case 11: slots.11 = value
-        case 12: slots.12 = value; case 13: slots.13 = value; case 14: slots.14 = value; case 15: slots.15 = value
-        default: break
-        }
-    }
-
-    private mutating func storeThird(_ value: WireFieldSlot) {
-        switch count {
-        case 16: slots.16 = value; case 17: slots.17 = value; case 18: slots.18 = value; case 19: slots.19 = value
-        case 20: slots.20 = value; case 21: slots.21 = value; case 22: slots.22 = value; case 23: slots.23 = value
-        default: break
-        }
-    }
         private func isBounded(_ range: Range<Int>, bytes: UnsafeBufferPointer<UInt8>) -> Bool {
             range.lowerBound >= 0 && range.lowerBound <= range.upperBound && range.upperBound <= bytes.count
         }
