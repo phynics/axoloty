@@ -14,7 +14,6 @@ paths=(
     .devcontainer/image-inputs.sh
     .devcontainer/ax
     .devcontainer/axoloty-tool
-    .devcontainer/axoloty-mcp
     .devcontainer/axoloty-cli
     .devcontainer/axoloty-debug
     .dockerignore

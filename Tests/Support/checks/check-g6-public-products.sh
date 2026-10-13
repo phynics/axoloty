@@ -41,11 +41,11 @@ for configuration in debug release; do
     done
 done
 
-# axoloty-tool/ax are products of the Tools harness package; axoloty-inspect/
-# axoloty-mcp are products of the Apps application package. Neither is a
-# product of the root library package, so each needs its own package-path
-# build before it can be smoke-tested.
-for spec in "Tools:axoloty-tool" "Tools:ax" "Apps:axoloty-inspect" "Apps:axoloty-mcp"; do
+# axoloty-tool/ax are products of the Tools harness package, not the root
+# library package, so each needs its own package-path build before it can be
+# smoke-tested. The application products (axoloty-inspect, axoloty-mcp) now
+# live in the sibling axoloty-debug package.
+for spec in "Tools:axoloty-tool" "Tools:ax"; do
     package_path=${spec%%:*}
     executable=${spec#*:}
     for configuration in debug release; do

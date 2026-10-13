@@ -75,7 +75,7 @@ func testOneFallsThroughPackagesUntilAFilterMatches() throws {
 
 @Test
 func testOneNoMatchNamesEverySearchedPackage() throws {
-    let runner = PackageRecordingRunner(emptyPackages: [".", "Tools", "Apps"])
+    let runner = PackageRecordingRunner(emptyPackages: [".", "Tools"])
     let commands = try makeCheckCommands(runner: runner)
 
     let result = commands.run(.testOne(filter: "MissingSuite", repetition: nil))
@@ -84,8 +84,7 @@ func testOneNoMatchNamesEverySearchedPackage() throws {
     #expect(result.standardError.contains("MissingSuite"))
     #expect(result.standardError.contains("root (.)"))
     #expect(result.standardError.contains("Tools"))
-    #expect(result.standardError.contains("Apps"))
-    #expect(runner.packages == [".", "Tools", "Apps"])
+    #expect(runner.packages == [".", "Tools"])
 }
 
 }

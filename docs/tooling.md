@@ -36,14 +36,15 @@ macOS uses its pinned native Swift toolchain:
 swift run --package-path Tools axoloty-tool check
 ```
 
-The `Tools` package publishes `ax` and `axoloty-tool`; the `Apps` package
-publishes `axoloty-inspect` and `axoloty-mcp`. Linux images provide
-mounted-worktree launchers for the tooling and service products under
-`/opt/axoloty/bin`.
+The `Tools` package publishes `ax` and `axoloty-tool`. The runtime/debug
+products — `axoloty-debug`, `axoloty-inspect`, and `axoloty-mcp` — are
+published by the sibling [`phynics/axoloty-debug`](https://github.com/phynics/axoloty-debug)
+package. Linux images provide mounted-worktree launchers for the tooling and
+service products under `/opt/axoloty/bin`.
 Use `make serve-mqtt`, `make serve-mcp`, or `make serve-dev` for thin container
-entry points. Service policy remains in `AxolotyTooling`, not Make or shell.
-The Linux `ax` and `axoloty-tool` launchers build the mounted-worktree
-`axoloty-mcp` product before starting `serve mcp` or `serve dev`, unless
+entry points. Orchestration policy remains in `AxolotyTooling`; service
+supervision lives in `axoloty-debug`. The Linux `axoloty-debug` launcher builds
+the `axoloty-mcp` product before starting `serve mcp` or `serve dev`, unless
 `AXOLOTY_MCP_EXECUTABLE` supplies an executable path.
 
 The macOS plan runs host build, lint, tooling tests, and offline wire fixtures.
@@ -244,31 +245,15 @@ Swift Testing coverage and expose the behavior through `axoloty-tool`; add a sho
 alias only when Linux contributors need a documented container entry point.
 Do not add a new Bash or Python front controller.
 
-## `axoloty-inspect` — MQTT object inspector
+## Runtime and debug applications
 
-`axoloty-inspect` is a separate executable product that connects to a live
-MQTT broker through Axoloty and inspects Coaty objects without writing a
-custom agent. It has two subcommands:
+The runtime/debug products are published by the sibling
+[`phynics/axoloty-debug`](https://github.com/phynics/axoloty-debug) package:
 
-- **`catalog`** — passively observes Advertise/Deadvertise events and
-  maintains an in-memory object catalogue. Publishes no Coaty events.
-- **`discover`** — sends one Discover request, collects Resolve responses,
-  and prints a finite result.
+- **`axoloty-debug`** — the `serve mqtt|mcp|dev` supervisor CLI.
+- **`axoloty-inspect`** — the MQTT object inspector.
+- **`axoloty-mcp`** — the MCP server.
 
-```sh
-# macOS
-swift run --package-path Apps axoloty-inspect catalog --duration 10s
-swift run --package-path Apps axoloty-inspect discover --core-type Identity
-
-# Linux (container)
-.devcontainer/run.sh swift run --package-path /workspace/Apps axoloty-inspect catalog --duration 10s
-```
-
-The inspector uses `AxolotyInspectorCore` (zero external dependencies, pure
-catalogue/filter/reducer/record logic), `AxolotyInspectorRuntime` (the
-runtime adapter), and `axoloty-inspect` (the CLI, using `AxolotyRuntime` and
-`MQTTBinding` for broker connectivity).
-`AxolotyTooling`'s dependency closure is unaffected.
-
-See [inspector.md](inspector.md) for the full reference: connection options,
-catalogue filters, output modes, JSON-array/NDJSON schema, exit codes, and credentials.
+Their build, behavior, and reference documentation live in that repository.
+This repository's `Tools` harness does not build or link them; the container
+`serve-*` targets invoke the `axoloty-debug` binary.
