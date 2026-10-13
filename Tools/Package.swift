@@ -6,13 +6,13 @@ import PackageDescription
 let package = Package(
     name: "AxolotyTools",
     platforms: [.macOS(.v15)],
+    // The harness is not a library. Its only external consumer was the Apps
+    // package, which now lives in the sibling axoloty-debug package. The
+    // AxolotyTooling and AxolotyVersion targets remain internal to the two
+    // executables below.
     products: [
         .executable(name: "axoloty-tool", targets: ["AxolotyCLI"]),
         .executable(name: "ax", targets: ["AxolotyCLI"]),
-        // Consumed by the Apps package's MCP server, which reports the same
-        // canonical test manifest this harness resolves.
-        .library(name: "AxolotyTooling", targets: ["AxolotyTooling"]),
-        .library(name: "AxolotyVersion", targets: ["AxolotyVersion"]),
     ],
     targets: [
         .target(name: "AxolotyVersion", path: "AxolotyVersion"),

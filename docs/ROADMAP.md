@@ -37,8 +37,8 @@ The 1.0 API freeze covers the following:
 - **Frozen core products:** `Axoloty`, `AxolotyWire`, `AxolotyProtocol`,
   `AxolotyObjectModel`, `AxolotyStaticRuntime`, and `AxolotyMQTT`.
 - **Everything else is experimental** for 1.0, including the Zenoh transport,
-  the optional SensorThings and IO-routing products, and the first-party tools
-  under `Apps/` and `Tools/`.
+  the optional SensorThings and IO-routing products, the `Tools/` harness, and
+  the runtime/debug products in the sibling `phynics/axoloty-debug` package.
 - **`axoloty/1` CBOR is in 1.0 scope.** [ADR 0009](./adr/0009-zenoh-carries-only-axoloty-1.md)
   makes it the only Zenoh encoding, and `coaty/3` JSON stays sealed on MQTT for
   CoatyJS compatibility. [Epic #977](https://github.com/phynics/axoloty/issues/977)
