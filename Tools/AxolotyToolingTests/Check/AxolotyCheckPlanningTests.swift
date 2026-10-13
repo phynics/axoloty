@@ -86,7 +86,7 @@ func releaseCategoryDeclaresEveryOtherCategoryAndRunsWhatItCan() throws {
         )).nodes.map(\.name))
     }
     let release = try resolved(.release)
-    for narrower in [CanonicalTier.ci, .wire, .embedded] {
+    for narrower in [CanonicalTier.ci, .wire, .wireCBOR, .embedded] {
         let tier = try #require(resolver.manifest.tiers.first { $0.id == narrower.rawValue })
         #expect(Set(tier.nodes).isSubset(of: Set(declared)), "\(narrower.rawValue) must be declared by release")
         if tier.attested {

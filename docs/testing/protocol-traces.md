@@ -23,5 +23,13 @@ nonexistent fixture file. External-route traces preserve Coaty's
 `external/wire-compat-v1/io-external-1`; the route classification is supplied
 by the binding, with a separate rejection case for an inconsistent flag.
 
+`ProfileStaticTraceReplayAdapter` binds the same trace contract to the
+`axoloty/1` CBOR profile. It pairs each `coaty/3` JSON fixture step with the
+frozen CBOR bytes from the T5 golden corpus, composes the shared processor and
+`StaticRuntime` with that profile's `WireCodec`, and runs the host and static
+legs side by side. The comparison drops action payload bytes, so only
+profile-independent operations, correlations, route classes, normalized state,
+and structured rejections must be equal.
+
 `IoState` is intentionally not a family: it is a local association signal and
 is not published on MQTT.

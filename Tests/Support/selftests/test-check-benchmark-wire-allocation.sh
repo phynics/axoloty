@@ -35,6 +35,12 @@ check "probe runs a decode + dispatch hot path" \
 check "probe dispatches through ProtocolProcessor" \
     grep -q 'processor.processInbound' "$ROOT/Benchmarks/WireAllocation/main.swift"
 
+check "probe selects the axoloty/1 CBOR profile" \
+    grep -q 'axoloty1CBOR' "$ROOT/Benchmarks/WireAllocation/main.swift"
+
+check "check script gates both wire profiles" \
+    grep -q 'check_profile cbor' "$SCRIPT_DIR/../checks/check-benchmark-wire-allocation.sh"
+
 check "check script requires heaptrack" \
     grep -q 'command -v heaptrack' "$SCRIPT_DIR/../checks/check-benchmark-wire-allocation.sh"
 

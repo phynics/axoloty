@@ -565,7 +565,7 @@ test("validator checks Make ownership when invocation data is supplied", () => {
 
 test("the declared tiers are the whole taxonomy", () => {
   const document = JSON.parse(fs.readFileSync(path.join(root, "Tests/Support/test-tiers.json"), "utf8"));
-  assert.deepEqual(document.tiers.map(tier => tier.id), ["ci", "wire", "embedded", "release", "zenoh-live", "zenoh-offline"]);
+  assert.deepEqual(document.tiers.map(tier => tier.id), ["ci", "wire", "wire-cbor", "embedded", "release", "zenoh-live", "zenoh-offline"]);
   assert.equal(document.tiers.find(tier => tier.id === "zenoh-live").attested, true);
   // The live node downloads the pinned zenohd and zenoh-c releases.
   assert.equal(document.tiers.find(tier => tier.id === "zenoh-live").network, "external");

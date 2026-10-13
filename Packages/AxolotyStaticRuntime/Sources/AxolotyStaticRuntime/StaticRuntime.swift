@@ -18,6 +18,13 @@ public struct StaticRuntimeDefinition<let payloadCapacity: Int>: ~Copyable {
     ///
     /// When `nil`, the consuming runtime's storage capacity is used.
     public let maximumPendingCorrelations: Int?
+    /// The wire profile the consuming runtime reads and writes.
+    ///
+    /// The binding chooses exactly one profile at composition time; the static
+    /// runtime selects it through the shared ``WireCodec`` seam and never
+    /// branches on the format. The default keeps the sealed `coaty/3` JSON
+    /// byte contract.
+    public let wireCodec: WireCodec
     /// Maximum accepted wire payload size, fixed by the type specialization.
     public var maximumPayloadBytes: Int { payloadCapacity }
     /// Maximum accepted wire payload size for this definition specialization.
@@ -30,13 +37,16 @@ public struct StaticRuntimeDefinition<let payloadCapacity: Int>: ~Copyable {
     ///   - capabilities: Families accepted by this binding.
     ///   - maximumObjects: Optional maximum number of simultaneously advertised objects.
     ///   - maximumPendingCorrelations: Optional maximum number of outstanding request correlations.
+    ///   - wireCodec: The wire profile this binding reads and writes. The
+    ///     default is the sealed `coaty/3` JSON profile.
     /// - Throws: ``ProtocolCapacityError`` if the payload specialization is
     ///   outside the wire payload bound.
     public init(
         registryID: ObjectID,
         capabilities: ProtocolCapabilities = .coatyCore3,
         maximumObjects: Int? = nil,
-        maximumPendingCorrelations: Int? = nil
+        maximumPendingCorrelations: Int? = nil,
+        wireCodec: WireCodec = WireCodec(profile: .coaty3JSON)
     ) throws(ProtocolCapacityError) {
         guard payloadCapacity >= 0 else {
             throw ProtocolCapacityError(.negativeCapacity, parameter: "payloadCapacity")
@@ -48,6 +58,7 @@ public struct StaticRuntimeDefinition<let payloadCapacity: Int>: ~Copyable {
         self.capabilities = capabilities
         self.maximumObjects = maximumObjects
         self.maximumPendingCorrelations = maximumPendingCorrelations
+        self.wireCodec = wireCodec
     }
 }
 
@@ -75,6 +86,8 @@ public struct StaticRuntime<let capacity: Int, let payloadCapacity: Int>: ~Copya
     ///   - capabilities: Families accepted by this binding.
     ///   - maximumObjects: Maximum simultaneous advertised objects.
     ///   - maximumPendingCorrelations: Maximum outstanding request correlations.
+    ///   - wireCodec: The wire profile this binding reads and writes. The
+    ///     default is the sealed `coaty/3` JSON profile.
     /// - Throws: ``ProtocolCapacityError`` if a caller-supplied limit is
     ///   negative or exceeds the runtime's fixed storage capacity.
     public init(
@@ -82,6 +95,7 @@ public struct StaticRuntime<let capacity: Int, let payloadCapacity: Int>: ~Copya
         capabilities: ProtocolCapabilities = .coatyCore3,
         maximumObjects: Int = capacity,
         maximumPendingCorrelations: Int = capacity,
+        wireCodec: WireCodec = WireCodec(profile: .coaty3JSON)
     ) throws(ProtocolCapacityError) {
         guard payloadCapacity >= 0 else {
             throw ProtocolCapacityError(.negativeCapacity, parameter: "payloadCapacity")
@@ -107,6 +121,7 @@ public struct StaticRuntime<let capacity: Int, let payloadCapacity: Int>: ~Copya
         )
         self.processor = ProtocolProcessor<capacity>(
             capabilities: capabilities,
+            wireCodec: wireCodec,
             maximumPayloadBytes: payloadCapacity,
             maximumObjects: maximumObjects,
             maximumPendingCorrelations: maximumPendingCorrelations
@@ -130,6 +145,7 @@ public struct StaticRuntime<let capacity: Int, let payloadCapacity: Int>: ~Copya
         self.routeClassifier = routeClassifier
         self.processor = ProtocolProcessor<capacity>(
             capabilities: definition.capabilities,
+            wireCodec: definition.wireCodec,
             maximumPayloadBytes: payloadCapacity,
             maximumObjects: maximumObjects,
             maximumPendingCorrelations: maximumPendingCorrelations

@@ -152,6 +152,7 @@ manifest belongs to exactly one narrower category and to `release`.
 |---|---|---|---|
 | `ci` | `make test-tier TIER=ci` | The pinned container | Everything that needs no broker infrastructure and no attached board. Every pull request. |
 | `wire` | `make test-tier TIER=wire` | Containers, a broker, the CoatyJS image | Live CoatyJS interoperability, with the host runtime bridge. |
+| `wire-cbor` | `make test-tier TIER=wire-cbor` | The pinned container; no broker or hardware | Offline `axoloty/1` CBOR coverage: the golden corpus and the host/static trace-parity replay. Every pull request. |
 | `embedded` | `make test-tier TIER=embedded` | The pinned container; no firmware or hardware | Core Embedded Swift compatibility: portable-module compilation, macro expansion, and RISC-V linkage. |
 | `release` | `make test-tier TIER=release` | Whatever the host has | Every test the host can run: `ci`, `wire`, `embedded`, the Apple-host oracle, and the release consumer checks. |
 
