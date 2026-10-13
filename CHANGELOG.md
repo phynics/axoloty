@@ -9,6 +9,14 @@ fork, through CoatySwift 2.4.0, remain documented in the
 
 ## [Unreleased]
 
+### Added
+
+- The `wire-cbor` tier replays the same canonical protocol traces through the
+  host `coaty/3` JSON path and the static `axoloty/1` CBOR path, then compares
+  normalized operations, state, and structured rejections. The host and static
+  runtimes select a profile through `WireCodec` at composition time; no
+  protocol rule branches on the active profile.
+
 ### Changed
 
 - `make checkpoint` no longer requires evidence bundles for the `wire` and

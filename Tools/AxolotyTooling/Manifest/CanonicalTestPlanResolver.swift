@@ -10,6 +10,7 @@ import Foundation
 enum CanonicalTier: String, CaseIterable, Sendable {
     case ci
     case wire
+    case wireCBOR = "wire-cbor"
     case embedded
     case release
     case zenohLive = "zenoh-live"

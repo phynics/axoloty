@@ -13,6 +13,10 @@
 # setup) are constant and bounded; a regression that
 # allocates once per decode or dispatch would scale the count with iterations.
 #
+# The probe runs once per wire profile. `coaty/3` JSON is the sealed baseline;
+# `axoloty/1` CBOR proves the format-neutral `WireCodec` seam and the shared
+# `ProtocolProcessor` allocate the same way for both profiles.
+#
 # Usage: check-benchmark-wire-allocation.sh [SMALL_ITERS=1] [LARGE_ITERS=200]
 # Requires: heaptrack (present in the axoloty-dev container).
 
@@ -22,9 +26,6 @@ root_dir=$(CDPATH= cd -- "$(dirname -- "$0")/../../.." && pwd)
 small_iters=${1:-1}
 large_iters=${2:-200}
 cache_path=${SPM_CACHE_DIR:-"$HOME/.cache/coaty-swift/swiftpm/swift-6.4-linux"}
-small_profile=$(mktemp "${TMPDIR:-/tmp}/axoloty-wire-alloc-small.XXXXXX")
-large_profile=$(mktemp "${TMPDIR:-/tmp}/axoloty-wire-alloc-large.XXXXXX")
-trap 'rm -f "$small_profile" "$small_profile.gz" "$large_profile" "$large_profile.gz" 2>/dev/null || true' EXIT
 
 fail() {
     echo "BENCHMARK WIRE ALLOCATION FAIL: $1" >&2
@@ -49,23 +50,36 @@ count_allocs() {
         || echo "0"
 }
 
-# Smoke: the hot path must complete at both sizes.
-"$binary" "$large_iters" > /dev/null 2>&1 || fail "wire allocation probe exited nonzero"
+check_profile() {
+    # $1: profile name passed to the probe.
+    profile=$1
+    small_profile=$(mktemp "${TMPDIR:-/tmp}/axoloty-wire-alloc-${profile}-small.XXXXXX")
+    large_profile=$(mktemp "${TMPDIR:-/tmp}/axoloty-wire-alloc-${profile}-large.XXXXXX")
+    trap 'rm -f "$small_profile" "$small_profile.gz" "$large_profile" "$large_profile.gz" 2>/dev/null || true' EXIT
 
-heaptrack -o "$small_profile" "$binary" "$small_iters" >/dev/null 2>&1 \
-    || fail "heaptrack small profile failed"
-heaptrack -o "$large_profile" "$binary" "$large_iters" >/dev/null 2>&1 \
-    || fail "heaptrack large profile failed"
+    # Smoke: the hot path must complete at both sizes.
+    "$binary" "$large_iters" "$profile" > /dev/null 2>&1 \
+        || fail "wire allocation probe ($profile) exited nonzero"
 
-small_count=$(count_allocs "$small_profile")
-large_count=$(count_allocs "$large_profile")
+    heaptrack -o "$small_profile" "$binary" "$small_iters" "$profile" >/dev/null 2>&1 \
+        || fail "heaptrack small profile failed ($profile)"
+    heaptrack -o "$large_profile" "$binary" "$large_iters" "$profile" >/dev/null 2>&1 \
+        || fail "heaptrack large profile failed ($profile)"
 
-# The steady-state hot path must not allocate per iteration: raising the
-# iteration count must not increase the total allocation-call count. A small
-# constant delta (e.g. a bounded lazy-runtime setup only touched once) is
-# tolerated, but the count must not scale with `large_iters - small_iters`.
-if [ "$large_count" -gt $((small_count + 2)) ]; then
-    fail "allocation count grew with iterations ($small_count -> $large_count for iters $small_iters -> $large_iters); hot path is allocating per message"
-fi
+    small_count=$(count_allocs "$small_profile")
+    large_count=$(count_allocs "$large_profile")
 
-echo "BENCHMARK WIRE ALLOCATION OK (allocation count $small_count -> $large_count, no growth with iteration count)"
+    # The steady-state hot path must not allocate per iteration: raising the
+    # iteration count must not increase the total allocation-call count. A small
+    # constant delta (e.g. a bounded lazy-runtime setup only touched once) is
+    # tolerated, but the count must not scale with `large_iters - small_iters`.
+    if [ "$large_count" -gt $((small_count + 2)) ]; then
+        fail "$profile allocation count grew with iterations ($small_count -> $large_count for iters $small_iters -> $large_iters); hot path is allocating per message"
+    fi
+
+    rm -f "$small_profile" "$small_profile.gz" "$large_profile" "$large_profile.gz"
+    echo "BENCHMARK WIRE ALLOCATION OK ($profile: allocation count $small_count -> $large_count, no growth with iteration count)"
+}
+
+check_profile json
+check_profile cbor

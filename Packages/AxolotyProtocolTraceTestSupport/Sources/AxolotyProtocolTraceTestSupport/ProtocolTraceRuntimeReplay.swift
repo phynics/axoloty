@@ -33,8 +33,16 @@ private final class RuntimeEventReceiptQueue: @unchecked Sendable {
 }
 
 struct HostTraceReplayAdapter: TraceReplayAdapter {
+    /// When false, the replay returns its observed run without asserting the
+    /// corpus-authored expected observation. Used to derive a profile reference
+    /// run before an exact expected observation exists.
+    var assertExpected = true
+
     func replay(_ trace: ProtocolTrace) async throws -> TraceRun {
-        try await RuntimeTraceReplayAdapter(makeTransport: { HostTraceTransport() }).replay(trace)
+        try await RuntimeTraceReplayAdapter(
+            makeTransport: { HostTraceTransport() },
+            assertExpected: assertExpected
+        ).replay(trace)
     }
 }
 
@@ -45,12 +53,50 @@ struct HostTraceReplayAdapter: TraceReplayAdapter {
 /// the corpus state and no carrier metadata enters ``TraceObservation``.
 struct RuntimeTraceReplayAdapter: TraceReplayAdapter {
     let makeTransport: @Sendable () throws -> any RuntimeTraceCarrier
+    /// When false, skip the expected-observation assertion. See
+    /// ``HostTraceReplayAdapter/assertExpected``.
+    var assertExpected = true
 
     func replay(_ trace: ProtocolTrace) async throws -> TraceRun {
-        var replay = try HostRuntimeTraceReplay(trace: trace, transport: makeTransport())
+        var replay = try HostRuntimeTraceReplay(
+            trace: trace,
+            transport: makeTransport(),
+            assertExpected: assertExpected
+        )
         return try await replay.replay()
     }
 }
+
+/// The profile-visible route prefix and per-step payload bytes for one replay.
+///
+/// The trace corpus stores `coaty/3` JSON fixture text in the sealed trace
+/// schema. A profile replay may supply the `axoloty/1` CBOR bytes that encode
+/// the same step, keyed by `TraceStep.sequence`, together with the matching
+/// route prefix. These inputs affect the replay only; they never change the
+/// trace schema or its canonical serialization.
+fileprivate struct TraceWireInputs {
+    let profile: WireProfile
+    let payloadOverride: [Int: [UInt8]]
+
+    init(profile: WireProfile, payloadOverride: [Int: [UInt8]] = [:]) {
+        self.profile = profile
+        self.payloadOverride = payloadOverride
+    }
+
+    /// The route prefix for this profile's bound topics.
+    var routePrefix: String {
+        profile == .axoloty1CBOR ? "axoloty/1" : "coaty/3"
+    }
+
+    /// The codec the replay's processor reads and writes.
+    var codec: WireCodec { WireCodec(profile: profile) }
+
+    /// The payload bytes for one step, preferring an explicit override.
+    func payload(for step: TraceStep) -> [UInt8] {
+        payloadOverride[step.sequence] ?? Array(step.input.fixturePayload.utf8)
+    }
+}
+
 struct StaticTraceReplayAdapter: TraceReplayAdapter {
     func replay(_ trace: ProtocolTrace) async throws -> TraceRun {
         try Self.runOnLargeStack {
@@ -80,7 +126,7 @@ struct StaticTraceReplayAdapter: TraceReplayAdapter {
     /// None of this adapter's work actually suspends, so it is safe to hop
     /// onto a plain `Thread` sized for the value it constructs and block
     /// synchronously for the (sub-millisecond) result instead.
-    private static func runOnLargeStack<Result>(_ body: @escaping @Sendable () throws -> Result) throws -> Result {
+    fileprivate static func runOnLargeStack<Result>(_ body: @escaping @Sendable () throws -> Result) throws -> Result {
         let box = LargeStackResultBox<Result>()
         let semaphore = DispatchSemaphore(value: 0)
         let thread = Thread {
@@ -99,6 +145,43 @@ struct StaticTraceReplayAdapter: TraceReplayAdapter {
         semaphore.wait()
         if let error = box.error { throw error }
         return box.value!
+    }
+}
+
+/// Replays one trace through the shared processor and the fixed-storage
+/// runtime using an explicit wire profile.
+///
+/// The trace corpus carries `coaty/3` JSON fixture text. `payloadOverride`
+/// supplies the per-step `axoloty/1` CBOR bytes that encode the same logical
+/// payload. Both the shared processor and the ``StaticRuntimeESP32C6``
+/// verifier are composed with that profile's ``WireCodec``, so the adapter
+/// proves the static/`axoloty/1`/CBOR leg reaches the same operations, state,
+/// and structured rejections as the host/`coaty/3`/JSON leg.
+struct ProfileStaticTraceReplayAdapter: TraceReplayAdapter {
+    /// The wire profile this adapter binds at composition time.
+    let profile: WireProfile
+    /// Per-step payload bytes, keyed by ``TraceStep/sequence``.
+    let payloadOverride: [Int: [UInt8]]
+    /// When false, skip the expected-observation assertion. See
+    /// ``HostTraceReplayAdapter/assertExpected``.
+    var assertExpected = true
+
+    func replay(_ trace: ProtocolTrace) async throws -> TraceRun {
+        try StaticTraceReplayAdapter.runOnLargeStack {
+            var replay = try SharedProtocolTraceReplay<16>(
+                trace: trace,
+                profile: profile,
+                payloadOverride: payloadOverride,
+                assertExpected: assertExpected
+            )
+            var sink = InlineProtocolActionSink<16>()
+            var verifier: StaticTraceVerifier<16>? = try StaticTraceVerifier<16>(
+                trace: trace,
+                profile: profile,
+                payloadOverride: payloadOverride
+            )
+            return try replay.replay(trace, sink: &sink, staticVerifier: &verifier)
+        }
     }
 }
 
@@ -141,14 +224,20 @@ private struct HostRuntimeTraceReplay: RuntimeTraceDriver {
     private let trace: ProtocolTrace
     private let runtime: AxolotyRuntime
     private let transport: any RuntimeTraceCarrier
+    private let assertExpected: Bool
     private var driverState = TraceState()
     private var driverLabels = TraceLabels()
     private var driverStarted = false
     private var eventReceipts: RuntimeEventReceiptQueue?
 
-    init(trace: ProtocolTrace, transport: any RuntimeTraceCarrier = HostTraceTransport()) throws {
+    init(
+        trace: ProtocolTrace,
+        transport: any RuntimeTraceCarrier = HostTraceTransport(),
+        assertExpected: Bool = true
+    ) throws {
         self.trace = trace
         self.transport = transport
+        self.assertExpected = assertExpected
         // A non-zero runtime identity is required by the protocol routing-key
         // boundary.  Keeping it deterministic makes host traces reproducible.
         let sourceID = Self.identity("trace-runtime")
@@ -228,9 +317,11 @@ private struct HostRuntimeTraceReplay: RuntimeTraceDriver {
                 labels.learn(input: setupStep.input)
                 let (receipt, projection) = try await applyRuntime(setupStep)
                 let observation = Self.observation(receipt: receipt, projection: projection, step: setupStep, labels: labels)
-                guard observation == setupStep.expected else {
-                    await runtime.close()
-                    throw TraceReplayError.expectedMismatch(traceID: trace.id, sequence: setupStep.sequence)
+                if assertExpected {
+                    guard observation == setupStep.expected else {
+                        await runtime.close()
+                        throw TraceReplayError.expectedMismatch(traceID: trace.id, sequence: setupStep.sequence)
+                    }
                 }
                 if observation.rejection == nil { state = observation.nextState }
             }
@@ -250,9 +341,11 @@ private struct HostRuntimeTraceReplay: RuntimeTraceDriver {
                 step: step,
                 labels: labels
             )
-            guard observation == step.expected else {
-                await runtime.close()
-                throw TraceReplayError.expectedMismatch(traceID: trace.id, sequence: step.sequence)
+            if assertExpected {
+                guard observation == step.expected else {
+                    await runtime.close()
+                    throw TraceReplayError.expectedMismatch(traceID: trace.id, sequence: step.sequence)
+                }
             }
             if observation.rejection == nil { state = observation.nextState }
             observations.append(observation)
@@ -475,14 +568,25 @@ fileprivate struct TraceLabels {
 /// profile verifier.
 fileprivate struct SharedProtocolTraceReplay<let capacity: Int>: ~Copyable {
     private var processor: ProtocolProcessor<capacity>
+    private let wireInputs: TraceWireInputs
+    private let assertExpected: Bool
 
-    init(trace: ProtocolTrace) throws {
+    init(
+        trace: ProtocolTrace,
+        profile: WireProfile = .coaty3JSON,
+        payloadOverride: [Int: [UInt8]] = [:],
+        assertExpected: Bool = true
+    ) throws {
+        let wireInputs = TraceWireInputs(profile: profile, payloadOverride: payloadOverride)
+        self.wireInputs = wireInputs
+        self.assertExpected = assertExpected
         guard let firstStep = trace.setup.first ?? trace.steps.first else {
-            self.processor = ProtocolProcessor<capacity>()
+            self.processor = ProtocolProcessor<capacity>(wireCodec: wireInputs.codec)
             return
         }
         self.processor = ProtocolProcessor<capacity>(
             capabilities: try Self.capabilities(firstStep.capabilities.supportedFamilies),
+            wireCodec: wireInputs.codec,
             maximumPayloadBytes: firstStep.limits.maximumPayloadBytes,
             maximumObjects: firstStep.limits.maximumObjects,
             maximumPendingCorrelations: firstStep.limits.maximumPendingCorrelations
@@ -512,11 +616,11 @@ fileprivate struct SharedProtocolTraceReplay<let capacity: Int>: ~Copyable {
         if let seedStep {
             labels.learn(state: state)
             for objectID in state.activeObjectIDs {
-                try Self.seedObject(objectID, processor: &processor, sink: &sink, time: seedStep.timeMilliseconds)
+                try Self.seedObject(objectID, routePrefix: wireInputs.routePrefix, processor: &processor, sink: &sink, time: seedStep.timeMilliseconds)
                 sink.removeAll()
             }
             if let correlationID = state.pendingCorrelationIDs.first {
-                let request = Self.requestSeed(for: seedStep.input.family)
+                let request = Self.requestSeed(for: seedStep.input.family, profile: wireInputs.profile)
                 try Self.withBorrowedPayload(request.payload) { payload in
                     let operation = try ProtocolLocalOperation(
                         capability: request.capability,
@@ -541,11 +645,13 @@ fileprivate struct SharedProtocolTraceReplay<let capacity: Int>: ~Copyable {
         for setupStep in trace.setup {
             guard setupStep.priorState == state else { throw TraceReplayError.stateMismatch(traceID: trace.id, sequence: setupStep.sequence) }
             labels.learn(input: setupStep.input)
-            let (outcome, ownedActions) = try Self.process(setupStep, processor: &processor, sink: &sink)
+            let (outcome, ownedActions) = try Self.process(setupStep, wireInputs: wireInputs, processor: &processor, sink: &sink)
             processor.copyState(into: &projection)
             let generation = processor.state.generation
             let observation = Self.observation(for: outcome, step: setupStep, projection: projection, generation: generation, actions: ownedActions, labels: labels)
-            guard observation == setupStep.expected else { throw TraceReplayError.expectedMismatch(traceID: trace.id, sequence: setupStep.sequence) }
+            if assertExpected {
+                guard observation == setupStep.expected else { throw TraceReplayError.expectedMismatch(traceID: trace.id, sequence: setupStep.sequence) }
+            }
             if staticVerifier != nil {
                 let staticObservation = try staticVerifier!.process(step: setupStep, labels: labels)
                 guard staticObservation == observation else {
@@ -563,11 +669,11 @@ fileprivate struct SharedProtocolTraceReplay<let capacity: Int>: ~Copyable {
                 // Materialize initial state once through the production
                 // Interface; later steps exercise the same processor state.
                 for objectID in state.activeObjectIDs {
-                    try Self.seedObject(objectID, processor: &processor, sink: &sink, time: step.timeMilliseconds)
+                    try Self.seedObject(objectID, routePrefix: wireInputs.routePrefix, processor: &processor, sink: &sink, time: step.timeMilliseconds)
                     sink.removeAll()
                 }
                 if let correlationID = state.pendingCorrelationIDs.first {
-                    let request = Self.requestSeed(for: trace.steps.first?.input.family ?? .resolve)
+                    let request = Self.requestSeed(for: trace.steps.first?.input.family ?? .resolve, profile: wireInputs.profile)
                     try Self.withBorrowedPayload(request.payload) { payload in
                         let operation = try ProtocolLocalOperation(
                             capability: request.capability,
@@ -587,11 +693,13 @@ fileprivate struct SharedProtocolTraceReplay<let capacity: Int>: ~Copyable {
                 if staticVerifier != nil { try staticVerifier!.seed(state: state, time: step.timeMilliseconds) }
                 seeded = true
             }
-            let (outcome, ownedActions) = try Self.process(step, processor: &processor, sink: &sink)
+            let (outcome, ownedActions) = try Self.process(step, wireInputs: wireInputs, processor: &processor, sink: &sink)
             processor.copyState(into: &projection)
             let generation = processor.state.generation
             let observation = Self.observation(for: outcome, step: step, projection: projection, generation: generation, actions: ownedActions, labels: labels)
-            guard observation == step.expected else { throw TraceReplayError.expectedMismatch(traceID: trace.id, sequence: step.sequence) }
+            if assertExpected {
+                guard observation == step.expected else { throw TraceReplayError.expectedMismatch(traceID: trace.id, sequence: step.sequence) }
+            }
             if staticVerifier != nil {
                 let staticObservation = try staticVerifier!.process(step: step, labels: labels)
                 guard staticObservation == observation else {
@@ -605,9 +713,9 @@ fileprivate struct SharedProtocolTraceReplay<let capacity: Int>: ~Copyable {
         return TraceRun(traceID: trace.id, observations: observations)
     }
 
-    fileprivate static func seedObject<S: ~Copyable & ProtocolActionSink>(_ name: String, processor: inout ProtocolProcessor<capacity>, sink: inout S, time: UInt64) throws {
+    fileprivate static func seedObject<S: ~Copyable & ProtocolActionSink>(_ name: String, routePrefix: String, processor: inout ProtocolProcessor<capacity>, sink: inout S, time: UInt64) throws {
         let object = Self.identity(name)
-        let topic = "coaty/3/trace/ADV/\(Self.uuidText(object))"
+        let topic = "\(routePrefix)/trace/ADV/\(Self.uuidText(object))"
         // Seed through the same validated Advertise path as the trace step.
         // An empty object is syntactically JSON but is not an accepted
         // AdvertiseWireData value, which would leave a following Deadvertise
@@ -618,7 +726,7 @@ fileprivate struct SharedProtocolTraceReplay<let capacity: Int>: ~Copyable {
         }
     }
 
-    fileprivate static func process<S: ~Copyable & TraceReplaySink>(_ step: TraceStep, processor: inout ProtocolProcessor<capacity>, sink: inout S) throws -> (ProtocolProcessOutcome, [OwnedProtocolAction]) {
+    fileprivate static func process<S: ~Copyable & TraceReplaySink>(_ step: TraceStep, wireInputs: TraceWireInputs, processor: inout ProtocolProcessor<capacity>, sink: inout S) throws -> (ProtocolProcessOutcome, [OwnedProtocolAction]) {
         let input = step.input
         let source = Self.identity(input.objectID ?? "trace-source")
         let capabilityValue = Self.capability(input.family)
@@ -629,9 +737,10 @@ fileprivate struct SharedProtocolTraceReplay<let capacity: Int>: ~Copyable {
             ?? (capabilityValue.isOneWay ? nil : Self.identity("malformed-correlation"))
         let code = input.family.rawValue
         let correlationText = correlation.map(Self.uuidText)
-        let topic = "coaty/3/trace/\(code)/\(Self.uuidText(source))" + (correlationText.map { "/\($0)" } ?? "")
+        let topic = "\(wireInputs.routePrefix)/trace/\(code)/\(Self.uuidText(source))" + (correlationText.map { "/\($0)" } ?? "")
+        let payloadBytes = wireInputs.payload(for: step)
         if input.direction == .outbound {
-            return try Self.withBorrowedPayload(input.fixturePayload) { payload in
+            return try Self.withBorrowedPayload(payloadBytes) { payload in
                 let operation = try ProtocolLocalOperation(
                     capability: capabilityValue, sourceID: source, correlationID: correlation,
                     payload: payload,
@@ -641,7 +750,7 @@ fileprivate struct SharedProtocolTraceReplay<let capacity: Int>: ~Copyable {
                 return (outcome, Self.copyActions(sink))
             }
         }
-        return try Self.withBorrowed(topic: topic, payload: input.fixturePayload) { frame in
+        return try Self.withBorrowed(topic: topic, payload: payloadBytes) { frame in
             let classifier = TraceClassifier(classification: input.routeClassification == .external ? .external : (input.routeClassification == .coaty ? .coaty : .coaty))
             let outcome = processor.processInbound(.profile(frame), nowMS: UInt32(step.timeMilliseconds), classifier: classifier, sink: &sink)
             return (outcome, Self.copyActions(sink))
@@ -733,18 +842,51 @@ fileprivate struct SharedProtocolTraceReplay<let capacity: Int>: ~Copyable {
             }
         }
     }
+    private static func withBorrowed<R>(topic: String, payload: [UInt8], _ body: (BorrowedProtocolFrame) throws -> R) throws -> R {
+        let topicBytes = Array(topic.utf8)
+        return try topicBytes.withUnsafeBufferPointer { topicBuffer in
+            try payload.withUnsafeBufferPointer { payloadBuffer in
+                let view = TopicView(topicBytes: topicBuffer.baseAddress!, length: topicBuffer.count)
+                return try body(try BorrowedProtocolFrame(topic: view, payload: ByteSlice(bytes: payloadBuffer.baseAddress!, length: payloadBuffer.count)))
+            }
+        }
+    }
     private static func withBorrowedPayload<R>(_ payload: String, _ body: (ByteSlice) throws -> R) throws -> R {
         let bytes = Array(payload.utf8)
         return try bytes.withUnsafeBufferPointer { try body(ByteSlice(bytes: $0.baseAddress!, length: $0.count)) }
     }
-    private static func requestSeed(for responseFamily: TraceEventFamily) -> (capability: ProtocolCapability, payload: String) {
+    private static func withBorrowedPayload<R>(_ payload: [UInt8], _ body: (ByteSlice) throws -> R) throws -> R {
+        try payload.withUnsafeBufferPointer { try body(ByteSlice(bytes: $0.baseAddress!, length: $0.count)) }
+    }
+    private static func requestSeed(for responseFamily: TraceEventFamily, profile: WireProfile) -> (capability: ProtocolCapability, payload: [UInt8]) {
+        // The CBOR bytes encode the same logical request as the JSON text.
+        // Seeding runs through the production Interface, which validates the
+        // payload with the composed codec, so the seed must use the profile's
+        // encoding rather than reusing the JSON fixture text.
         switch responseFamily {
-        case .resolve: return (.discover, "{}")
-        case .retrieve: return (.query, "{}")
-        case .complete: return (.update, "{\"object\":{\"id\":\"x\"}}")
-        case .return: return (.call, "{\"parameters\":{\"value\":1},\"filter\":null}")
-        default: return (.discover, "{}")
+        case .resolve: return (.discover, Self.seedBytes("{}", cbor: [0xA0], profile: profile))
+        case .retrieve: return (.query, Self.seedBytes("{}", cbor: [0xA0], profile: profile))
+        case .complete: return (.update, Self.seedBytes(
+            "{\"object\":{\"id\":\"x\"}}",
+            cbor: [0xA1, 0x66, 0x6F, 0x62, 0x6A, 0x65, 0x63, 0x74, 0xA0],
+            profile: profile
+        ))
+        case .return: return (.call, Self.seedBytes(
+            "{\"parameters\":{\"value\":1},\"filter\":null}",
+            cbor: [
+                0xA2,
+                0x6A, 0x70, 0x61, 0x72, 0x61, 0x6D, 0x65, 0x74, 0x65, 0x72, 0x73,
+                0xA1, 0x65, 0x76, 0x61, 0x6C, 0x75, 0x65, 0x01,
+                0x66, 0x66, 0x69, 0x6C, 0x74, 0x65, 0x72, 0xF6
+            ],
+            profile: profile
+        ))
+        default: return (.discover, Self.seedBytes("{}", cbor: [0xA0], profile: profile))
         }
+    }
+
+    private static func seedBytes(_ json: String, cbor: [UInt8], profile: WireProfile) -> [UInt8] {
+        profile == .axoloty1CBOR ? cbor : Array(json.utf8)
     }
     fileprivate static func capability(_ family: TraceEventFamily) -> ProtocolCapability {
         switch family { case .advertise: return .advertise; case .deadvertise: return .deadvertise; case .channel: return .channel; case .associate: return .associate; case .ioValue: return .ioValue; case .discover: return .discover; case .resolve: return .resolve; case .query: return .query; case .retrieve: return .retrieve; case .update: return .update; case .complete: return .complete; case .call: return .call; case .return: return .returnEvent }
@@ -807,8 +949,15 @@ fileprivate struct SharedProtocolTraceReplay<let capacity: Int>: ~Copyable {
 fileprivate struct StaticTraceVerifier<let traceCapacity: Int>: ~Copyable {
     private var runtime: StaticRuntimeESP32C6
     private let firstFamily: TraceEventFamily
+    private let wireInputs: TraceWireInputs
 
-    init(trace: ProtocolTrace) throws {
+    init(
+        trace: ProtocolTrace,
+        profile: WireProfile = .coaty3JSON,
+        payloadOverride: [Int: [UInt8]] = [:]
+    ) throws {
+        let wireInputs = TraceWireInputs(profile: profile, payloadOverride: payloadOverride)
+        self.wireInputs = wireInputs
         let firstStep = trace.setup.first ?? trace.steps.first
         firstFamily = firstStep?.input.family ?? .resolve
         let capabilities = try SharedProtocolTraceReplay<traceCapacity>.capabilities(
@@ -818,16 +967,17 @@ fileprivate struct StaticTraceVerifier<let traceCapacity: Int>: ~Copyable {
             registryID: ObjectID(uuid: Self.identity("trace-static-registry")),
             capabilities: capabilities,
             maximumObjects: firstStep?.limits.maximumObjects ?? 16,
-            maximumPendingCorrelations: firstStep?.limits.maximumPendingCorrelations ?? 16
+            maximumPendingCorrelations: firstStep?.limits.maximumPendingCorrelations ?? 16,
+            wireCodec: wireInputs.codec
         )
     }
 
     mutating func seed(state: TraceState, time: UInt64) throws {
         for objectID in state.activeObjectIDs {
-            try seedObject(objectID, time: time)
+            try seedObject(objectID, routePrefix: wireInputs.routePrefix, time: time)
         }
         if let correlationID = state.pendingCorrelationIDs.first {
-            let request = Self.requestSeed(for: firstFamily)
+            let request = Self.requestSeed(for: firstFamily, profile: wireInputs.profile)
             try Self.withBorrowedPayload(request.payload) { payload in
                 let operation = try ProtocolLocalOperation(
                     capability: request.capability,
@@ -910,9 +1060,9 @@ fileprivate struct StaticTraceVerifier<let traceCapacity: Int>: ~Copyable {
         }
     }
 
-    private mutating func seedObject(_ name: String, time: UInt64) throws {
+    private mutating func seedObject(_ name: String, routePrefix: String, time: UInt64) throws {
         let object = Self.identity(name)
-        let topic = "coaty/3/trace/ADV/\(Self.uuidText(object))"
+        let topic = "\(routePrefix)/trace/ADV/\(Self.uuidText(object))"
         let payload = "{\"object\":{\"objectId\":\"\(Self.uuidText(object))\",\"coreType\":\"CoatyObject\",\"objectType\":\"trace.Object\",\"name\":\"\(name)\"}}"
         _ = try Self.withBorrowed(topic: topic, payload: payload) { frame in
             runtime.receive(frame, nowMS: UInt32(time))
@@ -926,11 +1076,12 @@ fileprivate struct StaticTraceVerifier<let traceCapacity: Int>: ~Copyable {
         let capability = SharedProtocolTraceReplay<traceCapacity>.capability(input.family)
         let correlation = input.correlationID.map(Self.identity)
             ?? (capability.isOneWay ? nil : Self.identity("malformed-correlation"))
-        let topic = "coaty/3/trace/\(input.family.rawValue)/\(Self.uuidText(source))"
+        let topic = "\(wireInputs.routePrefix)/trace/\(input.family.rawValue)/\(Self.uuidText(source))"
             + (correlation.map { "/\(Self.uuidText($0))" } ?? "")
+        let payloadBytes = wireInputs.payload(for: step)
         let outcome: ProtocolProcessOutcome
         if input.direction == .outbound {
-            outcome = try Self.withBorrowedPayload(input.fixturePayload) { payload in
+            outcome = try Self.withBorrowedPayload(payloadBytes) { payload in
                 let operation = try ProtocolLocalOperation(
                     capability: capability,
                     sourceID: source,
@@ -941,7 +1092,7 @@ fileprivate struct StaticTraceVerifier<let traceCapacity: Int>: ~Copyable {
                 return runtime.send(operation, nowMS: UInt32(step.timeMilliseconds))
             }
         } else {
-            outcome = try Self.withBorrowed(topic: topic, payload: input.fixturePayload) { frame in
+            outcome = try Self.withBorrowed(topic: topic, payload: payloadBytes) { frame in
                 let classifier = StaticTraceClassifier(
                     classification: input.routeClassification == .external ? .external : .coaty
                 )
@@ -995,6 +1146,19 @@ fileprivate struct StaticTraceVerifier<let traceCapacity: Int>: ~Copyable {
         }
     }
 
+    private static func withBorrowed<R>(topic: String, payload: [UInt8], _ body: (BorrowedProtocolFrame) throws -> R) throws -> R {
+        let topicBytes = Array(topic.utf8)
+        return try topicBytes.withUnsafeBufferPointer { topicBuffer in
+            try payload.withUnsafeBufferPointer { payloadBuffer in
+                let view = TopicView(topicBytes: topicBuffer.baseAddress!, length: topicBuffer.count)
+                return try body(try BorrowedProtocolFrame(
+                    topic: view,
+                    payload: ByteSlice(bytes: payloadBuffer.baseAddress!, length: payloadBuffer.count)
+                ))
+            }
+        }
+    }
+
     private static func withBorrowedPayload<R>(_ payload: String, _ body: (ByteSlice) throws -> R) throws -> R {
         let bytes = Array(payload.utf8)
         return try bytes.withUnsafeBufferPointer {
@@ -1002,14 +1166,37 @@ fileprivate struct StaticTraceVerifier<let traceCapacity: Int>: ~Copyable {
         }
     }
 
-    private static func requestSeed(for family: TraceEventFamily) -> (capability: ProtocolCapability, payload: String) {
-        switch family {
-        case .resolve: return (.discover, "{}")
-        case .retrieve: return (.query, "{}")
-        case .complete: return (.update, "{\"object\":{\"id\":\"x\"}}")
-        case .return: return (.call, "{\"parameters\":{\"value\":1},\"filter\":null}")
-        default: return (.discover, "{}")
+    private static func withBorrowedPayload<R>(_ payload: [UInt8], _ body: (ByteSlice) throws -> R) throws -> R {
+        try payload.withUnsafeBufferPointer {
+            try body(ByteSlice(bytes: $0.baseAddress!, length: $0.count))
         }
+    }
+
+    private static func requestSeed(for family: TraceEventFamily, profile: WireProfile) -> (capability: ProtocolCapability, payload: [UInt8]) {
+        switch family {
+        case .resolve: return (.discover, Self.seedBytes("{}", cbor: [0xA0], profile: profile))
+        case .retrieve: return (.query, Self.seedBytes("{}", cbor: [0xA0], profile: profile))
+        case .complete: return (.update, Self.seedBytes(
+            "{\"object\":{\"id\":\"x\"}}",
+            cbor: [0xA1, 0x66, 0x6F, 0x62, 0x6A, 0x65, 0x63, 0x74, 0xA0],
+            profile: profile
+        ))
+        case .return: return (.call, Self.seedBytes(
+            "{\"parameters\":{\"value\":1},\"filter\":null}",
+            cbor: [
+                0xA2,
+                0x6A, 0x70, 0x61, 0x72, 0x61, 0x6D, 0x65, 0x74, 0x65, 0x72, 0x73,
+                0xA1, 0x65, 0x76, 0x61, 0x6C, 0x75, 0x65, 0x01,
+                0x66, 0x66, 0x69, 0x6C, 0x74, 0x65, 0x72, 0xF6
+            ],
+            profile: profile
+        ))
+        default: return (.discover, Self.seedBytes("{}", cbor: [0xA0], profile: profile))
+        }
+    }
+
+    private static func seedBytes(_ json: String, cbor: [UInt8], profile: WireProfile) -> [UInt8] {
+        profile == .axoloty1CBOR ? cbor : Array(json.utf8)
     }
 
     private static func identity(_ value: String) -> UUID16 {

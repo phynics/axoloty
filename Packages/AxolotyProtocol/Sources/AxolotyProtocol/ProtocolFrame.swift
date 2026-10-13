@@ -74,7 +74,14 @@ public struct BorrowedProtocolFrame: ~Sendable {
         maximumTopicLength: Int = WireBufferConfig.maxTopicLength
     ) throws(ProtocolError) {
         do {
-            try topic.validate(maximumTopicLength: maximumTopicLength)
+            // The topic prefix is the authoritative profile signal. A
+            // recognized `axoloty/1` route validates the same bounded layout
+            // with the CBOR profile; an unknown prefix stays on the sealed
+            // `coaty/3` shape and is rejected here.
+            try topic.validate(
+                maximumTopicLength: maximumTopicLength,
+                profile: topic.profile ?? .coaty3JSON
+            )
         } catch {
             throw ProtocolError(.malformedFrame)
         }
