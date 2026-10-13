@@ -22,6 +22,27 @@ This is what makes the JSON number and CBOR value cases below safe. Axoloty
 never applies a generic RFC 8949 §6.1 or §6.2 conversion that could silently
 lose information.
 
+## Host-generated envelopes
+
+The host runtime generates Identity Advertise and Deadvertise, IO endpoint
+Advertise, and the conformance error and empty envelopes. Each envelope is
+built through the encoder of the profile that carries it. `coaty/3` keeps its
+sealed JSON bytes; `axoloty/1` is written field by field through `WireWriter`,
+so a UUID becomes a tag-37 byte string, a string becomes a UTF-8 text string,
+and an integer keeps its exact value. The host runtime has no generic
+JSON-to-CBOR transcode on this path.
+
+The object model stores IO endpoint metadata as sealed `coaty/3` JSON. For
+`axoloty/1`, the host runtime re-encodes the fixed first-party metadata schema
+from that JSON, field by field. It rejects rather than drops or coerces:
+
+- an unknown top-level field is rejected with `ProtocolError.malformedPayload`,
+  because silently losing a caller field would change the advertised object;
+- a number that is fractional or that does not fit `Int` exactly is rejected
+  with `ProtocolError.malformedPayload` instead of becoming a `float64` or an
+  infinity;
+- an explicit `null` for an optional field is preserved as CBOR `null`.
+
 ## Value classes
 
 ### Numbers

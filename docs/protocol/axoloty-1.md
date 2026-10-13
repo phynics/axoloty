@@ -201,6 +201,7 @@ specific reasons are `cborIndefiniteLength`, `cborInvalidAdditionalInfo`,
 | Bounded deterministic CBOR reader and writer | Implemented |
 | `WireDecodable`/`WireEncodable` DTO codec seam (format-neutral, [ADR 0011](../adr/0011-codec-format-seam.md)) | Implemented |
 | Raw/custom CBOR payload retention | Implemented ([wire-value-mapping.md](../wire-value-mapping.md)) |
+| Host-generated envelopes through the profile-aware writer | Implemented ([wire-value-mapping.md](../wire-value-mapping.md)) |
 | Zenoh binding on `axoloty/1` only | Implemented |
 | Golden `coaty/3`/`axoloty/1` corpus with independent CBOR decode | Implemented |
 | Trace-parity gate | Implemented |
@@ -208,7 +209,13 @@ specific reasons are `cborIndefiniteLength`, `cborInvalidAdditionalInfo`,
 
 Every row is implemented under epic #977. `AxolotyWire` ships the CBOR
 primitives and `axoloty/1` routes with RFC 8949 Appendix A conformance
-vectors. The frozen golden corpus under
+vectors. The host runtime builds its generated Identity Advertise and
+Deadvertise, IO endpoint Advertise, and conformance error and empty envelopes
+through the same profile-aware writer; it does not transcode `coaty/3` JSON to
+CBOR. The IO endpoint metadata re-encoder walks the fixed first-party schema
+and rejects an unknown field, a fractional number, or an integer that does not
+fit `Int` exactly with `ProtocolError.malformedPayload`. The frozen golden
+corpus under
 `Tests/AxolotyTests/WireCompatibility/Golden` covers every event family and
 DTO field-presence variant, and the wire tool independently decodes every CBOR
 golden with `cbor-x`. The `wire-cbor` tier runs the golden corpus and the

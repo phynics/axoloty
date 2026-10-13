@@ -22,19 +22,24 @@ enum RuntimeLifecyclePayload {
         _ identity: RuntimeIdentity,
         profile: WireProfile = .coaty3JSON
     ) throws(ProtocolError) -> [UInt8] {
-        let object: [String: Any] = [
-            "objectId": CoatyRoute.uuidString(identity.id),
-            "coreType": "Identity",
-            "objectType": "coaty.Identity",
-            "name": identity.name
-        ]
-        guard let json = try? JSONSerialization.data(
-            withJSONObject: ["object": object],
-            options: [.sortedKeys]
-        ) else {
-            throw ProtocolError(.malformedPayload)
+        switch profile {
+        case .coaty3JSON:
+            let object: [String: Any] = [
+                "objectId": CoatyRoute.uuidString(identity.id),
+                "coreType": "Identity",
+                "objectType": "coaty.Identity",
+                "name": identity.name
+            ]
+            guard let json = try? JSONSerialization.data(
+                withJSONObject: ["object": object],
+                options: [.sortedKeys]
+            ) else {
+                throw ProtocolError(.malformedPayload)
+            }
+            return Array(json)
+        case .axoloty1CBOR:
+            return try RuntimeWirePayload.cborAdvertise(identity: identity)
         }
-        return try RuntimeWirePayload.encode(json: Array(json), profile: profile)
     }
 
     /// Encodes a deadvertise payload for one identity.
@@ -48,7 +53,7 @@ enum RuntimeLifecyclePayload {
         _ identity: RuntimeIdentity,
         profile: WireProfile = .coaty3JSON
     ) throws(ProtocolError) -> [UInt8] {
-        try deadvertise(uuid: CoatyRoute.uuidString(identity.id), profile: profile)
+        try RuntimeWirePayload.deadvertise(uuid: identity.id, profile: profile)
     }
 
     /// Encodes a deadvertise payload for one object identifier.
@@ -62,11 +67,6 @@ enum RuntimeLifecyclePayload {
         objectID: ObjectID,
         profile: WireProfile = .coaty3JSON
     ) throws(ProtocolError) -> [UInt8] {
-        try deadvertise(uuid: CoatyRoute.uuidString(objectID.uuid), profile: profile)
-    }
-
-    private static func deadvertise(uuid: String, profile: WireProfile) throws(ProtocolError) -> [UInt8] {
-        let json = Array("{\"objectIds\":[\"\(uuid)\"]}".utf8)
-        return try RuntimeWirePayload.encode(json: json, profile: profile)
+        try RuntimeWirePayload.deadvertise(uuid: objectID.uuid, profile: profile)
     }
 }

@@ -10,29 +10,42 @@ extension ProtocolExecutor {
         code: UInt16,
         message: String
     ) -> [UInt8]? {
-        guard let error = try? JSONSerialization.data(
-            withJSONObject: ["code": code, "message": message],
-            options: [.sortedKeys]
-        ) else { return nil }
         let profile = wireProfile
-        guard let errorBytes = try? RuntimeWirePayload.encode(json: Array(error), profile: profile) else {
-            return nil
+        let errorBytes: [UInt8]
+        let emptyObject: [UInt8]
+        let emptyArray: [UInt8]
+        switch profile {
+        case .coaty3JSON:
+            guard let error = try? JSONSerialization.data(
+                withJSONObject: ["code": code, "message": message],
+                options: [.sortedKeys]
+            ) else { return nil }
+            errorBytes = Array(error)
+            emptyObject = Array("{}".utf8)
+            emptyArray = Array("[]".utf8)
+        case .axoloty1CBOR:
+            guard let error = try? RuntimeWirePayload.cborErrorObject(code: code, message: message),
+                  let object = try? RuntimeWirePayload.emptyObject(profile: .axoloty1CBOR),
+                  let array = try? RuntimeWirePayload.emptyArray(profile: .axoloty1CBOR) else {
+                return nil
+            }
+            errorBytes = error
+            emptyObject = object
+            emptyArray = array
         }
-        let emptyObject = try? RuntimeWirePayload.encode(json: Array("{}".utf8), profile: profile)
-        let emptyArray = try? RuntimeWirePayload.encode(json: Array("[]".utf8), profile: profile)
         let event: OwnedWireEvent?
         switch capability {
         case .resolve:
             event = try? .resolve(OwnedResolveWireData(
                 profile: profile,
-                object: emptyObject ?? [],
+                object: emptyObject,
                 relatedObjects: nil,
                 privateData: errorBytes
             ))
         case .retrieve:
             event = try? .retrieve(OwnedRetrieveWireData(
                 profile: profile,
-                objects: emptyArray ?? [],
+                objects: emptyArray,
                 privateData: errorBytes
             ))
         case .complete:
