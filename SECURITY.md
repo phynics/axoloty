@@ -68,9 +68,10 @@ Out of scope:
 - vulnerabilities in third-party dependencies. Report them upstream, and tell
   us when Axoloty is affected.
 - experimental products (`AxolotyZenoh`, `AxolotyZenohCore`,
-  `AxolotyCoatyModels`, `AxolotyIoRouting`, `AxolotySensorThings*`, and the
-  first-party `Apps/` and `Tools/` products) unless the finding also affects a
-  frozen product.
+  `AxolotyCoatyModels`, `AxolotyIoRouting`, `AxolotySensorThings*`, the
+  `Tools/` harness, and the runtime/debug products in the sibling
+  `phynics/axoloty-debug` package) unless the finding also affects a frozen
+  product.
 - firmware and device integration in `phynics/axoloty-embedded`.
 
 Denial-of-service and resource-exhaustion findings are in scope when they

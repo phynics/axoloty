@@ -389,18 +389,21 @@ test("tool launchers share the isolated Tools bootstrap", () => {
     assert.match(launcher, /axoloty-cli/);
     assert.match(launcher, new RegExp(`\\b${executable}\\b`));
   }
+
+  // The runtime/debug products are served by their own launcher.
+  assert.match(dockerfile, /COPY \.devcontainer\/axoloty-debug \/opt\/axoloty\/bin\/axoloty-debug/);
+  assert.match(inputs, /\.devcontainer\/axoloty-debug/);
+  const debugLauncher = fs.readFileSync(".devcontainer/axoloty-debug", "utf8");
+  assert.match(debugLauncher, /--package-path \/axoloty-debug/);
+  assert.match(debugLauncher, /axoloty-debug "\$@"/);
 });
 
-test("service launchers prepare MCP before tooling readiness starts", () => {
-  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "axoloty-service-launcher-"));
+test("the axoloty-debug launcher prepares MCP before the service starts", () => {
+  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "axoloty-debug-launcher-"));
   const fakeSwift = path.join(temporary, "swift");
   const swiftLog = path.join(temporary, "swift.log");
   const runEnvironment = path.join(temporary, "run-environment");
-  const binaryDirectory = path.join(temporary, "root build with spaces", "debug");
-  const rootPackagePath = path.join(temporary, "root package with spaces");
-  const rootBuildPath = path.join(temporary, "root scratch with spaces");
-  const rootCachePath = path.join(temporary, "root cache with spaces");
-  fs.mkdirSync(rootPackagePath, { recursive: true });
+  const binaryDirectory = path.join(temporary, "debug build with spaces", "debug");
   fs.writeFileSync(fakeSwift, [
     "#!/bin/sh",
     "set -eu",
@@ -444,15 +447,12 @@ test("service launchers prepare MCP before tooling readiness starts", () => {
     FAKE_BUILD_STATUS: "0",
     FAKE_SKIP_PRODUCT: "0",
     AXOLOTY_MCP_EXECUTABLE: "",
-    AXOLOTY_ROOT_PACKAGE_PATH: rootPackagePath,
-    AXOLOTY_ROOT_BUILD_DIR: rootBuildPath,
-    AXOLOTY_ROOT_CACHE_PATH: rootCachePath,
-    TOOLING_BUILD_DIR: path.join(temporary, "tooling scratch"),
-    SPM_CACHE_DIR: path.join(temporary, "tooling cache"),
+    DEBUG_BUILD_DIR: path.join(temporary, "debug scratch"),
+    SPM_CACHE_DIR: path.join(temporary, "debug cache"),
   };
   const runLauncher = (args, overrides = {}) => spawnSync(
     "sh",
-    [".devcontainer/axoloty-cli", "ax", ...args],
+    [".devcontainer/axoloty-debug", ...args],
     { cwd: ".", encoding: "utf8", env: { ...baseEnvironment, ...overrides } },
   );
   const readLog = () => fs.existsSync(swiftLog)
@@ -468,9 +468,9 @@ test("service launchers prepare MCP before tooling readiness starts", () => {
     assert.equal(successful.status, 0, `${successful.stdout}\n${successful.stderr}`);
     const successfulCalls = readLog();
     assert.equal(successfulCalls.length, 3, successfulCalls.join("\n"));
-    assert.match(successfulCalls[0], /build .*--product axoloty-mcp/);
+    assert.match(successfulCalls[0], /build .*--package-path \/axoloty-debug .*--product axoloty-mcp/);
     assert.match(successfulCalls[1], /build .*--show-bin-path/);
-    assert.match(successfulCalls[2], /run .* ax serve dev$/);
+    assert.match(successfulCalls[2], /run .* axoloty-debug serve dev$/);
     assert.equal(fs.readFileSync(runEnvironment, "utf8").trim(), `${binaryDirectory}/axoloty-mcp`);
 
     clearEvidence();
@@ -549,20 +549,6 @@ test("CI reuses stable, bounded Swift build cache namespaces", () => {
     ".build/ci/packages/*/out/PCH",
     ".build/ci/packages/*/out/SDKExplicitPrecompiledModules",
     ".build/ci/packages/*/out/v5",
-    ".build/ci/apps/.buildSystem_debug",
-    ".build/ci/apps/artifacts",
-    ".build/ci/apps/checkouts",
-    ".build/ci/apps/manifest.pif",
-    ".build/ci/apps/plugins",
-    ".build/ci/apps/prebuilts",
-    ".build/ci/apps/repositories",
-    ".build/ci/apps/workspace-state.json",
-    ".build/ci/apps/out/CompilationCache.noindex",
-    ".build/ci/apps/out/Intermediates.noindex",
-    ".build/ci/apps/out/ModuleCache.noindex",
-    ".build/ci/apps/out/PCH",
-    ".build/ci/apps/out/SDKExplicitPrecompiledModules",
-    ".build/ci/apps/out/v5",
   ];
   assert.deepEqual(workflowPathList("Restore Swift compiler cache"), compilerCachePaths);
   assert.deepEqual(workflowPathList("Save Swift compiler cache"), compilerCachePaths);

@@ -224,8 +224,8 @@ make serve-dev
 swift run --package-path Tools axoloty-tool check
 ```
 
-See [docs/services.md](./docs/services.md) for MQTT/MCP installation and
-transport details.
+See the [axoloty-debug services reference](https://github.com/phynics/axoloty-debug/blob/main/docs/services.md)
+for MQTT/MCP installation and transport details.
 
 ### MQTT object inspector
 

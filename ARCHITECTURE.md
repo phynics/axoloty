@@ -17,9 +17,9 @@ products, the separate `AxolotyMQTT` transport adapter, `AxolotyCoatyModels`
 convenience product, and optional `AxolotyIoRouting`, `AxolotySensorThingsModel`,
 and `AxolotySensorThings` products. The root package declares no executable
 products: the `Tools` package owns the `axoloty-tool`/`ax` orchestration
-harness, and the `Apps` package owns the `axoloty-inspect` inspector and
-`axoloty-mcp` server, so neither `swift-sdk` nor a development-tool
-dependency graph reaches a runtime consumer. The inherited class-object,
+harness, and the sibling `phynics/axoloty-debug` package owns the
+`axoloty-inspect` inspector and `axoloty-mcp` server, so neither `swift-sdk`
+nor a development-tool dependency graph reaches a runtime consumer. The inherited class-object,
 controller, manager, and SensorThings runtime hierarchy has been removed
 from active production targets.
 
@@ -220,7 +220,7 @@ Axoloty host runtime ----> AxolotyProtocol
 AxolotyMQTT (adapter) ----> Axoloty, AxolotyProtocol, AxolotyWire
 Embedded firmware -------> AxolotyStaticRuntime
 Optional products -------> supported Axoloty runtime and object APIs
-Tools (axoloty-tool/ax), Apps (axoloty-inspect/axoloty-mcp) -> supported Axoloty runtime APIs
+Tools (axoloty-tool/ax), axoloty-debug (axoloty-inspect/axoloty-mcp) -> supported Axoloty runtime APIs
 ```
 
 `AxolotyWire` owns wire syntax, codecs, validation, low-level object-envelope

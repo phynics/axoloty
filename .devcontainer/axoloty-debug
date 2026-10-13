@@ -24,8 +24,16 @@ if [ "${1:-}" = "serve" ] && { [ "${2:-}" = "mcp" ] || [ "${2:-}" = "dev" ]; } \
         --cache-path "$cache_path" \
         --disable-automatic-resolution \
         --show-bin-path)
-    mcp_bin_dir=$(CDPATH= cd -- "$mcp_bin_dir" && pwd)
-    export AXOLOTY_MCP_EXECUTABLE="$mcp_bin_dir/axoloty-mcp"
+    if ! mcp_bin_dir=$(CDPATH= cd -- "$mcp_bin_dir" && pwd); then
+        echo "axoloty-mcp binary directory was not found at $mcp_bin_dir after build" >&2
+        exit 70
+    fi
+    mcp_executable="$mcp_bin_dir/axoloty-mcp"
+    if [ ! -x "$mcp_executable" ]; then
+        echo "axoloty-mcp product was not found at $mcp_executable after build" >&2
+        exit 70
+    fi
+    export AXOLOTY_MCP_EXECUTABLE="$mcp_executable"
 fi
 
 exec swift run \
