@@ -739,10 +739,13 @@ func wireCaptureRunsEveryNodeThroughSupportedBridge() throws {
     #expect(result.exitCode == 0)
     let manifest = try JSONDecoder().decode(AxolotyCheckManifest.self, from: Data(result.standardOutput.utf8))
     #expect(manifest.results.allSatisfy { $0.status == .passed })
-    #expect(runner.commands.count == 13)
+    // Setup and the trailing project-context nodes (manifest generation and
+    // independent golden verification) run in the project; the capture nodes
+    // in between need the host runtime bridge.
+    #expect(runner.commands.count == 14)
     #expect(runner.commands.prefix(2).allSatisfy { $0.executionContext == .project })
-    #expect(runner.commands.dropFirst(2).dropLast().allSatisfy { $0.executionContext == .host })
-    #expect(runner.commands.last?.executionContext == .project)
+    #expect(runner.commands.dropFirst(2).dropLast(2).allSatisfy { $0.executionContext == .host })
+    #expect(runner.commands.suffix(2).allSatisfy { $0.executionContext == .project })
     #expect(clock.now - startedAt < .seconds(5))
 }
 
@@ -815,7 +818,8 @@ func wireCaptureForwardsInvocationScopedOutputToEveryNode() throws {
     #expect(result.exitCode == 0)
     #expect(runner.commands.allSatisfy { $0.environment["WIRE_OUTPUT_DIR"] == outputDirectory })
     #expect(runner.commands.allSatisfy { $0.environment["WIRE_RUN_ID"] == "concurrent-wire" })
-    #expect(runner.commands.last?.arguments == [
+    let manifestCommand = try #require(runner.commands.last { $0.arguments.contains("manifest") })
+    #expect(manifestCommand.arguments == [
         "Tests/Support/WireCompatibility/tool/dist/index.js",
         "manifest",
         outputDirectory,

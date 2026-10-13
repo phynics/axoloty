@@ -255,7 +255,14 @@ order, topic levels, QoS, and retain behavior must never be normalized away.
 Offline fixtures make PR feedback fast and preserve protocol evidence. Live
 tests are authoritative when a fixture and a pinned reference implementation
 disagree. Golden data is regenerated only in a dedicated, reviewed change that
-states the wire difference and the exact reference version.
+states the wire difference and the exact reference version. The
+`coaty/3`/`axoloty/1` corpus under
+`Tests/AxolotyTests/WireCompatibility/Golden` is regenerated with
+`npm run golden:generate --prefix Tests/Support/WireCompatibility/tool`.
+`make test-one FILTER='WireGoldenCorpusTests'` proves profile round-trip byte
+identity, and `npm run verify:golden --prefix
+Tests/Support/WireCompatibility/tool` independently decodes every CBOR golden
+with `cbor-x`.
 
 The CI `Live CoatyJS compatibility gate` (issue #457) enforces this record:
 protocol-affecting PRs must run the live suite to completion and upload the
