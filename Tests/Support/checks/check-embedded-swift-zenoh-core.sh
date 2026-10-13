@@ -11,7 +11,7 @@ set -eu
 
 root_dir=$(CDPATH= cd -- "$(dirname -- "$0")/../../.." && pwd)
 
-for tool in swift swiftc nm; do
+for tool in swift swiftc node nm; do
     command -v "$tool" >/dev/null 2>&1 || {
         echo "FAIL: $tool is required for the Embedded Swift Zenoh core check" >&2
         exit 1
@@ -42,6 +42,31 @@ esac
 mkdir -p -- "$scratch_parent"
 workdir=$(mktemp -d "$scratch_parent/run.XXXXXX")
 trap 'rm -rf -- "$workdir"' EXIT HUP INT TERM
+
+# The contract pins the JSON parser revision. AxolotyZenohCore links no
+# `_JSONCore` (ADR 0009), but the Zenoh package graph still resolves swift-json
+# through the root Axoloty package. Resolve the local lock and assert the
+# parser revision agrees, so a drifted Zenoh lock cannot pass this gate.
+echo "Resolving the locked AxolotyZenoh dependencies..."
+swift package resolve \
+    --package-path "$zenoh_package" \
+    --scratch-path "$workdir/swiftpm" \
+    --cache-path "$root_dir/.swiftpm-cache" \
+    --disable-automatic-resolution \
+    >"$workdir/resolve.log" 2>&1 || {
+    cat "$workdir/resolve.log" >&2
+    echo "FAIL: cannot resolve the locked AxolotyZenoh dependencies" >&2
+    exit 1
+}
+json_checkout="$workdir/swiftpm/checkouts/swift-json"
+expected_revision=$(node -e 'const fs=require("fs"); const value=JSON.parse(fs.readFileSync(process.argv[1], "utf8")); process.stdout.write(value.jsonCore ? value.jsonCore.revision : "");' "$root_dir/docs/embedded-consumer-contract.json")
+if [ -n "$expected_revision" ]; then
+    actual_revision=$(git -C "$json_checkout" rev-parse HEAD)
+    [ "$actual_revision" = "$expected_revision" ] || {
+        echo "FAIL: AxolotyZenoh locks swift-json $actual_revision; the embedded consumer contract pins $expected_revision" >&2
+        exit 1
+    }
+fi
 
 # AxolotyZenohCore carries the `axoloty/1` CBOR profile only, so the gate
 # compiles and links AxolotyWire without the `_JSONCore` parser module. The
