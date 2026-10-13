@@ -1,7 +1,6 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
 import Foundation
-import AxolotyDebug
 import AxolotyVersion
 
 /// Parses the stable command surface of the ``axoloty-tool`` executable.
@@ -13,7 +12,6 @@ public struct AxolotyCommandDispatcher: Sendable {
     private let version: String
     private let checkCommands: AxolotyCheckCommands
     private let wireCommands: AxolotyWireCommands
-    private let serveSession: AxolotyServeSession
     private let repositoryValidationCommands: AxolotyRepositoryValidationCommands
     private let releaseCommands: AxolotyReleaseCommands
     private let embeddedConsumerPreparation: AxolotyEmbeddedConsumerPreparation
@@ -127,10 +125,6 @@ public struct AxolotyCommandDispatcher: Sendable {
             planResolver: planResolution,
             executor: executor
         )
-        self.serveSession = AxolotyServeSession(
-            executableName: executableName,
-            environment: environment
-        )
         self.repositoryValidationCommands = AxolotyRepositoryValidationCommands(
             repositoryRoot: normalizedRepositoryRoot
         )
@@ -160,10 +154,7 @@ public struct AxolotyCommandDispatcher: Sendable {
     /// - Returns: Text streams and exit status for the requested command.
     public func run(arguments: [String]) -> AxolotyCommandResult {
         let signalLease = installSignalHandler
-            ? AxolotySignalMultiplexer.shared.acquire { [cancellation, serveSession] in
-                cancellation.cancel()
-                serveSession.cancel()
-            }
+            ? AxolotySignalMultiplexer.shared.acquire { [cancellation] in cancellation.cancel() }
             : nil
         defer { signalLease?.cancel() }
         let invocation = AxolotyCommandParser(environment: environment).parse(arguments)
@@ -180,13 +171,6 @@ public struct AxolotyCommandDispatcher: Sendable {
             return AxolotyCommandResult(
                 standardError: "error: unsupported \(executableName) command\n\n\(AxolotyCommandHelp.usage(executableName: executableName))\n",
                 exitCode: 64
-            )
-        case .serve(let arguments):
-            let result = serveSession.run(arguments: arguments)
-            return AxolotyCommandResult(
-                standardOutput: result.standardOutput,
-                standardError: result.standardError,
-                exitCode: result.exitCode
             )
         case .repositoryValidation(let arguments):
             return repositoryValidationCommands.run(arguments: arguments)

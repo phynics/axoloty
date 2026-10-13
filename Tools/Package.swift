@@ -14,20 +14,12 @@ let package = Package(
         .library(name: "AxolotyTooling", targets: ["AxolotyTooling"]),
         .library(name: "AxolotyVersion", targets: ["AxolotyVersion"]),
     ],
-    dependencies: [
-        // The runtime/debug tooling (serve mcp|mqtt|dev) lives in its own
-        // sibling package. This harness keeps the build orchestration policy.
-        .package(name: "AxolotyDebug", path: "../../axoloty-debug"),
-    ],
     targets: [
         .target(name: "AxolotyVersion", path: "AxolotyVersion"),
+        .target(name: "AxolotyProcessLauncher", path: "AxolotyProcessLauncher", publicHeadersPath: "include"),
         .target(
             name: "AxolotyTooling",
-            dependencies: [
-                "AxolotyVersion",
-                .product(name: "AxolotyDebug", package: "AxolotyDebug"),
-                .product(name: "AxolotyProcessLauncher", package: "AxolotyDebug"),
-            ],
+            dependencies: ["AxolotyProcessLauncher", "AxolotyVersion"],
             path: "AxolotyTooling",
             resources: [.copy("Resources/test-tiers.json")]
         ),

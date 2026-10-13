@@ -1,0 +1,41 @@
+#!/bin/sh
+# Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
+
+set -eu
+
+scratch_path=${DEBUG_BUILD_DIR:-/workspace/.build/debug-cli}
+cache_path=${SPM_CACHE_DIR:-/workspace/.swiftpm-cache}
+module_cache_path=${SWIFTPM_MODULECACHE_OVERRIDE:-/tmp/axoloty-debug-module-cache}
+
+# The MCP product is a member of the Apps package. Build it before the debug
+# service runner starts so its readiness deadline measures service startup,
+# not SwiftPM compilation.
+if [ "${1:-}" = "serve" ] && { [ "${2:-}" = "mcp" ] || [ "${2:-}" = "dev" ]; } \
+    && [ -z "${AXOLOTY_MCP_EXECUTABLE:-}" ]; then
+    apps_package_path=${AXOLOTY_APPS_PACKAGE_PATH:-/workspace/Apps}
+    apps_build_dir=${AXOLOTY_APPS_BUILD_DIR:-/workspace/.build/apps}
+
+    swift build \
+        --package-path "$apps_package_path" \
+        --scratch-path "$apps_build_dir" \
+        --cache-path "$cache_path" \
+        --disable-automatic-resolution \
+        --product axoloty-mcp
+
+    mcp_bin_dir=$(swift build \
+        --package-path "$apps_package_path" \
+        --scratch-path "$apps_build_dir" \
+        --cache-path "$cache_path" \
+        --disable-automatic-resolution \
+        --show-bin-path)
+    mcp_bin_dir=$(CDPATH= cd -- "$mcp_bin_dir" && pwd)
+    export AXOLOTY_MCP_EXECUTABLE="$mcp_bin_dir/axoloty-mcp"
+fi
+
+exec swift run \
+    --package-path /axoloty-debug \
+    --scratch-path "$scratch_path" \
+    --cache-path "$cache_path" \
+    -Xswiftc -module-cache-path -Xswiftc "$module_cache_path" \
+    --disable-automatic-resolution \
+    axoloty-debug "$@"

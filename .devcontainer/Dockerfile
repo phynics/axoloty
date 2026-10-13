@@ -82,7 +82,8 @@ COPY .devcontainer/ax /opt/axoloty/bin/ax
 COPY .devcontainer/axoloty-tool /opt/axoloty/bin/axoloty-tool
 COPY .devcontainer/axoloty-mcp /opt/axoloty/bin/axoloty-mcp
 COPY .devcontainer/axoloty-cli /opt/axoloty/bin/axoloty-cli
-RUN chmod 0755 /opt/axoloty/bin/ax /opt/axoloty/bin/axoloty-tool /opt/axoloty/bin/axoloty-mcp /opt/axoloty/bin/axoloty-cli
+COPY .devcontainer/axoloty-debug /opt/axoloty/bin/axoloty-debug
+RUN chmod 0755 /opt/axoloty/bin/ax /opt/axoloty/bin/axoloty-tool /opt/axoloty/bin/axoloty-mcp /opt/axoloty/bin/axoloty-cli /opt/axoloty/bin/axoloty-debug
 ARG AXOLOTY_IMAGE_INPUTS_SHA256=unknown
 LABEL io.axoloty.image-inputs-sha256="${AXOLOTY_IMAGE_INPUTS_SHA256}"
 ARG DOCKER_CLI_VERSION=27.5.1

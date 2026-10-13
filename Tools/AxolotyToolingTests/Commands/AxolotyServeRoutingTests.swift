@@ -4,39 +4,9 @@
 import Foundation
 import Testing
 
-// The serve implementation lives in the AxolotyDebug package. These tests only
-// exercise how the `ax` dispatcher routes into it.
-
-@Test(arguments: ["mqtt", "mcp", "dev"])
-func dispatcherServeSubcommandHelpPrintsContextualUsage(subcommand: String) {
-    let dispatcher = AxolotyCommandDispatcher(
-        executableName: "ax",
-        environment: [:],
-        installSignalHandler: false
-    )
-
-    let result = dispatcher.run(arguments: ["serve", subcommand, "--help"])
-
-    #expect(result.exitCode == 0)
-    #expect(result.standardOutput.contains("Usage: ax serve \(subcommand)"))
-    #expect(result.standardOutput.contains("Options:"))
-    #expect(result.standardError.isEmpty)
-}
-
-@Test
-func dispatcherServesMcpMissingTransportReturnsError() {
-    let dispatcher = AxolotyCommandDispatcher(environment: [:])
-    let result = dispatcher.run(arguments: ["serve", "mcp"])
-    #expect(result.exitCode == 64)
-    #expect(result.standardError.contains("transport"))
-}
-
-@Test
-func dispatcherServeUnknownSubcommandReturnsError() {
-    let dispatcher = AxolotyCommandDispatcher(environment: [:])
-    let result = dispatcher.run(arguments: ["serve", "unknown"])
-    #expect(result.exitCode == 64)
-}
+// The serve implementation and entry point live in the sibling axoloty-debug
+// package. This file keeps the harness-level surface that references the
+// executable version and command help.
 
 @Test
 func dispatcherVersionUsesExecutableName() {
@@ -53,10 +23,18 @@ func dispatcherDefaultVersionIsAxolotyTool() {
 }
 
 @Test
-func dispatcherHelpIncludesServeCommands() {
+func dispatcherHelpListsOrchestrationCommands() {
     let dispatcher = AxolotyCommandDispatcher(environment: [:])
     let result = dispatcher.run(arguments: ["help"])
-    #expect(result.standardOutput.contains("serve mqtt"))
-    #expect(result.standardOutput.contains("serve mcp"))
-    #expect(result.standardOutput.contains("serve dev"))
+    #expect(result.standardOutput.contains("verify"))
+    #expect(result.standardOutput.contains("test-tier"))
+    #expect(result.standardOutput.contains("repository validate"))
+    #expect(result.standardOutput.contains("axoloty-debug"))
+}
+
+@Test
+func dispatcherRejectsTheMovedServeCommand() {
+    let dispatcher = AxolotyCommandDispatcher(environment: [:])
+    let result = dispatcher.run(arguments: ["serve", "mqtt"])
+    #expect(result.exitCode == 64)
 }

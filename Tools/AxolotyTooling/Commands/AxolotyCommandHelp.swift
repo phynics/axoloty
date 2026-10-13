@@ -33,9 +33,9 @@ enum AxolotyCommandHelp {
       embedded consumer prepare  Prepare a standalone Embedded Swift consumer report.
       release checkpoint   Run the release checkpoint validation (no hardware).
       repository validate    Validate version, documentation, and architecture authority.
-      serve mqtt           Start a local Mosquitto broker in the foreground.
-      serve mcp            Start an Axoloty MCP server (stdio or HTTP).
-      serve dev            Start MQTT + MCP as a supervised development stack.
+
+    The runtime/debug services (serve mqtt|mcp|dev) live in the sibling
+    axoloty-debug package and are reached through its axoloty-debug command.
 
     The initial command surface is intentionally small. Workflow commands are
     introduced only when their execution contracts and structured results exist.

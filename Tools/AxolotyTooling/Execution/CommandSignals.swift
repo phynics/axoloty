@@ -2,7 +2,6 @@
 
 import Foundation
 import Synchronization
-import AxolotyDebug
 import AxolotyProcessLauncher
 
 #if canImport(Glibc)

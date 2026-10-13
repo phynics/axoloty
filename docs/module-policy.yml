@@ -462,7 +462,6 @@
       "platformClass": "tooling",
       "path": "Tools/AxolotyTooling",
       "allowedImports": [
-        "AxolotyDebug",
         "AxolotyProcessLauncher",
         "AxolotyVersion",
         "Darwin",
