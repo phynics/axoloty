@@ -100,6 +100,19 @@ public final class AxolotyMCPServer {
         ),
         discoverObjectsTool,
         Tool(
+            name: "axoloty_decode_payload",
+            description: "Render a captured JSON or CBOR payload as CBOR diagnostic notation or JSON.",
+            inputSchema: .object([
+                "type": .string("object"),
+                "properties": .object([
+                    "payload": makeMCPPropertySchema(type: "string", description: "Payload bytes as hexadecimal or base64"),
+                    "encoding": makeMCPPropertySchema(type: "string", description: "Payload byte encoding: hex or base64 (default: hex)"),
+                    "format": makeMCPPropertySchema(type: "string", description: "Output format: diagnostic or json (default: diagnostic)"),
+                ]),
+                "required": .array([.string("payload")])
+            ])
+        ),
+        Tool(
             name: "axoloty_server_status",
             description: "Get the current server status including MQTT connection state and catalogue metrics.",
             inputSchema: .object([
@@ -274,6 +287,8 @@ public final class AxolotyMCPServer {
                 return await self.handleGetObject(params.arguments, service: service)
             case "axoloty_discover_objects":
                 return await self.handleDiscoverObjects(params.arguments)
+            case "axoloty_decode_payload":
+                return Self.handleDecodePayload(params.arguments)
             case "axoloty_server_status":
                 return await self.handleServerStatus()
             default:
@@ -524,6 +539,41 @@ public final class AxolotyMCPServer {
             objectId: args?["objectId"]?.stringValue,
             timeoutMilliseconds: min(max(timeoutMs, 1000), 30000)
         )
+    }
+
+    /// Renders a captured payload for the `axoloty_decode_payload` tool.
+    ///
+    /// The tool is broker-independent: it reads a payload the caller already
+    /// holds and returns diagnostic notation or sorted JSON. Failures return
+    /// `isError` results with a stable message; they never throw.
+    nonisolated static func handleDecodePayload(_ args: [String: Value]?) -> CallTool.Result {
+        guard let payload = args?["payload"]?.stringValue else {
+            return .init(content: [.text("Missing required parameter: payload")], isError: true)
+        }
+        let source: InspectorDecodeSource
+        switch args?["encoding"]?.stringValue ?? "hex" {
+        case "hex":
+            source = .hex(payload)
+        case "base64":
+            source = .base64(payload)
+        case let encoding:
+            return .init(content: [.text("Invalid encoding: \(encoding) (must be hex or base64)")], isError: true)
+        }
+        let render: InspectorDecodeRender
+        switch args?["format"]?.stringValue ?? "diagnostic" {
+        case "diagnostic":
+            render = .diagnostic
+        case "json":
+            render = .json
+        case let format:
+            return .init(content: [.text("Invalid format: \(format) (must be diagnostic or json)")], isError: true)
+        }
+        do {
+            let text = try InspectorDecodeRunner.render(DecodeCommand(source: source, render: render))
+            return .init(content: [.text(text)], isError: false)
+        } catch {
+            return .init(content: [.text(error.userFriendlyMessage)], isError: true)
+        }
     }
 
     private func handleServerStatus() async -> CallTool.Result {

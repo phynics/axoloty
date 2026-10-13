@@ -7,7 +7,14 @@ import { writeLifecycleManifest } from "./lifecycle.js";
 import { controlProxy, runProxy, type ProxyOptions } from "./proxy.js";
 import { writeLegacyManifest } from "./legacy.js";
 import { waitForFile } from "./atomic.js";
+import {
+  decodePayload,
+  encodeCbor,
+  encodeJSONText,
+  parseDiagnostic,
+} from "./cbor.js";
 import { spawn } from "node:child_process";
+import { readFileSync, writeFileSync } from "node:fs";
 
 const USAGE = `Usage: axoloty-wire <command> [options]
 
@@ -21,6 +28,10 @@ Commands:
   proxy                              Run the lifecycle TCP proxy.
   proxy-control                       Send sever or restore to the lifecycle proxy.
   legacy-manifest <capture> <out>   Write a macOS legacy provenance manifest.
+  decode <capture.jsonl>            Render captured JSON or CBOR payloads as
+                                    RFC 8949 diagnostic notation (or JSON).
+  encode                            Encode JSON or diagnostic notation as
+                                    deterministic CBOR bytes.
 
 capture options:
   --host <host>                  Broker hostname (default: 127.0.0.1)
@@ -42,7 +53,17 @@ run options:
   --output <file>                  Capture output path.
   --producer <name>                Producer implementation.
   --producer-version <version>     Producer version.
-  --ready-file <path>              Readiness marker passed to the capture process.`;
+  --ready-file <path>              Readiness marker passed to the capture process.
+decode options:
+  --record <n>                     Decode only the record with this sequence number.
+  --topic <topic>                  Decode only records whose topic equals this value.
+  --format <diagnostic|json>       Output view (default: diagnostic).
+encode options:
+  --json <text>                    JSON document to encode.
+  --json-file <path>               File containing a JSON document to encode.
+  --diagnostic <text>              RFC 8949 diagnostic notation to encode.
+  --base64                         Emit base64 instead of hexadecimal.
+  --out <path>                     Write bytes to a file instead of stdout.`;
 
 function main(): void {
   const argv = process.argv.slice(2);
@@ -70,6 +91,12 @@ function main(): void {
       break;
     case "legacy-manifest":
       runLegacyManifestCommand(rest);
+      break;
+    case "decode":
+      runDecodeCommand(rest);
+      break;
+    case "encode":
+      runEncodeCommand(rest);
       break;
     case undefined:
     case "-h":
@@ -218,6 +245,111 @@ function runLegacyManifestCommand(args: string[]): void {
 function option(args: string[], name: string): string | undefined {
   const index = args.indexOf(name);
   return index >= 0 ? args[index + 1] : undefined;
+}
+
+function positionalArgs(args: string[], valueOptions: ReadonlySet<string>): string[] {
+  const positional: string[] = [];
+  for (let index = 0; index < args.length; index++) {
+    const arg = args[index]!;
+    if (valueOptions.has(arg)) {
+      index += 1;
+      continue;
+    }
+    if (!arg.startsWith("--")) positional.push(arg);
+  }
+  return positional;
+}
+
+function payloadBytes(record: unknown): Buffer | undefined {
+  if (typeof record !== "object" || record === null) return undefined;
+  const payload = (record as { payload?: unknown }).payload;
+  if (typeof payload !== "object" || payload === null) return undefined;
+  const { encoding, bytes } = payload as { encoding?: unknown; bytes?: unknown };
+  if (typeof bytes !== "string") return undefined;
+  if (encoding === "hex") return Buffer.from(bytes, "hex");
+  if (encoding === "base64") return Buffer.from(bytes, "base64");
+  process.stderr.write(`decode: skipping payload with unsupported encoding ${JSON.stringify(encoding)}\n`);
+  return undefined;
+}
+
+function runDecodeCommand(args: string[]): void {
+  const positional = positionalArgs(args, new Set(["--record", "--topic", "--format"]));
+  const capture = positional[0];
+  const record = option(args, "--record");
+  const topic = option(args, "--topic");
+  const format = option(args, "--format") ?? "diagnostic";
+  if (!capture || (format !== "diagnostic" && format !== "json")) {
+    process.stderr.write("usage: axoloty-wire decode <capture.jsonl> [--record N] [--topic TOPIC] [--format diagnostic|json]\n");
+    process.exit(2);
+  }
+
+  let lines: string[];
+  try {
+    lines = readFileSync(capture, "utf8").split("\n").filter((line) => line.trim().length > 0);
+  } catch (error) {
+    process.stderr.write(`decode failed: ${error instanceof Error ? error.message : String(error)}\n`);
+    process.exit(1);
+  }
+
+  const output: string[] = [];
+  for (const line of lines) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    const sequence = typeof (parsed as { sequence?: unknown }).sequence === "number"
+      ? (parsed as { sequence: number }).sequence
+      : null;
+    const recordTopic = typeof (parsed as { mqtt?: { topic?: unknown } }).mqtt?.topic === "string"
+      ? (parsed as { mqtt: { topic: string } }).mqtt.topic
+      : null;
+    if (record !== undefined && String(sequence) !== record) continue;
+    if (topic !== undefined && recordTopic !== topic) continue;
+    const bytes = payloadBytes(parsed);
+    if (bytes === undefined) continue;
+    const decoded = decodePayload(bytes);
+    const entry: Record<string, unknown> = { sequence, topic: recordTopic, format: decoded.format };
+    if (format === "json") entry.json = decoded.json ?? null;
+    else entry.diagnostic = decoded.diagnostic;
+    output.push(JSON.stringify(entry));
+  }
+  if (output.length > 0) process.stdout.write(output.join("\n") + "\n");
+}
+
+function runEncodeCommand(args: string[]): void {
+  const json = option(args, "--json");
+  const jsonFile = option(args, "--json-file");
+  const diagnostic = option(args, "--diagnostic");
+  const out = option(args, "--out");
+  const base64 = args.includes("--base64");
+  const sources = [json, jsonFile, diagnostic].filter((value) => value !== undefined);
+  if (sources.length !== 1) {
+    process.stderr.write("usage: axoloty-wire encode (--json TEXT | --json-file FILE | --diagnostic TEXT) [--base64] [--out FILE]\n");
+    process.exit(2);
+  }
+
+  let bytes: Buffer;
+  try {
+    if (jsonFile !== undefined) bytes = encodeJSONText(readFileSync(jsonFile, "utf8"));
+    else if (json !== undefined) bytes = encodeJSONText(json);
+    else bytes = encodeCbor(parseDiagnostic(diagnostic!));
+  } catch (error) {
+    process.stderr.write(`encode failed: ${error instanceof Error ? error.message : String(error)}\n`);
+    process.exit(1);
+  }
+
+  if (out !== undefined) {
+    try {
+      writeFileSync(out, bytes);
+    } catch (error) {
+      process.stderr.write(`encode failed: ${error instanceof Error ? error.message : String(error)}\n`);
+      process.exit(1);
+    }
+    return;
+  }
+  process.stdout.write((base64 ? bytes.toString("base64") : bytes.toString("hex")) + "\n");
 }
 
 function parseCaptureArgs(args: string[]): CaptureOptions {

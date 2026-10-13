@@ -6,6 +6,8 @@ public enum InspectorCommand: Equatable, Sendable {
     case catalog(CatalogCommand)
     /// Active discovery via a single Discover request and Resolve collection.
     case discover(DiscoverCommand)
+    /// Local rendering of a captured payload; no broker connection is used.
+    case decode(DecodeCommand)
 }
 
 /// Options for the passive catalogue command.

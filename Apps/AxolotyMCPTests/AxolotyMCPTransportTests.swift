@@ -24,6 +24,7 @@ func objectInputSchemaCatalogueContract() throws {
         "axoloty_list_objects",
         "axoloty_get_object",
         "axoloty_discover_objects",
+        "axoloty_decode_payload",
         "axoloty_server_status",
     ]
     let expectedPropertyTypes: [String: [String: String]] = [
@@ -39,6 +40,11 @@ func objectInputSchemaCatalogueContract() throws {
             "objectType": "string",
             "objectId": "string",
             "timeoutMilliseconds": "integer",
+        ],
+        "axoloty_decode_payload": [
+            "payload": "string",
+            "encoding": "string",
+            "format": "string",
         ],
         "axoloty_server_status": [:],
     ]
@@ -68,6 +74,9 @@ func objectInputSchemaCatalogueContract() throws {
         if tool.name == "axoloty_get_object" {
             let required = try #require(schema["required"]?.arrayValue)
             #expect(required.compactMap { $0.stringValue } == ["objectId"])
+        } else if tool.name == "axoloty_decode_payload" {
+            let required = try #require(schema["required"]?.arrayValue)
+            #expect(required.compactMap { $0.stringValue } == ["payload"])
         } else {
             #expect(!schema.keys.contains("required"))
         }
