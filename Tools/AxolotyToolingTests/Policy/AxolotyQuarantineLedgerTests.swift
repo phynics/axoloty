@@ -32,7 +32,7 @@ func quarantineLedgerMatchesAnUnexpiredPrefixInItsOwningNode() {
 @Test
 func quarantineLedgerIgnoresAMatchingPrefixInAnotherNode() {
     let ledger = AxolotyQuarantineLedger(entries: [makeEntry()], now: referenceNow)
-    #expect(!ledger.isQuarantined("commandRunnerFlakesSometimes()", nodeID: "test-apps"))
+    #expect(!ledger.isQuarantined("commandRunnerFlakesSometimes()", nodeID: "test-unit"))
 }
 
 @Test

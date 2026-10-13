@@ -8,8 +8,8 @@ on:
       - .devcontainer/image-inputs.sh
       - .devcontainer/ax
       - .devcontainer/axoloty-tool
-      - .devcontainer/axoloty-mcp
       - .devcontainer/axoloty-cli
+      - .devcontainer/axoloty-debug
       - .dockerignore
       - .github/workflows/container-image.yml
   pull_request:
@@ -19,8 +19,8 @@ on:
       - .devcontainer/image-inputs.sh
       - .devcontainer/ax
       - .devcontainer/axoloty-tool
-      - .devcontainer/axoloty-mcp
       - .devcontainer/axoloty-cli
+      - .devcontainer/axoloty-debug
       - .dockerignore
       - .github/workflows/container-image.yml
   workflow_dispatch:
