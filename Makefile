@@ -207,7 +207,7 @@ test-one: image
 		CONTAINER_ENV_VARS="$(AXOLOTY_RUN_CONTAINER_ENV_VARS)" \
 		.devcontainer/run.sh /opt/axoloty/bin/axoloty-tool "$$@"
 
-# The four categories are the only test entry points. The wire category needs
+# The categories are the only test entry points. The wire category needs
 # the host runtime bridge, and records the G6 wire matrix when a run asks for
 # that evidence; both used to live in the retired test-wire-live wrapper.
 test-tier:

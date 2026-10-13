@@ -143,7 +143,7 @@ workflow tests. Use `make test-one FILTER=...` for a focused suite and
 process must select a real test target rather than a root-package zero-test
 selection.
 
-## The four test categories
+## The test categories
 
 A category says what a run needs, and that is the only axis. Every node in the
 manifest belongs to exactly one narrower category and to `release`.
@@ -154,7 +154,7 @@ manifest belongs to exactly one narrower category and to `release`.
 | `wire` | `make test-tier TIER=wire` | Containers, a broker, the CoatyJS image | Live CoatyJS interoperability, with the host runtime bridge. |
 | `wire-cbor` | `make test-tier TIER=wire-cbor` | The pinned container; no broker or hardware | Offline `axoloty/1` CBOR coverage: the golden corpus and the host/static trace-parity replay. Every pull request. |
 | `embedded` | `make test-tier TIER=embedded` | The pinned container; no firmware or hardware | Core Embedded Swift compatibility: portable-module compilation, macro expansion, and RISC-V linkage. |
-| `release` | `make test-tier TIER=release` | Whatever the host has | Every test the host can run: `ci`, `wire`, `embedded`, the Apple-host oracle, and the release consumer checks. |
+| `release` | `make test-tier TIER=release` | Whatever the host has | Every test the host can run: `ci`, `wire`, `wire-cbor`, `embedded`, the Apple-host oracle, and the release consumer checks. |
 
 `make verify` runs the `ci` category, and is the ordinary pre-PR command.
 `make test-one FILTER=...` runs one bounded suite or filter. There are no
@@ -182,6 +182,7 @@ self-test is run by some node of the category that owns it.
 |---|---|---|---:|---|
 | `ci` | Build, unit, module, offline wire, boundary, and harness self-test coverage | Container only | 60 min | Every PR |
 | `wire` | Representative Axoloty/CoatyJS interoperability plus CoatyJS reference-wire protocol coverage | Containers, broker, CoatyJS image | 60 min | Protocol-facing PRs (enforced by the `Live CoatyJS compatibility gate`); full run before merge |
+| `wire-cbor` | `axoloty/1` CBOR golden-corpus round trips and host/static trace parity | Container only | 30 min | Every PR |
 | `embedded` | Core Embedded Swift compatibility on the pinned Linux container | Container only | 60 min | Every PR |
 | `release` | Everything above plus the Apple-host oracle and release consumer checks | Whatever the host has | 300 min | Release candidates |
 

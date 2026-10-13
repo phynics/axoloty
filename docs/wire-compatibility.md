@@ -28,17 +28,26 @@ Reference versions must be pinned before captured fixtures become normative:
 `axoloty/1` is a separate route prefix and payload encoding for the same
 Coaty Core Profile 3 event families. It is not a change to `coaty/3`.
 `coaty/3` remains JSON-only and byte-identical. The profile's route layout,
-deterministic-encoding rules, map-key decision (text keys), and UUID
-representation (tag 37 byte string) are recorded in
-[protocol/axoloty-1.md](./protocol/axoloty-1.md). The first implementation
-increment ships the bounded CBOR codec, route support, DTO wiring, and a
-frozen golden corpus with an independent `cbor-x` decode of every CBOR golden
-(RFC 8949 Appendix A conformance vectors remain in the codec tests). Owned raw
-fields retain the exact bytes of the profile that produced them and are tagged
-with that profile; a cross-profile re-encode is rejected as
+deterministic-encoding rules, map-key decision (text keys), field-presence
+rules, and UUID representation (tag 37 byte string) are recorded in
+[protocol/axoloty-1.md](./protocol/axoloty-1.md).
+
+Every wire-format and field-presence change in epic #977 carries a regression
+test and a row here:
+
+| Change | Regression test | `coaty/3` effect |
+|---|---|---|
+| Bounded deterministic CBOR codec, route support, DTO seam | `WireGoldenCorpusTests`, RFC 8949 Appendix A conformance vectors, `OwnedRawCBORBoundaryTests`, `WireCodecParityTests` | None; the seam is format-neutral and `coaty/3` bytes are unchanged. |
+| Frozen golden corpus with independent `cbor-x` decode | `npm run verify:golden --prefix Tests/Support/WireCompatibility/tool`, `g2-wire-golden-corpus` | None; the golden `coaty/3` JSON files are fixtures, not a new shape. |
+| Host/static trace parity | `WireCBORTraceParityTests` (`wire-cbor` tier) | None; the host `coaty/3` leg and the static `axoloty/1` leg reach the same operations, state, and structured rejections. |
+| Zenoh carries only `axoloty/1` | `ZenohBindingTests`, `ProtocolTraceParityTests`, the `zenoh-offline`/`zenoh-live` tiers | None; MQTT keeps the sealed `coaty/3` JSON profile. |
+| CBOR inspection tooling | `InspectorCBORCodecTests`, `InspectorDecodeTests`, `AxolotyMCPDecodeTests` | None; the inspector and MCP decode CBOR payloads read-only and change no wire bytes. |
+
+Owned raw fields retain the exact bytes of the profile that produced them and
+are tagged with that profile; a cross-profile re-encode is rejected as
 `WireEncodeError.profileMismatch` rather than transcoded. The value classes
 and the lossy cases are recorded in
-[wire-value-mapping.md](./wire-value-mapping.md). The Zenoh binding now carries
+[wire-value-mapping.md](./wire-value-mapping.md). The Zenoh binding carries
 only `axoloty/1` CBOR key expressions and payloads, and the trace-parity gate
 replays one corpus through the MQTT `coaty/3` leg and the Zenoh `axoloty/1` leg;
 both are part of epic #977. No `coaty/3` field presence or wire bytes change in

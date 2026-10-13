@@ -11,6 +11,14 @@ fork, through CoatySwift 2.4.0, remain documented in the
 
 ### Added
 
+- The `axoloty/1` CBOR wire profile. `AxolotyWire` ships a bounded
+  deterministic CBOR reader and writer, `axoloty/1` routes, a format-neutral
+  DTO codec seam, and raw-field retention. A frozen golden corpus covers every
+  event family and field-presence variant with an independent `cbor-x` decode,
+  a host/static trace-parity gate replays one corpus through both profiles, and
+  the inspector and MCP decode `axoloty/1` payloads. `coaty/3` field presence
+  and bytes are unchanged. See
+  [docs/protocol/axoloty-1.md](docs/protocol/axoloty-1.md).
 - The `wire-cbor` tier replays the same canonical protocol traces through the
   host `coaty/3` JSON path and the static `axoloty/1` CBOR path, then compares
   normalized operations, state, and structured rejections. The host and static
@@ -30,6 +38,15 @@ fork, through CoatySwift 2.4.0, remain documented in the
   `axoloty/1` CBOR profile, and MQTT keeps `coaty/3` JSON. The experimental
   0.9 Zenoh encoding will not interoperate with 1.0 Zenoh peers. See
   `docs/transports/zenoh.md`.
+
+### Migration
+
+- **Zenoh 0.9.x peers do not interoperate with 1.0 peers.** The 0.9 Zenoh
+  encoding carried the `coaty/3` JSON routes; 1.0 Zenoh carries only the
+  `axoloty/1` CBOR profile
+  ([ADR 0009](docs/adr/0009-zenoh-carries-only-axoloty-1.md)). MQTT is
+  unchanged and keeps the sealed `coaty/3` JSON profile. See
+  [docs/protocol/axoloty-1.md](docs/protocol/axoloty-1.md).
 
 ### Documentation
 
@@ -560,7 +577,8 @@ and reproducible compatibility and resource evidence.
 Initial Axoloty prerelease as an independently maintained, modernized fork of
 CoatySwift.
 
-[Unreleased]: https://github.com/phynics/axoloty/compare/v0.8.2...HEAD
+[Unreleased]: https://github.com/phynics/axoloty/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/phynics/axoloty/compare/v0.8.2...v0.9.0
 [0.8.2]: https://github.com/phynics/axoloty/compare/v0.8.1...v0.8.2
 [0.8.1]: https://github.com/phynics/axoloty/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/phynics/axoloty/compare/v0.7.0...v0.8.0
