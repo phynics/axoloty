@@ -34,6 +34,15 @@ interface GoldenCase {
   variant: "empty" | "minimal" | "full" | "special";
   uuidPointers: readonly string[];
   value: CBORValue;
+  /**
+   * The compact `coaty/3` JSON to write when it differs from
+   * `JSON.stringify(value)`. A CBOR-only value such as a byte string has no
+   * JSON form, so its JSON golden is a documented hex-string surrogate that
+   * the independent verifier's normalization also produces.
+   */
+  json?: string;
+  /** Marks a `json` surrogate so the manifest records the deliberate mapping. */
+  jsonSurrogate?: boolean;
 }
 
 /**
@@ -145,6 +154,50 @@ export const GOLDEN_CASES: readonly GoldenCase[] = [
     variant: "full",
     uuidPointers: [],
     value: { payload: { temperature: 21, unit: "C" } },
+  },
+  {
+    id: "iovalue-float-single",
+    family: "ioValue",
+    variant: "special",
+    uuidPointers: [],
+    value: { payload: 1.5 },
+  },
+  {
+    id: "iovalue-float-double",
+    family: "ioValue",
+    variant: "special",
+    uuidPointers: [],
+    value: { payload: 1.1 },
+  },
+  {
+    id: "iovalue-integer-wide",
+    family: "ioValue",
+    variant: "special",
+    uuidPointers: [],
+    value: { payload: 9007199254740992 },
+  },
+  {
+    id: "iovalue-negative",
+    family: "ioValue",
+    variant: "special",
+    uuidPointers: [],
+    value: { payload: -42 },
+  },
+  {
+    id: "iovalue-null",
+    family: "ioValue",
+    variant: "special",
+    uuidPointers: [],
+    value: { payload: null },
+  },
+  {
+    id: "iovalue-bytes",
+    family: "ioValue",
+    variant: "special",
+    uuidPointers: [],
+    value: { payload: Uint8Array.from([0xde, 0xad, 0xbe, 0xef]) },
+    json: '{"payload":"deadbeef"}',
+    jsonSurrogate: true,
   },
   {
     id: "discover-empty",
@@ -306,6 +359,11 @@ export interface GoldenManifestCase {
   json: string;
   cbor: string;
   uuidPointers: readonly string[];
+  /**
+   * True when the JSON golden is a documented surrogate for a CBOR-only
+   * value, such as the hex string that stands in for a byte string.
+   */
+  jsonSurrogate: boolean;
 }
 
 /** The corpus manifest. */
@@ -319,7 +377,10 @@ export interface GoldenManifest {
 export function renderGoldenCorpus(): { manifest: GoldenManifest; files: Map<string, Buffer> } {
   const files = new Map<string, Buffer>();
   for (const goldenCase of GOLDEN_CASES) {
-    files.set(`${goldenCase.id}.json`, Buffer.from(JSON.stringify(goldenCase.value), "utf8"));
+    files.set(
+      `${goldenCase.id}.json`,
+      Buffer.from(goldenCase.json ?? JSON.stringify(goldenCase.value), "utf8"),
+    );
     files.set(`${goldenCase.id}.cbor`, Buffer.from(encodeDeterministicCBOR(goldenCase.value, goldenCase.uuidPointers)));
   }
   const manifest: GoldenManifest = {
@@ -333,6 +394,7 @@ export function renderGoldenCorpus(): { manifest: GoldenManifest; files: Map<str
       json: `${goldenCase.id}.json`,
       cbor: `${goldenCase.id}.cbor`,
       uuidPointers: goldenCase.uuidPointers,
+      jsonSurrogate: goldenCase.jsonSurrogate ?? false,
     })),
   };
   files.set("manifest.json", Buffer.from(`${JSON.stringify(manifest, null, 2)}\n`, "utf8"));

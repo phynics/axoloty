@@ -14,5 +14,5 @@ if (problems.length > 0) {
   for (const problem of problems) console.error(`golden CBOR verification error: ${problem}`);
   process.exitCode = 1;
 } else {
-  console.log(`PASS: independent cbor-x decode matched every golden in ${goldenDir}`);
+  console.log(`PASS: independent cbor-x decode matched and re-encode reproduced every golden in ${goldenDir}`);
 }

@@ -11,7 +11,8 @@
       "uuidPointers": [
         "/ioSourceId",
         "/ioActorId"
-      ]
+      ],
+      "jsonSurrogate": false
     },
     {
       "id": "associate-full",
@@ -22,7 +23,8 @@
       "uuidPointers": [
         "/ioSourceId",
         "/ioActorId"
-      ]
+      ],
+      "jsonSurrogate": false
     },
     {
       "id": "associate-rate-zero",
@@ -33,7 +35,8 @@
       "uuidPointers": [
         "/ioSourceId",
         "/ioActorId"
-      ]
+      ],
+      "jsonSurrogate": false
     },
     {
       "id": "advertise-minimal",
@@ -41,7 +44,8 @@
       "variant": "minimal",
       "json": "advertise-minimal.json",
       "cbor": "advertise-minimal.cbor",
-      "uuidPointers": []
+      "uuidPointers": [],
+      "jsonSurrogate": false
     },
     {
       "id": "advertise-full",
@@ -49,7 +53,8 @@
       "variant": "full",
       "json": "advertise-full.json",
       "cbor": "advertise-full.cbor",
-      "uuidPointers": []
+      "uuidPointers": [],
+      "jsonSurrogate": false
     },
     {
       "id": "advertise-object-uuid",
@@ -59,7 +64,8 @@
       "cbor": "advertise-object-uuid.cbor",
       "uuidPointers": [
         "/object/objectId"
-      ]
+      ],
+      "jsonSurrogate": false
     },
     {
       "id": "deadvertise-single",
@@ -69,7 +75,8 @@
       "cbor": "deadvertise-single.cbor",
       "uuidPointers": [
         "/objectIds/*"
-      ]
+      ],
+      "jsonSurrogate": false
     },
     {
       "id": "deadvertise-multiple",
@@ -79,7 +86,8 @@
       "cbor": "deadvertise-multiple.cbor",
       "uuidPointers": [
         "/objectIds/*"
-      ]
+      ],
+      "jsonSurrogate": false
     },
     {
       "id": "channel-empty",
@@ -87,7 +95,8 @@
       "variant": "empty",
       "json": "channel-empty.json",
       "cbor": "channel-empty.cbor",
-      "uuidPointers": []
+      "uuidPointers": [],
+      "jsonSurrogate": false
     },
     {
       "id": "channel-minimal",
@@ -95,7 +104,8 @@
       "variant": "minimal",
       "json": "channel-minimal.json",
       "cbor": "channel-minimal.cbor",
-      "uuidPointers": []
+      "uuidPointers": [],
+      "jsonSurrogate": false
     },
     {
       "id": "channel-full",
@@ -103,7 +113,8 @@
       "variant": "full",
       "json": "channel-full.json",
       "cbor": "channel-full.cbor",
-      "uuidPointers": []
+      "uuidPointers": [],
+      "jsonSurrogate": false
     },
     {
       "id": "iovalue-array",
@@ -111,7 +122,8 @@
       "variant": "minimal",
       "json": "iovalue-array.json",
       "cbor": "iovalue-array.cbor",
-      "uuidPointers": []
+      "uuidPointers": [],
+      "jsonSurrogate": false
     },
     {
       "id": "iovalue-object",
@@ -119,7 +131,62 @@
       "variant": "full",
       "json": "iovalue-object.json",
       "cbor": "iovalue-object.cbor",
-      "uuidPointers": []
+      "uuidPointers": [],
+      "jsonSurrogate": false
+    },
+    {
+      "id": "iovalue-float-single",
+      "family": "ioValue",
+      "variant": "special",
+      "json": "iovalue-float-single.json",
+      "cbor": "iovalue-float-single.cbor",
+      "uuidPointers": [],
+      "jsonSurrogate": false
+    },
+    {
+      "id": "iovalue-float-double",
+      "family": "ioValue",
+      "variant": "special",
+      "json": "iovalue-float-double.json",
+      "cbor": "iovalue-float-double.cbor",
+      "uuidPointers": [],
+      "jsonSurrogate": false
+    },
+    {
+      "id": "iovalue-integer-wide",
+      "family": "ioValue",
+      "variant": "special",
+      "json": "iovalue-integer-wide.json",
+      "cbor": "iovalue-integer-wide.cbor",
+      "uuidPointers": [],
+      "jsonSurrogate": false
+    },
+    {
+      "id": "iovalue-negative",
+      "family": "ioValue",
+      "variant": "special",
+      "json": "iovalue-negative.json",
+      "cbor": "iovalue-negative.cbor",
+      "uuidPointers": [],
+      "jsonSurrogate": false
+    },
+    {
+      "id": "iovalue-null",
+      "family": "ioValue",
+      "variant": "special",
+      "json": "iovalue-null.json",
+      "cbor": "iovalue-null.cbor",
+      "uuidPointers": [],
+      "jsonSurrogate": false
+    },
+    {
+      "id": "iovalue-bytes",
+      "family": "ioValue",
+      "variant": "special",
+      "json": "iovalue-bytes.json",
+      "cbor": "iovalue-bytes.cbor",
+      "uuidPointers": [],
+      "jsonSurrogate": true
     },
     {
       "id": "discover-empty",
@@ -127,7 +194,8 @@
       "variant": "empty",
       "json": "discover-empty.json",
       "cbor": "discover-empty.cbor",
-      "uuidPointers": []
+      "uuidPointers": [],
+      "jsonSurrogate": false
     },
     {
       "id": "discover-full",
@@ -135,7 +203,8 @@
       "variant": "full",
       "json": "discover-full.json",
       "cbor": "discover-full.cbor",
-      "uuidPointers": []
+      "uuidPointers": [],
+      "jsonSurrogate": false
     },
     {
       "id": "resolve-minimal",
@@ -143,7 +212,8 @@
       "variant": "minimal",
       "json": "resolve-minimal.json",
       "cbor": "resolve-minimal.cbor",
-      "uuidPointers": []
+      "uuidPointers": [],
+      "jsonSurrogate": false
     },
     {
       "id": "resolve-full",
@@ -151,7 +221,8 @@
       "variant": "full",
       "json": "resolve-full.json",
       "cbor": "resolve-full.cbor",
-      "uuidPointers": []
+      "uuidPointers": [],
+      "jsonSurrogate": false
     },
     {
       "id": "query-empty",
@@ -159,7 +230,8 @@
       "variant": "empty",
       "json": "query-empty.json",
       "cbor": "query-empty.cbor",
-      "uuidPointers": []
+      "uuidPointers": [],
+      "jsonSurrogate": false
     },
     {
       "id": "query-full",
@@ -167,7 +239,8 @@
       "variant": "full",
       "json": "query-full.json",
       "cbor": "query-full.cbor",
-      "uuidPointers": []
+      "uuidPointers": [],
+      "jsonSurrogate": false
     },
     {
       "id": "retrieve-minimal",
@@ -175,7 +248,8 @@
       "variant": "minimal",
       "json": "retrieve-minimal.json",
       "cbor": "retrieve-minimal.cbor",
-      "uuidPointers": []
+      "uuidPointers": [],
+      "jsonSurrogate": false
     },
     {
       "id": "retrieve-full",
@@ -183,7 +257,8 @@
       "variant": "full",
       "json": "retrieve-full.json",
       "cbor": "retrieve-full.cbor",
-      "uuidPointers": []
+      "uuidPointers": [],
+      "jsonSurrogate": false
     },
     {
       "id": "update-full",
@@ -191,7 +266,8 @@
       "variant": "full",
       "json": "update-full.json",
       "cbor": "update-full.cbor",
-      "uuidPointers": []
+      "uuidPointers": [],
+      "jsonSurrogate": false
     },
     {
       "id": "complete-empty",
@@ -199,7 +275,8 @@
       "variant": "empty",
       "json": "complete-empty.json",
       "cbor": "complete-empty.cbor",
-      "uuidPointers": []
+      "uuidPointers": [],
+      "jsonSurrogate": false
     },
     {
       "id": "complete-full",
@@ -207,7 +284,8 @@
       "variant": "full",
       "json": "complete-full.json",
       "cbor": "complete-full.cbor",
-      "uuidPointers": []
+      "uuidPointers": [],
+      "jsonSurrogate": false
     },
     {
       "id": "call-empty",
@@ -215,7 +293,8 @@
       "variant": "empty",
       "json": "call-empty.json",
       "cbor": "call-empty.cbor",
-      "uuidPointers": []
+      "uuidPointers": [],
+      "jsonSurrogate": false
     },
     {
       "id": "call-full",
@@ -223,7 +302,8 @@
       "variant": "full",
       "json": "call-full.json",
       "cbor": "call-full.cbor",
-      "uuidPointers": []
+      "uuidPointers": [],
+      "jsonSurrogate": false
     },
     {
       "id": "return-empty",
@@ -231,7 +311,8 @@
       "variant": "empty",
       "json": "return-empty.json",
       "cbor": "return-empty.cbor",
-      "uuidPointers": []
+      "uuidPointers": [],
+      "jsonSurrogate": false
     },
     {
       "id": "return-full",
@@ -239,7 +320,8 @@
       "variant": "full",
       "json": "return-full.json",
       "cbor": "return-full.cbor",
-      "uuidPointers": []
+      "uuidPointers": [],
+      "jsonSurrogate": false
     },
     {
       "id": "iostate-minimal",
@@ -247,7 +329,8 @@
       "variant": "minimal",
       "json": "iostate-minimal.json",
       "cbor": "iostate-minimal.cbor",
-      "uuidPointers": []
+      "uuidPointers": [],
+      "jsonSurrogate": false
     },
     {
       "id": "iostate-rate",
@@ -255,7 +338,8 @@
       "variant": "full",
       "json": "iostate-rate.json",
       "cbor": "iostate-rate.cbor",
-      "uuidPointers": []
+      "uuidPointers": [],
+      "jsonSurrogate": false
     },
     {
       "id": "iostate-rate-zero",
@@ -263,7 +347,8 @@
       "variant": "special",
       "json": "iostate-rate-zero.json",
       "cbor": "iostate-rate-zero.cbor",
-      "uuidPointers": []
+      "uuidPointers": [],
+      "jsonSurrogate": false
     }
   ]
 }

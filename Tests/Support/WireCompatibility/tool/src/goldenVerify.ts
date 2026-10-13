@@ -7,6 +7,13 @@
  * with Axoloty, and deep-compared against the paired `.json` golden. CBOR tag
  * 37 UUID byte strings are normalized to the canonical hyphenated text form.
  * Object key order is ignored; array order is significant.
+ *
+ * The verifier then re-encodes the generator's logical case value with the
+ * corpus encoder and requires byte identity with the checked-in golden. The
+ * independent decode proves the bytes mean the documented value; the re-encode
+ * proves the encoder emits the one deterministic encoding for that value. A
+ * decoder that tolerates a non-shortest form would otherwise hide an encoder
+ * regression.
  */
 
 import fs from "node:fs";
@@ -14,7 +21,8 @@ import path from "node:path";
 
 import { Decoder } from "cbor-x";
 
-import type { GoldenManifest } from "./goldenCorpus.js";
+import { GOLDEN_CASES, type GoldenManifest } from "./goldenCorpus.js";
+import { encodeDeterministicCBOR } from "./goldenEncoder.js";
 
 interface TagLike {
   tag: number;
@@ -31,16 +39,31 @@ export function verifyGoldenCorpus(goldenDir: string): string[] {
     return ["manifest.json declares no golden cases"];
   }
   const decoder = new Decoder({ useRecords: false, mapsAsObjects: true, tagUint8Array: false });
+  const generatorCases = new Map(GOLDEN_CASES.map(goldenCase => [goldenCase.id, goldenCase]));
   for (const goldenCase of manifest.cases) {
     const expected = JSON.parse(fs.readFileSync(path.join(goldenDir, goldenCase.json), "utf8")) as unknown;
+    const cborBytes = fs.readFileSync(path.join(goldenDir, goldenCase.cbor));
     let actual: unknown;
     try {
-      actual = normalize(decoder.decode(fs.readFileSync(path.join(goldenDir, goldenCase.cbor)))) as unknown;
+      actual = normalize(decoder.decode(cborBytes)) as unknown;
     } catch (error) {
       problems.push(`${goldenCase.id}: cbor-x failed to decode ${goldenCase.cbor}: ${(error as Error).message}`);
       continue;
     }
     compare(expected, actual, "", problems, goldenCase.id);
+
+    const source = generatorCases.get(goldenCase.id);
+    if (!source) {
+      problems.push(`${goldenCase.id}: manifest case has no generator case`);
+      continue;
+    }
+    const reencoded = Buffer.from(encodeDeterministicCBOR(source.value, source.uuidPointers));
+    if (!reencoded.equals(cborBytes)) {
+      problems.push(
+        `${goldenCase.id}: encoder is not byte-deterministic; ${goldenCase.cbor} is ` +
+          `${cborBytes.toString("hex")}, re-encode is ${reencoded.toString("hex")}`,
+      );
+    }
   }
   return problems;
 }

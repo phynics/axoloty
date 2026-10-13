@@ -33,6 +33,10 @@ struct WireGoldenCorpusTests {
             let json: String
             let cbor: String
             let uuidPointers: [String]
+            /// True when the JSON golden is a documented surrogate for a
+            /// CBOR-only value, such as the hex string that stands in for a
+            /// byte string.
+            let jsonSurrogate: Bool
         }
 
         let schemaVersion: Int
@@ -170,6 +174,8 @@ struct WireGoldenCorpusTests {
             #expect(variants.contains("empty"), "\(family) must include an all-optional-absent case")
         }
         #expect(manifest.cases.count >= 28)
+        let bytes = manifest.cases.first { $0.id == "iovalue-bytes" }
+        #expect(bytes?.jsonSurrogate == true, "the byte-string golden must declare its JSON surrogate")
     }
 
     @Test("coaty/3 JSON goldens re-encode byte-identically")
