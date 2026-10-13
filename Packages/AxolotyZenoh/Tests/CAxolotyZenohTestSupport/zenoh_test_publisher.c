@@ -10,13 +10,21 @@ struct axoloty_zenoh_test_publisher {
     z_owned_session_t session;
 };
 
+/// The encoding label a test publisher attaches to a sample. `DEFAULT` sends
+/// the Zenoh default label, as a peer that sets no encoding would.
+enum axoloty_zenoh_test_publisher_encoding {
+    AXOLOTY_ZENOH_TEST_PUBLISHER_ENCODING_CBOR,
+    AXOLOTY_ZENOH_TEST_PUBLISHER_ENCODING_JSON,
+    AXOLOTY_ZENOH_TEST_PUBLISHER_ENCODING_DEFAULT,
+};
+
 static int32_t axoloty_zenoh_test_publisher_put_with_encoding(
     void *handle,
     const uint8_t *key,
     size_t key_length,
     const uint8_t *payload,
     size_t payload_length,
-    const struct z_loaned_encoding_t *encoding);
+    enum axoloty_zenoh_test_publisher_encoding encoding_kind);
 
 void *axoloty_zenoh_test_publisher_open(void) {
     struct axoloty_zenoh_test_publisher *publisher = malloc(sizeof(*publisher));
@@ -51,7 +59,8 @@ int32_t axoloty_zenoh_test_publisher_put(void *handle,
                                          const uint8_t *payload,
                                          size_t payload_length) {
     return axoloty_zenoh_test_publisher_put_with_encoding(
-        handle, key, key_length, payload, payload_length, z_encoding_application_cbor()
+        handle, key, key_length, payload, payload_length,
+        AXOLOTY_ZENOH_TEST_PUBLISHER_ENCODING_CBOR
     );
 }
 
@@ -61,7 +70,20 @@ int32_t axoloty_zenoh_test_publisher_put_json(void *handle,
                                               const uint8_t *payload,
                                               size_t payload_length) {
     return axoloty_zenoh_test_publisher_put_with_encoding(
-        handle, key, key_length, payload, payload_length, NULL
+        handle, key, key_length, payload, payload_length,
+        AXOLOTY_ZENOH_TEST_PUBLISHER_ENCODING_JSON
+    );
+}
+
+int32_t axoloty_zenoh_test_publisher_put_unlabeled(void *handle,
+                                                   const uint8_t *key,
+                                                   size_t key_length,
+                                                   const uint8_t *payload,
+                                                   size_t payload_length) {
+    // Leaving the default label is what a peer that sets no encoding sends.
+    return axoloty_zenoh_test_publisher_put_with_encoding(
+        handle, key, key_length, payload, payload_length,
+        AXOLOTY_ZENOH_TEST_PUBLISHER_ENCODING_DEFAULT
     );
 }
 
@@ -71,7 +93,7 @@ static int32_t axoloty_zenoh_test_publisher_put_with_encoding(
     size_t key_length,
     const uint8_t *payload,
     size_t payload_length,
-    const struct z_loaned_encoding_t *encoding) {
+    enum axoloty_zenoh_test_publisher_encoding encoding_kind) {
     struct axoloty_zenoh_test_publisher *publisher = handle;
     if (publisher == NULL || key == NULL || key_length == 0 ||
         (payload == NULL && payload_length != 0)) {
@@ -90,18 +112,25 @@ static int32_t axoloty_zenoh_test_publisher_put_with_encoding(
     }
     z_put_options_t options;
     z_put_options_default(&options);
-    if (encoding == NULL) {
-        z_owned_encoding_t json_encoding;
-        if (z_encoding_from_str(&json_encoding, "application/json") != Z_OK) {
-            z_keyexpr_drop(z_keyexpr_move(&key_expr));
-            z_bytes_drop(z_bytes_move(&bytes));
-            return Z_EGENERIC;
+    switch (encoding_kind) {
+        case AXOLOTY_ZENOH_TEST_PUBLISHER_ENCODING_CBOR: {
+            z_owned_encoding_t cbor_encoding;
+            z_encoding_clone(&cbor_encoding, z_encoding_application_cbor());
+            options.encoding = z_encoding_move(&cbor_encoding);
+            break;
         }
-        options.encoding = z_encoding_move(&json_encoding);
-    } else {
-        z_owned_encoding_t cbor_encoding;
-        z_encoding_clone(&cbor_encoding, encoding);
-        options.encoding = z_encoding_move(&cbor_encoding);
+        case AXOLOTY_ZENOH_TEST_PUBLISHER_ENCODING_JSON: {
+            z_owned_encoding_t json_encoding;
+            if (z_encoding_from_str(&json_encoding, "application/json") != Z_OK) {
+                z_keyexpr_drop(z_keyexpr_move(&key_expr));
+                z_bytes_drop(z_bytes_move(&bytes));
+                return Z_EGENERIC;
+            }
+            options.encoding = z_encoding_move(&json_encoding);
+            break;
+        }
+        case AXOLOTY_ZENOH_TEST_PUBLISHER_ENCODING_DEFAULT:
+            break;
     }
     result = z_put(z_session_loan(&publisher->session),
                    z_keyexpr_loan(&key_expr),

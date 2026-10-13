@@ -33,8 +33,9 @@ typedef enum {
     AXOLOTY_ZENOH_QUEUE_FULL = 6,
     /// An inbound key or payload exceeds its fixed receive bound.
     AXOLOTY_ZENOH_FRAME_TOO_LARGE = 7,
-    /// An inbound sample on an `axoloty/1/` profile route was labelled with an
-    /// encoding other than `application/cbor` and was dropped.
+    /// A diagnostic notification that an admitted sample's Zenoh `Encoding`
+    /// was not `application/cbor`. The sample is still delivered; admission
+    /// never depends on the advisory hint.
     AXOLOTY_ZENOH_UNSUPPORTED_ENCODING = 8,
 } axoloty_zenoh_result_t;
 
@@ -280,12 +281,13 @@ axoloty_zenoh_result_t axoloty_zenoh_unsubscribe(const axoloty_zenoh_session_t *
 /// lengths output pointers to valid storage. Empty payloads are valid. A too-
 /// small output buffer leaves the queued frame untouched and returns invalid
 /// argument. A successful poll releases one queue slot, including after drops.
-/// Once queued frames are drained, asynchronous full-queue, oversized-frame,
-/// and unsupported-encoding drops are each reported once as
-/// ``AXOLOTY_ZENOH_QUEUE_FULL``, ``AXOLOTY_ZENOH_FRAME_TOO_LARGE``, and
-/// ``AXOLOTY_ZENOH_UNSUPPORTED_ENCODING`` respectively. Full-queue
-/// notifications are returned first when several kinds are pending; all
-/// counters remain cumulative for the lifetime of the subscription.
+/// Once queued frames are drained, asynchronous full-queue and oversized-frame
+/// drops are each reported once as ``AXOLOTY_ZENOH_QUEUE_FULL`` and
+/// ``AXOLOTY_ZENOH_FRAME_TOO_LARGE``. A sample whose advisory Zenoh `Encoding`
+/// was not `application/cbor` is still delivered and is separately reported
+/// once as ``AXOLOTY_ZENOH_UNSUPPORTED_ENCODING``. Full-queue notifications are
+/// returned first when several kinds are pending; all counters remain
+/// cumulative for the lifetime of the subscription.
 ///
 /// - Parameters:
 ///   - session: An open session.
@@ -299,8 +301,9 @@ axoloty_zenoh_result_t axoloty_zenoh_unsubscribe(const axoloty_zenoh_session_t *
 /// - Returns: ``AXOLOTY_ZENOH_OK`` with one frame,
 ///   ``AXOLOTY_ZENOH_QUEUE_EMPTY`` when no frame or drop notification is
 ///   pending, ``AXOLOTY_ZENOH_QUEUE_FULL`` or
-///   ``AXOLOTY_ZENOH_FRAME_TOO_LARGE`` for a reported dropped frame, or an
-///   argument or closed-session error.
+///   ``AXOLOTY_ZENOH_FRAME_TOO_LARGE`` for a reported dropped frame,
+///   ``AXOLOTY_ZENOH_UNSUPPORTED_ENCODING`` for a reported advisory encoding
+///   divergence, or an argument or closed-session error.
 axoloty_zenoh_result_t axoloty_zenoh_poll(const axoloty_zenoh_session_t *session,
                                           const axoloty_zenoh_subscription_t *subscription,
                                           uint8_t *key,
@@ -344,13 +347,13 @@ axoloty_zenoh_result_t axoloty_zenoh_oversized_frame_count(const axoloty_zenoh_s
                                                             const axoloty_zenoh_subscription_t *subscription,
                                                             uint32_t *out_count);
 
-/// Reads the total number of profile-route frames dropped because their Zenoh
-/// `Encoding` was not `application/cbor`.
+/// Reads the total number of inbound samples whose advisory Zenoh `Encoding`
+/// was not `application/cbor`.
 ///
-/// The route prefix remains the authoritative decode signal; this counter
-/// records only samples on the `axoloty/1/` prefix that a peer labelled with
-/// another encoding. External routes admit any encoding and never increment
-/// this counter.
+/// The route prefix is the authoritative decode signal, so the value is a
+/// diagnostic only: it never gates admission, and a counted sample is still
+/// delivered. A receiver decodes by route, and a payload that is not valid
+/// CBOR fails later as a structured rejection.
 ///
 /// - Parameters:
 ///   - session: An open session.

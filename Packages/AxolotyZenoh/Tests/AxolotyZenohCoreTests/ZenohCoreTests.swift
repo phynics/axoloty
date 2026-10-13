@@ -147,8 +147,8 @@ struct AxolotyZenohCoreTests {
         #expect(receiver.close() == .success)
     }
 
-    @Test("receive drops a sample labelled with a non-CBOR encoding")
-    func rejectsUnsupportedEncoding() async throws {
+    @Test("receive admits a sample labelled with a non-CBOR encoding")
+    func admitsAdvisoryEncoding() async throws {
         var receiver = ZenohSession()
         let configuration = ZenohConfiguration(mode: .peer, multicastScoutingEnabled: true)
         #expect(receiver.open(configuration: configuration) == .success)
@@ -189,28 +189,21 @@ struct AxolotyZenohCoreTests {
             try await Task.sleep(for: .milliseconds(10))
             pollResult = receiver.poll(from: subscription, into: &storage)
         }
-        #expect(pollResult == .result(.unsupportedEncoding))
-        #expect(storage.storedKeyLength == 0)
-        #expect(storage.storedPayloadLength == 0)
-
-        let cborPut = key.withUnsafeBufferPointer { keyBuffer in
-            payload.withUnsafeBufferPointer { payloadBuffer in
-                axoloty_zenoh_test_publisher_put(
-                    publisher,
-                    keyBuffer.baseAddress,
-                    keyBuffer.count,
-                    payloadBuffer.baseAddress,
-                    payloadBuffer.count
-                )
-            }
-        }
-        #expect(cborPut == 0)
-        pollResult = receiver.poll(from: subscription, into: &storage)
-        for _ in 0..<200 where pollResult == .result(.queueEmpty) {
-            try await Task.sleep(for: .milliseconds(10))
-            pollResult = receiver.poll(from: subscription, into: &storage)
-        }
+        // The Zenoh `Encoding` hint is advisory: the frame is delivered
+        // unchanged and is decoded by route.
         #expect(pollResult == .frame(ZenohFrame(keyLength: key.count, payloadLength: payload.count)))
+
+        // The non-CBOR label is still reported once as a diagnostic.
+        var advisoryReported = false
+        for _ in 0..<10 {
+            let next = receiver.poll(from: subscription, into: &storage)
+            if next == .result(.unsupportedEncoding) {
+                advisoryReported = true
+                break
+            }
+            if next == .result(.queueEmpty) { break }
+        }
+        #expect(advisoryReported)
         #expect(receiver.unsubscribe(subscription) == .success)
         #expect(receiver.close() == .success)
     }
