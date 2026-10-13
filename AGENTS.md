@@ -14,16 +14,17 @@ Embedded-Swift compatible. The boundary and its migration are tracked by
 [epic #845](https://github.com/phynics/axoloty/issues/845).
 
 [`phynics/axoloty-debug`](https://github.com/phynics/axoloty-debug) owns the
-runtime/debug tooling behind `axoloty-tool serve` — the local MQTT broker
-supervisor, `axoloty-mcp` supervision, the `serve dev` stack, and the shared
-process/signal launcher. It reads no build or repository policy; it talks to a
-broker and to the `axoloty-mcp` product. The `Tools` package consumes it as a
-sibling path dependency (`../axoloty-debug`), so a tooling build requires that
-checkout next to this one, and the development container mounts it for the
-same reason.
+runtime/debug tooling: the `serve mqtt|mcp|dev` command surface, its service
+supervisors, and the shared process/signal launcher. It reads no build or
+repository policy; it talks to a broker and to the `axoloty-mcp` product. It
+ships its own `axoloty-debug` CLI. This repository's `Tools` package must not
+link it: `Tools` stays a library-free harness, and the container `serve-*`
+targets invoke the `axoloty-debug` CLI instead. The development container
+mounts the sibling at `/axoloty-debug` for that purpose.
 
-Ordinary Axoloty library and protocol work needs no checkout of the embedded
-repository. It does need the `axoloty-debug` sibling for the tooling build.
+Ordinary Axoloty library, protocol, and tooling work needs no checkout of the
+embedded repository. Only the container `serve mqtt|mcp|dev` targets need the
+`axoloty-debug` checkout.
 
 ## Documentation authority
 
@@ -91,7 +92,7 @@ See `ARCHITECTURE.md`, `CONTEXT.md`, `docs/adr/`, `docs/ROADMAP.md`, and `docs/p
 - `Source/Runtime` owns host lifecycle, scheduling, transport ownership, bounded ingress, supervised handlers, and diagnostics. `RuntimeBuilder` is mutable only before `finish()`; `RuntimeDefinition` is immutable; `AxolotyRuntime` is single-use and actor-isolated. Copy transport data before admission, fail rather than drop a full protocol ingress queue, and keep handler values owned and sendable. Do not expose raw routes or wildcard subscriptions, add a second processor, or create an unbounded task per message.
 - `AxolotySensorThings` owns typed source and direct-observation workflows. Use one bounded runtime-owned coordinator and the existing Coaty operation families. Do not create a transport, processor, detached task hierarchy, raw MQTT route, or retired controller API.
 - `Embedded` platform and transport integration, identity persistence, clocks, Wi-Fi, hardware IO, storage, and firmware composition now live in `phynics/axoloty-embedded` under [epic #845](https://github.com/phynics/axoloty/issues/845). Firmware deploys the static runtime and must not reimplement protocol semantics. This repository keeps only the hardware-free Core Embedded Swift gate. Never commit Wi-Fi or broker credentials. Keep device paths, credentials, reachability, and live timing in operator configuration.
-- `Tools` contains the first-party build and test orchestration (`axoloty-tool`, `AxolotyTooling`) and the resource-lease probe. Runtime service supervision belongs in `AxolotyDebug`, not here: `AxolotyTooling` routes `serve` into its `AxolotyServeSession` and owns no broker, MCP, or process-supervision policy. Inspector and MCP products live in `Apps/` and use supported runtime interfaces with no privileged protocol backdoor. If a product needs arbitrary MQTT packets, give it its own transport client. Keep machine-readable stdout free of dynamic diagnostics.
+- `Tools` contains the first-party build and test orchestration (`axoloty-tool`, `AxolotyTooling`) and the resource-lease probe. It is a library-free harness: it owns no broker, MCP, transport, or product supervision, and it must never link the Axoloty library or a package that does. Runtime/debug service supervision lives in the sibling `phynics/axoloty-debug` package, reached only through its `axoloty-debug` CLI. Inspector and MCP products live in `Apps/` and use supported runtime interfaces with no privileged protocol backdoor. If a product needs arbitrary MQTT packets, give it its own transport client. Keep machine-readable stdout free of dynamic diagnostics.
 - `Tests` and `Tests/Support/test-tiers.json` own verification policy and evidence. Use Swift Testing, explicit concurrency or deadlines for broker tests, and root Make targets. Keep offline fixtures distinct from fresh live-wire evidence. Replay identical overlapping traces through host and static profiles and compare state, actions, and structured rejections.
 
 Portable packages compile the same production sources for host and Embedded Swift. Conditional compilation may adapt unavailable mechanics but must not change semantics. Keep portable packages free of Foundation, MQTT and NIO, ErrorKit, logging, actors, controllers, lifecycle frameworks, transports, process-global state, and runtime tasks unless the ownership list above explicitly allows them.
