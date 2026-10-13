@@ -132,7 +132,9 @@ object = {
 ```
 
 The object payload keeps unknown fields and numeric lexemes, matching the
-`coaty/3` object-model contract.
+`coaty/3` object-model contract. See
+[wire-value-mapping.md](../wire-value-mapping.md) for the JSON/CBOR value
+classes and the raw-field retention rules.
 
 ## Error model
 
@@ -150,7 +152,7 @@ specific reasons are `cborIndefiniteLength`, `cborInvalidAdditionalInfo`,
 | Route prefix, profile enum, profile-scoped validation | Implemented |
 | Bounded deterministic CBOR reader and writer | Implemented |
 | `WireDecodable`/`WireEncodable` DTO codec seam (format-neutral, [ADR 0011](../adr/0011-codec-format-seam.md)) | Implemented |
-| Raw/custom CBOR payload retention | Follow-up under #977 |
+| Raw/custom CBOR payload retention | Implemented ([wire-value-mapping.md](../wire-value-mapping.md)) |
 | Zenoh binding on `axoloty/1` only | Follow-up under #977 |
 | Golden `coaty/3`/`axoloty/1` corpus with independent CBOR decode | Implemented |
 | Trace-parity gate | Follow-up under #977 |

@@ -74,9 +74,10 @@ extension OwnedWireEvent {
     ) throws(WireEncodeError) -> [UInt8] {
         var output = [UInt8](repeating: 0, count: capacity)
         var result: Result<Int, WireEncodeError> = .failure(.bufferOverflow)
+        let codec = WireCodec(profile: profile)
         output.withUnsafeMutableBufferPointer { buffer in
             guard let baseAddress = buffer.baseAddress else { return }
-            var writer = WireWriter(buffer: baseAddress, capacity: buffer.count)
+            var writer = codec.writer(buffer: baseAddress, capacity: buffer.count)
             do throws(WireEncodeError) {
                 try encode(to: &writer)
                 result = .success(writer.position)

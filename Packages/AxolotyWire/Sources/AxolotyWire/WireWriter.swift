@@ -85,6 +85,9 @@ public struct WireWriter {
     /// Remaining capacity in the buffer.
     public var remaining: Int { capacity - position }
 
+    /// The wire profile whose encoding this writer emits.
+    public var profile: WireProfile { isCBOR ? .axoloty1CBOR : .coaty3JSON }
+
     /// Rewinds a failed transactional encode to a prior position.
     ///
     /// Bytes after the restored position are outside the writer's logical
@@ -912,4 +915,7 @@ public enum WireEncodeError: Error, Sendable, Equatable {
     case bufferOverflow
     /// The value cannot be represented in the wire format.
     case invalidValue
+    /// The raw bytes carry a profile other than the one the writer emits, so
+    /// re-encoding them would silently transcode or corrupt the payload.
+    case profileMismatch
 }
