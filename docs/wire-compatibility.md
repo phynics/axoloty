@@ -53,6 +53,30 @@ replays one corpus through the MQTT `coaty/3` leg and the Zenoh `axoloty/1` leg;
 both are part of epic #977. No `coaty/3` field presence or wire bytes change in
 this corpus.
 
+### Deliberate divergences on `axoloty/1`
+
+Two `axoloty/1` behaviors differ from the `coaty/3` JSON profile by design.
+Both are locked by regression tests, and neither changes a `coaty/3` byte.
+
+- **Bare IO value gate.** `coaty/3` keeps a sealed first-byte sniff: a bare
+  IoValue that can only be JSON must be well-formed JSON, while bytes that
+  cannot be JSON are accepted as external raw input. `axoloty/1` has no
+  first-byte sniff, because every byte value opens a legal CBOR item and
+  external IO routes carry application-defined bytes. The `axoloty/1` gate
+  therefore accepts any payload, and the bounded DTO decode at the handler
+  remains the validation gate. Regression: `WireCodecTests`
+  (`wireCodecAppliesTheProfilesBareValueGate`) and `WireCodecParityTests`.
+- **External Zenoh route encoding.** The transport enforces the
+  `application/cbor` encoding only on the `axoloty/1/` profile prefix. External
+  routes admit any encoding, because their payloads are application-defined
+  and the carrier does not interpret them. Regression: `ZenohBindingTests` and
+  `ZenohBindingReceivePumpTests`.
+
+These are the wire-visible consequences of
+[ADR 0011](./adr/0011-codec-format-seam.md): the format conditionals live
+behind the codec facade, and the bare IO gate and external routes are the only
+deliberate profile divergences. `coaty/3` keeps its stricter gate.
+
 ### G5 host typed IO evidence
 
 Host typed IO uses the same bounded `ProtocolProcessor` path as static IO for
