@@ -33,6 +33,10 @@ private final class RuntimeEventReceiptQueue: @unchecked Sendable {
 }
 
 struct HostTraceReplayAdapter: TraceReplayAdapter {
+    /// The wire profile the host runtime composes for this replay.
+    var profile: WireProfile = .coaty3JSON
+    /// Per-trace payload bytes that replace the JSON fixture text.
+    var payloadOverride: @Sendable (ProtocolTrace) -> [Int: [UInt8]] = { _ in [:] }
     /// When false, the replay returns its observed run without asserting the
     /// corpus-authored expected observation. Used to derive a profile reference
     /// run before an exact expected observation exists.
@@ -40,8 +44,10 @@ struct HostTraceReplayAdapter: TraceReplayAdapter {
 
     func replay(_ trace: ProtocolTrace) async throws -> TraceRun {
         try await RuntimeTraceReplayAdapter(
-            makeTransport: { HostTraceTransport() },
-            assertExpected: assertExpected
+            profile: profile,
+            payloadOverride: payloadOverride,
+            assertExpected: assertExpected,
+            makeTransport: { HostTraceTransport() }
         ).replay(trace)
     }
 }
@@ -53,14 +59,35 @@ struct HostTraceReplayAdapter: TraceReplayAdapter {
 /// the corpus state and no carrier metadata enters ``TraceObservation``.
 struct RuntimeTraceReplayAdapter: TraceReplayAdapter {
     let makeTransport: @Sendable () throws -> any RuntimeTraceCarrier
+    /// The wire profile the host runtime composes for this replay. The carrier
+    /// may override it; this value seeds the payload override shape.
+    let profile: WireProfile
+    /// Per-trace payload bytes that replace the JSON fixture text.
+    let payloadOverride: @Sendable (ProtocolTrace) -> [Int: [UInt8]]
     /// When false, skip the expected-observation assertion. See
     /// ``HostTraceReplayAdapter/assertExpected``.
-    var assertExpected = true
+    let assertExpected: Bool
+
+    init(
+        profile: WireProfile = .coaty3JSON,
+        payloadOverride: @escaping @Sendable (ProtocolTrace) -> [Int: [UInt8]] = { _ in [:] },
+        assertExpected: Bool = true,
+        makeTransport: @escaping @Sendable () throws -> any RuntimeTraceCarrier
+    ) {
+        self.profile = profile
+        self.payloadOverride = payloadOverride
+        self.assertExpected = assertExpected
+        self.makeTransport = makeTransport
+    }
 
     func replay(_ trace: ProtocolTrace) async throws -> TraceRun {
         var replay = try HostRuntimeTraceReplay(
             trace: trace,
             transport: makeTransport(),
+            wireInputs: TraceWireInputs(
+                profile: profile,
+                payloadOverride: payloadOverride(trace)
+            ),
             assertExpected: assertExpected
         )
         return try await replay.replay()
@@ -94,6 +121,11 @@ fileprivate struct TraceWireInputs {
     /// The payload bytes for one step, preferring an explicit override.
     func payload(for step: TraceStep) -> [UInt8] {
         payloadOverride[step.sequence] ?? Array(step.input.fixturePayload.utf8)
+    }
+
+    /// The payload bytes for a JSON literal that the replay derives itself.
+    func payload(forJSON json: String) -> [UInt8] {
+        profile == .axoloty1CBOR ? TracePayloadCBOR.encode(json) : Array(json.utf8)
     }
 }
 
@@ -224,6 +256,7 @@ private struct HostRuntimeTraceReplay: RuntimeTraceDriver {
     private let trace: ProtocolTrace
     private let runtime: AxolotyRuntime
     private let transport: any RuntimeTraceCarrier
+    private let wireInputs: TraceWireInputs
     private let assertExpected: Bool
     private var driverState = TraceState()
     private var driverLabels = TraceLabels()
@@ -233,10 +266,12 @@ private struct HostRuntimeTraceReplay: RuntimeTraceDriver {
     init(
         trace: ProtocolTrace,
         transport: any RuntimeTraceCarrier = HostTraceTransport(),
+        wireInputs: TraceWireInputs = TraceWireInputs(profile: .coaty3JSON),
         assertExpected: Bool = true
     ) throws {
         self.trace = trace
         self.transport = transport
+        self.wireInputs = wireInputs
         self.assertExpected = assertExpected
         // A non-zero runtime identity is required by the protocol routing-key
         // boundary.  Keeping it deterministic makes host traces reproducible.
@@ -357,20 +392,21 @@ private struct HostRuntimeTraceReplay: RuntimeTraceDriver {
     private mutating func seed(state: TraceState, time: UInt64, family: TraceEventFamily) async throws {
         for objectID in state.activeObjectIDs {
             let object = Self.identity(objectID)
-            let topic = "coaty/3/trace/ADV/\(Self.uuidText(object))"
+            let topic = "\(wireInputs.routePrefix)/trace/ADV/\(Self.uuidText(object))"
             let payload = "{\"object\":{\"objectId\":\"\(Self.uuidText(object))\",\"coreType\":\"CoatyObject\",\"objectType\":\"trace.Object\",\"name\":\"\(objectID)\"}}"
-            _ = try await injectAndAwaitReceipt(.profile(route: topic, payload: Array(payload.utf8), nowMS: UInt32(time)))
+            _ = try await injectAndAwaitReceipt(.profile(route: topic, payload: wireInputs.payload(forJSON: payload), nowMS: UInt32(time)))
         }
         if let correlationID = state.pendingCorrelationIDs.first {
             let correlation = Self.identity(correlationID)
-            let payload: [UInt8]
+            let payloadJSON: String
             switch family {
-            case .resolve: payload = Array("{}".utf8)
-            case .retrieve: payload = Array("{}".utf8)
-            case .complete: payload = Array("{\"object\":{\"id\":\"x\"}}".utf8)
-            case .return: payload = Array("{\"parameters\":{\"value\":1},\"filter\":null}".utf8)
-            default: payload = Array("{}".utf8)
+            case .resolve: payloadJSON = "{}"
+            case .retrieve: payloadJSON = "{}"
+            case .complete: payloadJSON = "{\"object\":{\"id\":\"x\"}}"
+            case .return: payloadJSON = "{\"parameters\":{\"value\":1},\"filter\":null}"
+            default: payloadJSON = "{}"
             }
+            let payload = wireInputs.payload(forJSON: payloadJSON)
             let request: RuntimeRequest = family == .return
                 ? .call(correlationID: correlation, payload: payload, timeoutMS: 5_000)
                 : family == .complete
@@ -385,33 +421,34 @@ private struct HostRuntimeTraceReplay: RuntimeTraceDriver {
 
     private mutating func applyRuntime(_ step: TraceStep) async throws -> (RuntimeReceipt, RuntimeConformanceObservation) {
         let input = step.input
+        let payload = wireInputs.payload(for: step)
         let source = Self.identity(input.objectID ?? "trace-source")
         let correlation = input.correlationID.map(Self.identity)
             ?? (SharedProtocolTraceReplay<64>.capability(input.family).isOneWay ? nil : Self.identity("malformed-correlation"))
         let receipt: RuntimeReceipt
         if input.direction == .outbound {
             switch input.family {
-            case .advertise: receipt = await runtime.publish(.advertise(Array(input.fixturePayload.utf8)), nowMS: UInt32(step.timeMilliseconds))
-            case .deadvertise: receipt = await runtime.publish(.deadvertise(Array(input.fixturePayload.utf8)), nowMS: UInt32(step.timeMilliseconds))
-            case .channel: receipt = await runtime.publish(.channel(identifier: "trace", payload: Array(input.fixturePayload.utf8)), nowMS: UInt32(step.timeMilliseconds))
-            case .associate: receipt = await runtime.publish(.associate(Array(input.fixturePayload.utf8)), nowMS: UInt32(step.timeMilliseconds))
-            case .ioValue: receipt = await runtime.publish(.ioValue(Array(input.fixturePayload.utf8)), nowMS: UInt32(step.timeMilliseconds))
-            case .discover: receipt = await runtime.request(.discover(correlationID: correlation!, payload: Array(input.fixturePayload.utf8), timeoutMS: input.deadlineExpired ? 0 : 5_000), nowMS: UInt32(step.timeMilliseconds))
-            case .query: receipt = await runtime.request(.query(correlationID: correlation!, payload: Array(input.fixturePayload.utf8), timeoutMS: input.deadlineExpired ? 0 : 5_000), nowMS: UInt32(step.timeMilliseconds))
-            case .update: receipt = await runtime.request(.update(correlationID: correlation!, payload: Array(input.fixturePayload.utf8), timeoutMS: input.deadlineExpired ? 0 : 5_000), nowMS: UInt32(step.timeMilliseconds))
-            case .call: receipt = await runtime.request(.call(correlationID: correlation!, payload: Array(input.fixturePayload.utf8), timeoutMS: input.deadlineExpired ? 0 : 5_000), nowMS: UInt32(step.timeMilliseconds))
-            case .resolve: receipt = await runtime.respond(.resolve(correlationID: correlation!, payload: Array(input.fixturePayload.utf8)), nowMS: UInt32(step.timeMilliseconds))
-            case .retrieve: receipt = await runtime.respond(.retrieve(correlationID: correlation!, payload: Array(input.fixturePayload.utf8)), nowMS: UInt32(step.timeMilliseconds))
-            case .complete: receipt = await runtime.respond(.complete(correlationID: correlation!, payload: Array(input.fixturePayload.utf8)), nowMS: UInt32(step.timeMilliseconds))
-            case .return: receipt = await runtime.respond(.returnEvent(correlationID: correlation!, payload: Array(input.fixturePayload.utf8)), nowMS: UInt32(step.timeMilliseconds))
+            case .advertise: receipt = await runtime.publish(.advertise(payload), nowMS: UInt32(step.timeMilliseconds))
+            case .deadvertise: receipt = await runtime.publish(.deadvertise(payload), nowMS: UInt32(step.timeMilliseconds))
+            case .channel: receipt = await runtime.publish(.channel(identifier: "trace", payload: payload), nowMS: UInt32(step.timeMilliseconds))
+            case .associate: receipt = await runtime.publish(.associate(payload), nowMS: UInt32(step.timeMilliseconds))
+            case .ioValue: receipt = await runtime.publish(.ioValue(payload), nowMS: UInt32(step.timeMilliseconds))
+            case .discover: receipt = await runtime.request(.discover(correlationID: correlation!, payload: payload, timeoutMS: input.deadlineExpired ? 0 : 5_000), nowMS: UInt32(step.timeMilliseconds))
+            case .query: receipt = await runtime.request(.query(correlationID: correlation!, payload: payload, timeoutMS: input.deadlineExpired ? 0 : 5_000), nowMS: UInt32(step.timeMilliseconds))
+            case .update: receipt = await runtime.request(.update(correlationID: correlation!, payload: payload, timeoutMS: input.deadlineExpired ? 0 : 5_000), nowMS: UInt32(step.timeMilliseconds))
+            case .call: receipt = await runtime.request(.call(correlationID: correlation!, payload: payload, timeoutMS: input.deadlineExpired ? 0 : 5_000), nowMS: UInt32(step.timeMilliseconds))
+            case .resolve: receipt = await runtime.respond(.resolve(correlationID: correlation!, payload: payload), nowMS: UInt32(step.timeMilliseconds))
+            case .retrieve: receipt = await runtime.respond(.retrieve(correlationID: correlation!, payload: payload), nowMS: UInt32(step.timeMilliseconds))
+            case .complete: receipt = await runtime.respond(.complete(correlationID: correlation!, payload: payload), nowMS: UInt32(step.timeMilliseconds))
+            case .return: receipt = await runtime.respond(.returnEvent(correlationID: correlation!, payload: payload), nowMS: UInt32(step.timeMilliseconds))
             }
         } else {
             let correlationText = correlation.map(Self.uuidText)
-            let topic = "coaty/3/trace/\(input.family.rawValue)/\(Self.uuidText(source))"
+            let topic = "\(wireInputs.routePrefix)/trace/\(input.family.rawValue)/\(Self.uuidText(source))"
                 + (correlationText.map { "/\($0)" } ?? "")
             let frame = RuntimeInboundFrame.profile(
                 route: topic,
-                payload: Array(input.fixturePayload.utf8),
+                payload: payload,
                 nowMS: UInt32(step.timeMilliseconds)
             )
             receipt = try await injectAndAwaitReceipt(frame, sequence: step.sequence)

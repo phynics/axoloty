@@ -29,8 +29,8 @@ enum ZenohBindingSupport {
 
     static func profileInterestRoutes(namespace: String) -> [String] {
         [
-            "coaty/3/\(namespace)/*/*",
-            "coaty/3/\(namespace)/*/*/*",
+            "axoloty/1/\(namespace)/*/*",
+            "axoloty/1/\(namespace)/*/*/*",
         ]
     }
 
@@ -55,12 +55,15 @@ enum ZenohBindingSupport {
 
         var bytes = [UInt8](repeating: 0, count: route.length)
         for index in 0..<route.length { bytes[index] = route.byte(at: index)! }
-        guard bytes.starts(with: Array("coaty/3/".utf8)) else { return .external }
+        guard bytes.starts(with: Array("axoloty/1/".utf8)) else { return .external }
         guard route.length <= maximumProfileKeyLength, let activeNamespace else { return .unrelated }
         return bytes.withUnsafeBufferPointer { buffer in
             guard let base = buffer.baseAddress else { return .unrelated }
             let topic = TopicView(topicBytes: base, length: buffer.count)
-            guard (try? topic.validate(maximumTopicLength: maximumProfileKeyLength)) != nil,
+            guard (try? topic.validate(
+                maximumTopicLength: maximumProfileKeyLength,
+                profile: .axoloty1CBOR
+            )) != nil,
                   topic.namespaceLevel.map({ equals($0, activeNamespace) }) == true,
                   let eventType = topic.eventType,
                   staticStringEquals(eventType.wireCode, "IOV") else {
@@ -103,7 +106,10 @@ enum ZenohBindingSupport {
         routeBytes.withUnsafeBufferPointer { buffer in
             guard let base = buffer.baseAddress else { return false }
             let topic = TopicView(topicBytes: base, length: buffer.count)
-            guard (try? topic.validate(maximumTopicLength: maximumKeyLength)) != nil,
+            guard (try? topic.validate(
+                maximumTopicLength: maximumKeyLength,
+                profile: .axoloty1CBOR
+            )) != nil,
                   let actualNamespace = topic.namespaceLevel else { return false }
             return equals(actualNamespace, namespace)
         }
@@ -129,6 +135,11 @@ enum ZenohBindingSupport {
             return .runtime(code: .streamEnded, reason: "\(operation) had no queued Zenoh frame")
         case .frameTooLarge:
             return .invalidArgument(argument: "Zenoh", reason: "\(operation) exceeded the configured frame bound")
+        case .unsupportedEncoding:
+            return .invalidArgument(
+                argument: "Zenoh",
+                reason: "\(operation) received a sample whose encoding is not application/cbor"
+            )
         }
     }
 

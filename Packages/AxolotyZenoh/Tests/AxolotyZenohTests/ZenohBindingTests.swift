@@ -103,8 +103,8 @@ struct ZenohBindingTests {
         session.connectedRouters = 0
         binding.drainReceiveQueues()
 
-        try await binding.perform(.publish(RuntimeOutboundMessage(route: "coaty/3/node/ADV/source", payload: [9])))
-        #expect(session.operations.last == .publish(Array("coaty/3/node/ADV/source".utf8), [9]))
+        try await binding.perform(.publish(RuntimeOutboundMessage(route: "axoloty/1/node/ADV/source", payload: [9])))
+        #expect(session.operations.last == .publish(Array("axoloty/1/node/ADV/source".utf8), [9]))
         await binding.stop()
     }
 
@@ -123,13 +123,13 @@ struct ZenohBindingTests {
         await binding.setDiagnostics(counters)
         try await binding.start { _ in }
         var payload: [UInt8] = [0, 1, 2, 255]
-        let message = RuntimeOutboundMessage(route: "coaty/3/node/ADV/source", payload: payload)
+        let message = RuntimeOutboundMessage(route: "axoloty/1/node/ADV/source", payload: payload)
         payload[0] = 99
 
         try await binding.perform(.publish(message))
 
         #expect(session.operations.last == .publish(
-            Array("coaty/3/node/ADV/source".utf8),
+            Array("axoloty/1/node/ADV/source".utf8),
             [0, 1, 2, 255]
         ))
         #expect(counters.snapshot().publishedFrames == 1)
@@ -197,8 +197,8 @@ struct ZenohBindingTests {
 
         #expect(session.operations == [
             .open(Array("tcp/127.0.0.1:7447".utf8), mode: .client, multicastScoutingEnabled: false),
-            .subscribe(Array("coaty/3/node/*/*".utf8), id: 1),
-            .subscribe(Array("coaty/3/node/*/*/*".utf8), id: 2),
+            .subscribe(Array("axoloty/1/node/*/*".utf8), id: 1),
+            .subscribe(Array("axoloty/1/node/*/*/*".utf8), id: 2),
             .unsubscribe(1),
             .unsubscribe(2),
         ])
@@ -206,7 +206,7 @@ struct ZenohBindingTests {
             guard case let .subscribe(route, _) = operation else { return nil }
             return route
         }
-        #expect(!subscribedRoutes.contains(Array("coaty/3/node/**".utf8)))
+        #expect(!subscribedRoutes.contains(Array("axoloty/1/node/**".utf8)))
         await binding.stop()
     }
 
@@ -230,8 +230,8 @@ struct ZenohBindingTests {
 
         #expect(session.operations == [
             .open(Array("tcp/127.0.0.1:7447".utf8), mode: .client, multicastScoutingEnabled: false),
-            .subscribe(Array("coaty/3/node/*/*".utf8), id: 1),
-            .subscribe(Array("coaty/3/node/*/*/*".utf8), id: 2),
+            .subscribe(Array("axoloty/1/node/*/*".utf8), id: 1),
+            .subscribe(Array("axoloty/1/node/*/*/*".utf8), id: 2),
             .unsubscribe(1),
             .unsubscribe(1),
         ])
@@ -266,8 +266,8 @@ struct ZenohBindingTests {
         try await binding.deactivateProfileInterest(namespace: "node")
 
         #expect(session.operations.suffix(4).elementsEqual([
-            .subscribe(Array("coaty/3/node/*/*".utf8), id: 3),
-            .subscribe(Array("coaty/3/node/*/*/*".utf8), id: 4),
+            .subscribe(Array("axoloty/1/node/*/*".utf8), id: 3),
+            .subscribe(Array("axoloty/1/node/*/*/*".utf8), id: 4),
             .unsubscribe(3),
             .unsubscribe(4),
         ]))
@@ -303,12 +303,14 @@ struct ZenohBindingTests {
         try await binding.start { _ in }
 
         #expect(classify("other/source", with: binding) == .external)
-        let profileRoute = "coaty/3/node/IOV/00000000-0000-4000-8000-000000000001"
+        let profileRoute = "axoloty/1/node/IOV/00000000-0000-4000-8000-000000000001"
         #expect(classify(profileRoute, with: binding) == .unrelated)
         try await binding.activateProfileInterest(namespace: "node")
         #expect(classify(profileRoute, with: binding) == .coaty)
-        #expect(classify("coaty/3/other/IOV/00000000-0000-4000-8000-000000000001", with: binding) == .unrelated)
-        #expect(classify("coaty/3/node/ADV/00000000-0000-4000-8000-000000000001", with: binding) == .unrelated)
+        #expect(classify("axoloty/1/other/IOV/00000000-0000-4000-8000-000000000001", with: binding) == .unrelated)
+        #expect(classify("axoloty/1/node/ADV/00000000-0000-4000-8000-000000000001", with: binding) == .unrelated)
+        #expect(classify("coaty/3/node/IOV/00000000-0000-4000-8000-000000000001", with: binding) == .external)
+        #expect(binding.wireProfile == .axoloty1CBOR)
         #expect(classify("bad//route", with: binding) == .unrelated)
         #expect(classify("bad/+/route", with: binding) == .unrelated)
         #expect(classify("bad/*/route", with: binding) == .unrelated)
@@ -701,7 +703,7 @@ private struct ZenohContractFixture: RuntimeTransportContractFixture, @unchecked
         session.operations.compactMap { operation in
             guard case let .subscribe(route, _) = operation else { return nil }
             let value = String(decoding: route, as: UTF8.self)
-            return value.hasPrefix("coaty/3/contract-node/") ? value : nil
+            return value.hasPrefix("axoloty/1/contract-node/") ? value : nil
         }
     }
 
@@ -713,7 +715,7 @@ private struct ZenohContractFixture: RuntimeTransportContractFixture, @unchecked
         return session.operations.compactMap { operation in
             guard case let .unsubscribe(id) = operation else { return nil }
             let route = routesByID[id]
-            return route?.hasPrefix("coaty/3/contract-node/") == true ? route : nil
+            return route?.hasPrefix("axoloty/1/contract-node/") == true ? route : nil
         }
     }
 
@@ -748,7 +750,7 @@ private struct ZenohContractFixture: RuntimeTransportContractFixture, @unchecked
         guard let subscriptionID = session.operations.compactMap({ operation -> Int? in
             guard case let .subscribe(bytes, id) = operation,
                   String(decoding: bytes, as: UTF8.self) == route ||
-                  (route.hasPrefix("coaty/3/contract-node/") && String(decoding: bytes, as: UTF8.self).hasPrefix("coaty/3/contract-node/")) else {
+                  (route.hasPrefix("axoloty/1/contract-node/") && String(decoding: bytes, as: UTF8.self).hasPrefix("axoloty/1/contract-node/")) else {
                 return nil
             }
             return id

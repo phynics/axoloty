@@ -48,7 +48,7 @@ is identified by `contractVersion`.
 `AXOLOTY_ZENOH_MAX_SUBSCRIBERS` is eight per session. It is a power of two so
 three low bits encode a subscriber slot in opaque generation-guarded handles.
 Two slots accommodate the profile-interest expressions
-`coaty/3/<namespace>/*/*` and `coaty/3/<namespace>/*/*/*`; six remain for exact
+`axoloty/1/<namespace>/*/*` and `axoloty/1/<namespace>/*/*/*`; six remain for exact
 external routes. The host configuration therefore caps
 `maximumExternalRoutes` at six instead of the former 64.
 
@@ -116,9 +116,11 @@ The suite documents no backend-specific tolerances. Divergence status:
 
 `AxolotyProtocolTraceTestSupport` owns one trace schema, fixture corpus,
 canonical observations, and runtime replay adapter. The Zenoh tests reuse this
-module for 34 protocol-eligible traces. They run each trace through `MQTTBinding`
+module for 33 protocol-eligible traces. They run each trace through `MQTTBinding`
 with the root package's in-process broker and through `ZenohBinding` with an
-injected session. They do not start `zenohd`.
+injected session. They do not start `zenohd`. The MQTT leg carries the sealed
+`coaty/3` JSON contract; the Zenoh leg carries the `axoloty/1` CBOR contract
+(ADR 0009).
 
 The adapter suppresses startup and state-seeding publications. It sends outbound
 actions from scenario steps through each binding. The comparison ignores
@@ -126,28 +128,47 @@ carrier keys, timestamps, and transport identifiers. It compares actions,
 families, normalized correlation labels, payloads, route classes, rejections,
 and protocol state.
 
-The parity run uses 34 of the 35 stored traces. It covers all 13 closed-profile
+The parity run uses 33 of the 35 stored traces. It covers all 13 closed-profile
 families (`ADV`, `DAD`, `CHN`, `ASC`, `IOV`, `DSC`, `RSV`, `QRY`, `RTV`, `UPD`,
 `CPL`, `CLL`, `RTN`), plus malformed, duplicate, saturation, correlation,
-deadline, and external-route cases. It omits only `negative-payload-limit`:
-that fixture exceeds Zenoh's fixed 2,048-byte receive-buffer maximum and is
-rejected before it reaches `AxolotyProtocol`. The root trace suite continues to
-verify that case against the shared protocol implementation. It is outside
-cross-carrier protocol-observation parity because it tests a transport-boundary
-limit. The parity check does not tolerate differences in protocol observations.
+deadline, and external-route cases. It omits two profile-defined fixtures:
 
-The MQTT-versus-Zenoh route-classification matrix required by #808/#811 is:
+- `negative-payload-limit` measures the JSON fixture against Zenoh's fixed
+  2,048-byte receive-buffer maximum, so the CBOR leg cannot reproduce its
+  rejection; the frame is rejected before it reaches `AxolotyProtocol`.
+- `malformed-IOV` relies on the `coaty/3` bare-value first-byte sniff. Every
+  byte opens a legal CBOR item, so the `axoloty/1` leg accepts the fixture that
+  the JSON leg rejects.
 
-| Equivalent route bytes | MQTT | Zenoh | Result |
+The root trace suite continues to verify both cases against the shared protocol
+implementation. They are outside cross-carrier protocol-observation parity
+because each tests an encoding-specific boundary. The parity check does not
+tolerate differences in protocol observations.
+
+The route-classification contract required by #808/#811 is profile-bound: each
+binding classifies its own profile route as Coaty and a foreign profile route as
+External. The test asserts every row.
+
+| Binding | Route bytes | Classification | Reason |
 |---|---|---|---|
-| Active `coaty/3/node/IOV/...` | Coaty | Coaty | Equivalent |
-| `coaty/3/node/ADV/...` | Unrelated | Unrelated | Equivalent |
-| `coaty/3/other/IOV/...` | Unrelated | Unrelated | Equivalent |
-| `legacy/source/value` | External | External | Equivalent |
-| `bad//route` | Unrelated | Unrelated | Equivalent |
-| `bad/+/route` | Unrelated | Unrelated | Equivalent |
-| `bad/*/route` | External | Unrelated | Deliberate divergence |
-| One non-UTF-8 key byte (`FF`) | External | External | Equivalent classification; Zenoh frame admission separately rejects non-UTF-8 keys |
+| MQTT (`coaty/3`) | `coaty/3/node/IOV/...` | Coaty | Active namespace, IOV family |
+| MQTT | `coaty/3/node/ADV/...` | Unrelated | Non-IOV family |
+| MQTT | `coaty/3/other/IOV/...` | Unrelated | Inactive namespace |
+| MQTT | `axoloty/1/node/IOV/...` | External | Foreign profile |
+| MQTT | `legacy/source/value` | External | External route |
+| MQTT | `bad//route` | Unrelated | Malformed route |
+| MQTT | `bad/+/route` | Unrelated | Malformed route |
+| MQTT | `bad/*/route` | External | MQTT external-route classifier permits `*` |
+| MQTT | One non-UTF-8 key byte (`FF`) | External | External classification |
+| Zenoh (`axoloty/1`) | `axoloty/1/node/IOV/...` | Coaty | Active namespace, IOV family |
+| Zenoh | `axoloty/1/node/ADV/...` | Unrelated | Non-IOV family |
+| Zenoh | `axoloty/1/other/IOV/...` | Unrelated | Inactive namespace |
+| Zenoh | `coaty/3/node/IOV/...` | External | Foreign profile |
+| Zenoh | `legacy/source/value` | External | External route |
+| Zenoh | `bad//route` | Unrelated | Malformed route |
+| Zenoh | `bad/+/route` | Unrelated | Malformed route |
+| Zenoh | `bad/*/route` | Unrelated | Zenoh rejects wildcard key expressions |
+| Zenoh | One non-UTF-8 key byte (`FF`) | External | External classification; frame admission rejects it |
 
 The `*` row is deliberate: MQTT's route classifier permits this byte in an
 otherwise external topic, while Zenoh rejects wildcard key expressions and
@@ -155,7 +176,9 @@ external activation fails before subscription. The test asserts each side's
 documented result and excludes only this row from classification equality.
 This adapter-level divergence does not relax protocol trace equality. The
 non-UTF-8 row compares classifier results only; a Zenoh inbound frame must
-still be valid UTF-8 before it can become a runtime route.
+still be valid UTF-8 before it can become a runtime route. The profile-owned
+rows are not a divergence: they follow directly from ADR 0009, which binds each
+carrier to one profile.
 
 ### Lifecycle last will
 

@@ -154,14 +154,14 @@ extension ProtocolExecutor {
 
     func publishIoAdvertisements(nowMS: UInt32) async throws {
         for endpoint in typedIoState.endpointRegistrations {
-            let payload = try runtimeAdvertisePayload(objectBytes: endpoint.objectBytes)
+            let payload = try runtimeAdvertisePayload(objectBytes: endpoint.objectBytes, profile: wireProfile)
             try await publishLifecycle(.advertise(sourceID: endpoint.id.uuid, payload: payload), nowMS: nowMS)
         }
     }
 
     func publishIoDeadvertisements(nowMS: UInt32) async throws {
         for endpoint in typedIoState.endpointRegistrations {
-            let payload = RuntimeLifecyclePayload.deadvertise(objectID: endpoint.id)
+            let payload = try RuntimeLifecyclePayload.deadvertise(objectID: endpoint.id, profile: wireProfile)
             try await publishLifecycle(.deadvertise(sourceID: endpoint.id.uuid, payload: payload), nowMS: nowMS)
         }
     }
@@ -326,22 +326,41 @@ private func ioPublicationReceipt(for outcome: RuntimeReceipt) -> IoPublicationR
     }
 }
 
-private func runtimeAdvertisePayload(objectBytes: BoundedIoBytes<2048>) throws(ProtocolError) -> [UInt8] {
-    var output = [UInt8](repeating: 0, count: WireBufferConfig.maxPayloadSize)
-    var length = 0
-    var failed = false
-    output.withUnsafeMutableBufferPointer { buffer in
-        var writer = WireWriter(buffer: buffer.baseAddress!, capacity: buffer.count)
-        do throws(WireEncodeError) {
-            try writer.beginObject(); try writer.writeKey("object")
-            objectBytes.withBytes { bytes in do { try writer.writeRawValue(bytes) } catch { failed = true } }
-            if failed { throw WireEncodeError.bufferOverflow }
-            try writer.endObject(); length = writer.position
-        } catch { failed = true }
+private func runtimeAdvertisePayload(
+    objectBytes: BoundedIoBytes<2048>,
+    profile: WireProfile
+) throws(ProtocolError) -> [UInt8] {
+    switch profile {
+    case .coaty3JSON:
+        var output = [UInt8](repeating: 0, count: WireBufferConfig.maxPayloadSize)
+        var length = 0
+        var failed = false
+        output.withUnsafeMutableBufferPointer { buffer in
+            guard let base = buffer.baseAddress else {
+                failed = true
+                return
+            }
+            var writer = WireWriter(buffer: base, capacity: buffer.count)
+            do throws(WireEncodeError) {
+                try writer.beginObject(); try writer.writeKey("object")
+                objectBytes.withBytes { bytes in do { try writer.writeRawValue(bytes) } catch { failed = true } }
+                if failed { throw WireEncodeError.bufferOverflow }
+                try writer.endObject(); length = writer.position
+            } catch { failed = true }
+        }
+        guard !failed else { throw ProtocolError(.capacityExceeded) }
+        output.removeSubrange(length..<output.count)
+        return output
+    case .axoloty1CBOR:
+        // The object metadata stays JSON, so wrap it in the JSON envelope and
+        // let the runtime payload encoder translate the whole value to CBOR.
+        var json = Array("{\"object\":".utf8)
+        objectBytes.withBytes { bytes in
+            for index in 0..<bytes.length { json.append(bytes.byte(at: index) ?? 0) }
+        }
+        json.append(0x7D)
+        return try RuntimeWirePayload.encode(json: json, profile: .axoloty1CBOR)
     }
-    guard !failed else { throw ProtocolError(.capacityExceeded) }
-    output.removeSubrange(length..<output.count)
-    return output
 }
 
 private func runtimeIoBufferingPolicy(

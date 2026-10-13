@@ -4,6 +4,10 @@ import Axoloty
 import AxolotyZenoh
 import Foundation
 
+// `axoloty/1` carries CBOR on the wire. The example's `send` mode accepts a
+// JSON Channel envelope and encodes it with `JSONToCBOR` before publishing, so
+// the example stays readable while the wire uses the sealed profile.
+
 @main
 struct ZenohHost {
     static func main() async {
@@ -62,8 +66,10 @@ struct ZenohHost {
         print("LISTENING channel=\(channel)")
         var iterator = events.makeAsyncIterator()
         if let event = await iterator.next() {
-            let payload = String(bytes: event.value, encoding: .utf8) ?? "<invalid UTF-8>"
-            print("RECEIVED channel=\(channel) payload=\(payload)")
+            // `axoloty/1` payloads are CBOR, so print the encoded bytes. An
+            // application decodes them with the schema it expects.
+            let hex = event.value.map { String(format: "%02x", $0) }.joined()
+            print("RECEIVED channel=\(channel) bytes=\(event.value.count) hex=\(hex)")
         }
     }
 
@@ -72,7 +78,11 @@ struct ZenohHost {
         channel: String,
         payload: String
     ) async {
-        let bytes = Array(payload.utf8)
+        guard let bytes = JSONToCBOR.encode(payload) else {
+            await runtime.stop()
+            FileHandle.standardError.write(Data("Payload must be a complete JSON value\n".utf8))
+            exit(EXIT_FAILURE)
+        }
         let initialPublications = await runtime.diagnosticsSnapshot().publishedFrames
         let receipt = await runtime.publish(.channel(identifier: channel, payload: bytes))
         guard receipt == .accepted else {

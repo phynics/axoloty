@@ -28,6 +28,8 @@ public enum CoatyRoute {
     ///   - eventTypeFilter: An optional event-type filter suffix.
     ///   - eventTypeFilterKind: The separator required by the filter's wire
     ///     meaning.
+    ///   - profile: The single wire profile whose prefix the route carries.
+    ///     Defaults to the sealed `coaty/3` profile.
     /// - Throws: ``AxolotyError/runtime(code:reason:)`` with
     ///   ``AxolotyError/RuntimeErrorCode/capacityExceeded`` if the computed
     ///   buffer budget is smaller than what the topic actually requires.
@@ -35,22 +37,30 @@ public enum CoatyRoute {
         for key: ProtocolRoutingKey,
         namespace: String,
         eventTypeFilter: [UInt8]? = nil,
-        eventTypeFilterKind: ProtocolEventTypeFilterKind = .direct
-    ) throws -> String {
+        eventTypeFilterKind: ProtocolEventTypeFilterKind = .direct,
+        profile: WireProfile = .coaty3JSON
+    ) throws(AxolotyError) -> String {
         let namespaceBytes = Array(namespace.utf8)
         let namespaceStorage = namespaceBytes.isEmpty ? [UInt8(0)] : namespaceBytes
         let filterBytes = eventTypeFilter ?? []
         let filterStorage = filterBytes.isEmpty ? [UInt8(0)] : filterBytes
         let filterLength = eventTypeFilter.map { $0.count + (eventTypeFilterKind == .objectType ? 2 : 1) } ?? 0
-        let capacity = 8 + namespaceBytes.count + 1 + 3 + filterLength + 1 + 36 + (key.correlationID == nil ? 0 : 37)
+        let prefixLength = Int(profile.protocolName.utf8CodeUnitCount)
+            + 1
+            + Int(profile.protocolVersion.utf8CodeUnitCount)
+            + 1
+        let capacity = prefixLength + namespaceBytes.count + 1 + 3 + filterLength + 1 + 36 + (key.correlationID == nil ? 0 : 37)
         var bytes = [UInt8](repeating: 0, count: capacity)
-        let writtenLength: Int = try bytes.withUnsafeMutableBufferPointer { output in
-            try namespaceStorage.withUnsafeBufferPointer { namespace in
-                try filterStorage.withUnsafeBufferPointer { filter in
+        // The buffer helpers are `rethrows`, so the build closure returns `nil`
+        // on a wire-encode failure instead of throwing through them. The typed
+        // error is raised once, after the buffer scopes end.
+        let writtenLength: Int? = bytes.withUnsafeMutableBufferPointer { output -> Int? in
+            namespaceStorage.withUnsafeBufferPointer { namespace -> Int? in
+                filterStorage.withUnsafeBufferPointer { filter -> Int? in
                     var builder = TopicBuilder(buffer: output.baseAddress!, capacity: output.count)
                     let namespaceSlice = ByteSlice(bytes: namespace.baseAddress!, length: namespaceBytes.count)
                     do {
-                        try builder.writePrefix()
+                        try builder.writePrefix(profile)
                         try builder.writeNamespace(namespaceSlice)
                         let filterSlice = eventTypeFilter == nil
                             ? nil
@@ -65,14 +75,17 @@ public enum CoatyRoute {
                             try builder.writeCorrelationId(correlationID)
                         }
                     } catch {
-                        throw AxolotyError.runtime(
-                            code: .capacityExceeded,
-                            reason: "Coaty route storage capacity calculation is invalid"
-                        )
+                        return nil
                     }
                     return builder.position
                 }
             }
+        }
+        guard let writtenLength else {
+            throw AxolotyError.runtime(
+                code: .capacityExceeded,
+                reason: "Coaty route storage capacity calculation is invalid"
+            )
         }
         return String(decoding: bytes[0..<writtenLength], as: UTF8.self)
     }

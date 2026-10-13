@@ -21,6 +21,7 @@ struct AxolotyZenohCoreTests {
             (AXOLOTY_ZENOH_QUEUE_EMPTY, .queueEmpty),
             (AXOLOTY_ZENOH_QUEUE_FULL, .queueFull),
             (AXOLOTY_ZENOH_FRAME_TOO_LARGE, .frameTooLarge),
+            (AXOLOTY_ZENOH_UNSUPPORTED_ENCODING, .unsupportedEncoding),
         ]
 
         for (cResult, expected) in cases {
@@ -142,6 +143,74 @@ struct AxolotyZenohCoreTests {
         #expect(pollResult == .result(.frameTooLarge))
         #expect(storage.storedKeyLength == 0)
         #expect(storage.storedPayloadLength == 0)
+        #expect(receiver.unsubscribe(subscription) == .success)
+        #expect(receiver.close() == .success)
+    }
+
+    @Test("receive drops a sample labelled with a non-CBOR encoding")
+    func rejectsUnsupportedEncoding() async throws {
+        var receiver = ZenohSession()
+        let configuration = ZenohConfiguration(mode: .peer, multicastScoutingEnabled: true)
+        #expect(receiver.open(configuration: configuration) == .success)
+        let subscriptionResult = withSlice("axoloty/1/core/**") { receiver.subscribe(key: $0) }
+        guard case let .subscribed(subscription) = subscriptionResult else {
+            Issue.record("Could not declare the Core encoding subscription")
+            #expect(receiver.close() == .success)
+            return
+        }
+
+        guard let publisher = axoloty_zenoh_test_publisher_open() else {
+            Issue.record("Could not open the local Zenoh test publisher")
+            #expect(receiver.close() == .success)
+            return
+        }
+        defer { axoloty_zenoh_test_publisher_close(publisher) }
+
+        try await Task.sleep(for: .milliseconds(250))
+        let key = Array("axoloty/1/core/ADV/00000000-0000-4000-8000-000000000001".utf8)
+        let payload: [UInt8] = [0x00, 0x41, 0x80, 0xFF]
+
+        let jsonPut = key.withUnsafeBufferPointer { keyBuffer in
+            payload.withUnsafeBufferPointer { payloadBuffer in
+                axoloty_zenoh_test_publisher_put_json(
+                    publisher,
+                    keyBuffer.baseAddress,
+                    keyBuffer.count,
+                    payloadBuffer.baseAddress,
+                    payloadBuffer.count
+                )
+            }
+        }
+        #expect(jsonPut == 0)
+
+        var storage = ZenohFrameStorage()
+        var pollResult = receiver.poll(from: subscription, into: &storage)
+        for _ in 0..<200 where pollResult == .result(.queueEmpty) {
+            try await Task.sleep(for: .milliseconds(10))
+            pollResult = receiver.poll(from: subscription, into: &storage)
+        }
+        #expect(pollResult == .result(.unsupportedEncoding))
+        #expect(storage.storedKeyLength == 0)
+        #expect(storage.storedPayloadLength == 0)
+
+        let cborPut = key.withUnsafeBufferPointer { keyBuffer in
+            payload.withUnsafeBufferPointer { payloadBuffer in
+                axoloty_zenoh_test_publisher_put(
+                    publisher,
+                    keyBuffer.baseAddress,
+                    keyBuffer.count,
+                    payloadBuffer.baseAddress,
+                    payloadBuffer.count
+                )
+            }
+        }
+        #expect(cborPut == 0)
+        pollResult = receiver.poll(from: subscription, into: &storage)
+        for _ in 0..<200 where pollResult == .result(.queueEmpty) {
+            try await Task.sleep(for: .milliseconds(10))
+            pollResult = receiver.poll(from: subscription, into: &storage)
+        }
+        #expect(pollResult == .frame(ZenohFrame(keyLength: key.count, payloadLength: payload.count)))
         #expect(receiver.unsubscribe(subscription) == .success)
         #expect(receiver.close() == .success)
     }

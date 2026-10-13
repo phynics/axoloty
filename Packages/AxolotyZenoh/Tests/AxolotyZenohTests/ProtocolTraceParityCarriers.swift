@@ -165,6 +165,7 @@ final class MQTTTraceCarrier: RuntimeTraceCarrier, @unchecked Sendable {
     func classifyRoute(_ route: ByteSlice) -> ProtocolRouteClassification {
         binding.classifyRoute(route)
     }
+    var wireProfile: WireProfile { binding.wireProfile }
 
     private func normalizeTime(_ frame: RuntimeInboundFrame) -> RuntimeInboundFrame {
         let key = InjectedFrameKey(frame)
@@ -233,6 +234,7 @@ final class ZenohTraceCarrier: RuntimeTraceCarrier, @unchecked Sendable {
     func classifyRoute(_ route: ByteSlice) -> ProtocolRouteClassification {
         binding.classifyRoute(route)
     }
+    var wireProfile: WireProfile { binding.wireProfile }
 }
 
 final class TraceFrameClock: @unchecked Sendable {

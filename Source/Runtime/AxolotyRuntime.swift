@@ -46,6 +46,8 @@ private final class RuntimeTransportIngressRelay: @unchecked Sendable {
 actor ProtocolExecutor {
     let definition: RuntimeDefinition
     let transport: AxolotyRuntimeTransport
+    /// The binding's single wire profile, read once at composition time.
+    let wireProfile: WireProfile
     var processor: ProtocolProcessor<64>
     var actionSink = ReusableProtocolActionSink(capacity: 64)
     /// Actions retained for ``conformanceObservation()``. Every other buffer
@@ -115,8 +117,11 @@ actor ProtocolExecutor {
     init(definition: RuntimeDefinition, transport: AxolotyRuntimeTransport) {
         self.definition = definition
         self.transport = transport
+        let wireProfile = transport.wireProfile
+        self.wireProfile = wireProfile
         self.processor = ProtocolProcessor<64>(
             capabilities: definition.capacities.protocolCapabilities,
+            wireCodec: WireCodec(profile: wireProfile),
             maximumPayloadBytes: definition.capacities.protocolMaximumPayloadBytes,
             maximumObjects: definition.capacities.protocolMaximumObjects,
             maximumPendingCorrelations: definition.capacities.protocolMaximumPendingCorrelations
@@ -543,13 +548,15 @@ actor ProtocolExecutor {
             bufferingPolicy: .bufferingOldest(definition.capacities.dispatch)
         )
         outboundContinuation = outboundPipe.continuation
-        outboundTask = Task { [weak self, stream = outboundPipe.stream, transport, namespace = definition.namespace] in
+        outboundTask = Task { [weak self, stream = outboundPipe.stream, transport, namespace = definition.namespace, profile = wireProfile] in
             for await batch in stream {
                 guard !Task.isCancelled else { break }
                 for queuedEffect in batch.effects {
                     guard !Task.isCancelled else { break }
                     do {
-                        try await transport.perform(queuedEffect.transportEffect(namespace: namespace))
+                        try await transport.perform(
+                            queuedEffect.transportEffect(namespace: namespace, profile: profile)
+                        )
                         await self?.transportEffectCompleted(queuedEffect, delivered: true)
                     } catch {
                         await self?.transportEffectCompleted(queuedEffect, delivered: false)
@@ -679,7 +686,8 @@ actor ProtocolExecutor {
                 let topicView = TopicView(topicBytes: topicBase, length: topicBuffer.count)
                 do throws(WireDecodeError) {
                     try topicView.validate(
-                        maximumTopicLength: definition.capacities.protocolMaximumTopicBytes
+                        maximumTopicLength: definition.capacities.protocolMaximumTopicBytes,
+                        profile: wireProfile
                     )
                 } catch {
                     parseFailure = runtimeErrorDetail(error)
@@ -1028,7 +1036,7 @@ actor ProtocolExecutor {
 
     private func enqueueIoDeadvertisements(nowMS: UInt32) throws {
         for endpoint in typedIoState.endpointRegistrations {
-            let payload = RuntimeLifecyclePayload.deadvertise(objectID: endpoint.id)
+            let payload = try RuntimeLifecyclePayload.deadvertise(objectID: endpoint.id, profile: wireProfile)
             try enqueueLifecycleOperation(
                 .deadvertise(sourceID: endpoint.id.uuid, payload: payload),
                 nowMS: nowMS
@@ -1040,7 +1048,7 @@ actor ProtocolExecutor {
         guard lifecycleAdvertisementActive, let identity = definition.identity else { return }
         let operation = RuntimeOperation.deadvertise(
             sourceID: identity.id,
-            payload: RuntimeLifecyclePayload.deadvertise(identity)
+            payload: try RuntimeLifecyclePayload.deadvertise(identity, profile: wireProfile)
         )
         try enqueueLifecycleOperation(operation, nowMS: nowMS)
         lifecycleAdvertisementActive = false

@@ -67,6 +67,25 @@ extension CAxolotyZenohSessionLifecycleTests {
         }
     }
 
+    /// Publishes caller bytes labelled `application/json` from the test peer.
+    private func publishJSON(
+        _ publisher: UnsafeMutableRawPointer,
+        key: [UInt8],
+        payload: [UInt8]
+    ) -> Int32 {
+        key.withUnsafeBufferPointer { keyBuffer in
+            payload.withUnsafeBufferPointer { payloadBuffer in
+                axoloty_zenoh_test_publisher_put_json(
+                    publisher,
+                    keyBuffer.baseAddress,
+                    keyBuffer.count,
+                    payloadBuffer.baseAddress,
+                    payloadBuffer.count
+                )
+            }
+        }
+    }
+
     private func waitForDepth(_ expected: UInt32, on session: OpaquePointer, subscription: OpaquePointer) async throws -> UInt32 {
         for _ in 0..<200 {
             var depth: UInt32 = 0
@@ -279,8 +298,8 @@ extension CAxolotyZenohSessionLifecycleTests {
         let vectors = contract.vectors.multiSubscription
         let receiver = try await openPeer()
         let publisher = try openPublisher()
-        let profileFourKey = Array("coaty/3/contracts/*/*".utf8)
-        let profileFiveKey = Array("coaty/3/contracts/*/*/*".utf8)
+        let profileFourKey = Array("axoloty/1/contracts/*/*".utf8)
+        let profileFiveKey = Array("axoloty/1/contracts/*/*/*".utf8)
         let externalKey = Array(vectors.exactExternalRoute.key.utf8)
 
         let (profileFourResult, profileFourMaybe) = subscribe(receiver, to: profileFourKey)
@@ -470,6 +489,34 @@ extension CAxolotyZenohSessionLifecycleTests {
         #expect(poll(receiver, subscription: subscription).0 == AXOLOTY_ZENOH_FRAME_TOO_LARGE)
         #expect(poll(receiver, subscription: subscription).0 == AXOLOTY_ZENOH_FRAME_TOO_LARGE)
         #expect(poll(receiver, subscription: subscription).0 == AXOLOTY_ZENOH_QUEUE_EMPTY)
+        #expect(axoloty_zenoh_close(receiver) == AXOLOTY_ZENOH_OK)
+        axoloty_zenoh_test_publisher_close(publisher)
+    }
+
+    @Test("a foreign encoding on a profile route is dropped and counted")
+    func profileRouteForeignEncodingIsCounted() async throws {
+        let receiver = try await openPeer()
+        let publisher = try openPublisher()
+        let (subscribeResult, openedSubscription) = subscribe(receiver, to: Array("axoloty/1/**".utf8))
+        #expect(subscribeResult == AXOLOTY_ZENOH_OK)
+        let subscription = try #require(openedSubscription)
+        try await Task.sleep(for: .milliseconds(250))
+
+        // The test publisher labels this sample `application/json`. The
+        // `axoloty/1/` prefix is a profile route, so the façade must drop the
+        // sample and increment the unsupported-encoding counter.
+        let key = Array("axoloty/1/core/ADV/00000000-0000-4000-8000-000000000003".utf8)
+        let payload: [UInt8] = [0x00, 0x41, 0x80, 0xFF]
+        var count: UInt32 = 0
+        for _ in 0..<200 {
+            #expect(publishJSON(publisher, key: key, payload: payload) == 0)
+            #expect(axoloty_zenoh_unsupported_encoding_count(receiver, subscription, &count)
+                == AXOLOTY_ZENOH_OK)
+            if count >= 1 { break }
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        #expect(count >= 1)
+        #expect(poll(receiver, subscription: subscription).0 == AXOLOTY_ZENOH_UNSUPPORTED_ENCODING)
         #expect(axoloty_zenoh_close(receiver) == AXOLOTY_ZENOH_OK)
         axoloty_zenoh_test_publisher_close(publisher)
     }

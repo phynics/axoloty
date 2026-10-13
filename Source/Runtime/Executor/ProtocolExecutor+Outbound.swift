@@ -73,7 +73,13 @@ extension ProtocolExecutor {
         for publication in publications {
             emitRegisteredEvents(for: publication, nowMS: nowMS)
             try await transport.perform(
-                .publish(try RuntimeOutboundMessage(publication, namespace: definition.namespace))
+                .publish(
+                    try RuntimeOutboundMessage(
+                        publication,
+                        namespace: definition.namespace,
+                        profile: wireProfile
+                    )
+                )
             )
         }
     }
@@ -82,7 +88,7 @@ extension ProtocolExecutor {
         guard let identity = definition.identity else { return }
         let operation = RuntimeOperation.advertise(
             sourceID: identity.id,
-            payload: try RuntimeLifecyclePayload.advertise(identity)
+            payload: try RuntimeLifecyclePayload.advertise(identity, profile: wireProfile)
         )
         try await publishLifecycle(operation, nowMS: nowMS)
         lifecycleAdvertisementActive = true
@@ -94,10 +100,14 @@ extension ProtocolExecutor {
             capability: .deadvertise,
             sourceID: identity.id
         )
-        let topic = try CoatyRoute.route(for: routingKey, namespace: definition.namespace)
+        let topic = try CoatyRoute.route(
+            for: routingKey,
+            namespace: definition.namespace,
+            profile: wireProfile
+        )
         return RuntimeTransportLastWill(
             topic: topic,
-            payload: RuntimeLifecyclePayload.deadvertise(identity)
+            payload: try RuntimeLifecyclePayload.deadvertise(identity, profile: wireProfile)
         )
     }
 
@@ -105,7 +115,7 @@ extension ProtocolExecutor {
         guard lifecycleAdvertisementActive, let identity = definition.identity else { return }
         let operation = RuntimeOperation.deadvertise(
             sourceID: identity.id,
-            payload: RuntimeLifecyclePayload.deadvertise(identity)
+            payload: try RuntimeLifecyclePayload.deadvertise(identity, profile: wireProfile)
         )
         try await publishLifecycle(operation, nowMS: nowMS)
         lifecycleAdvertisementActive = false

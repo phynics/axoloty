@@ -66,9 +66,9 @@ public enum ZenohFacadeContract {
 
     /// Shared inputs for concurrent subscriptions in one session.
     public struct MultiSubscription: Decodable {
-        /// Frame matched by `coaty/3/<namespace>/*/*`.
+        /// Frame matched by `axoloty/1/<namespace>/*/*`.
         public let profileFourSegments: Frame
-        /// Frame matched by `coaty/3/<namespace>/*/*/*`.
+        /// Frame matched by `axoloty/1/<namespace>/*/*/*`.
         public let profileFiveSegments: Frame
         /// Frame for an independently removed exact external route.
         public let exactExternalRoute: Frame

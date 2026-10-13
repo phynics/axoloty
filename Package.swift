@@ -182,6 +182,7 @@ let package = Package(
                 "Runtime/IO/RuntimeIO.swift",
                 "Runtime/IO/RuntimeTypedIoState.swift",
                 "Runtime/RuntimeLifecyclePayload.swift",
+                "Runtime/RuntimeWirePayload.swift",
                 "Runtime/Executor/ProtocolExecutor+Outbound.swift",
                 "Runtime/Executor/ProtocolExecutor+Conformance.swift",
                 "Runtime/Executor/ProtocolExecutor+Handlers.swift",

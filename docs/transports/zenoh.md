@@ -33,15 +33,14 @@ flowchart LR
 
 `AxolotyProtocol` decides what a Coaty operation means, validates its route and
 payload, and produces transport actions. Zenoh does not change those rules.
-Coaty routes such as `coaty/3/<namespace>/CHN/<identifier>` become Zenoh key
-expressions unchanged. The sealed `coaty/3` profile remains the same on MQTT
-and Zenoh.
-
-> **Changing in 1.0.** [ADR 0009](../adr/0009-zenoh-carries-only-axoloty-1.md)
-> makes the `axoloty/1` CBOR profile the only wire format on Zenoh. Keys
-> become `axoloty/1/<namespace>/<event>/<identifier>` and payloads become
-> CBOR. MQTT keeps `coaty/3` JSON. Zenoh peers on 0.9.x will not interoperate
-> with 1.0 Zenoh peers. This guide describes the current 0.9 behavior.
+[ADR 0009](../adr/0009-zenoh-carries-only-axoloty-1.md) makes the `axoloty/1`
+CBOR profile the only wire format on Zenoh. Profile routes such as
+`axoloty/1/<namespace>/<event>/<identifier>` become Zenoh key expressions
+unchanged, and the binding publishes every payload with the
+`application/cbor` Zenoh encoding. MQTT keeps the sealed `coaty/3` JSON
+profile. A Zenoh binding drops and counts an inbound sample on a profile route
+that is not labelled `application/cbor`; external routes admit any encoding.
+Zenoh peers on 0.9.x do not interoperate with 1.0 Zenoh peers.
 
 ### Axoloty Zenoh binding
 
@@ -61,10 +60,14 @@ The binding's receive queues hold up to four frames per subscription. This is a
 fixed façade bound and cannot be configured. It accepts keys up to 256 UTF-8
 bytes and payloads up to 2,048 bytes. Configuration can lower the key and
 payload limits. Frames above either configured limit are dropped and counted in
-`oversizedSamples`; neither limit can be raised above the façade maximum. The
-façade reserves two of eight subscriber slots for profile subscriptions, so the
-binding supports at most six exact external routes. A route containing `*` is
-not exact and is rejected.
+`oversizedSamples`, and a sample on an `axoloty/1/` profile route labelled with
+an encoding other than `application/cbor` is dropped and counted in
+`receiveDrops`. External routes admit any encoding, because the route prefix is
+the authoritative profile signal and external payloads are application-defined.
+Neither limit can be raised above the façade maximum. The façade reserves two
+of eight subscriber slots for profile subscriptions, so the binding supports at
+most six exact
+external routes. A route containing `*` is not exact and is rejected.
 
 The binding has no lifecycle last will. The runtime passes an MQTT-compatible
 last will: the identity's Deadvertise on its `DAD` route. `ZenohBinding`
@@ -169,14 +172,23 @@ LD_LIBRARY_PATH=/workspace/.build/zenoh-live/dependencies/zenoh-c/unpacked/lib \
 .devcontainer/run.sh swift run --package-path Examples/ZenohHost ZenohHost send tcp/127.0.0.1:7447 demo '{"privateData":{"message":"hello from host B"}}'
 ```
 
-The subscriber prints `RECEIVED channel=demo payload={"privateData":{"message":"hello from host B"}}`. Stop
-the subscriber and router with Ctrl-C. `PUBLISHED` means the Zenoh session
-accepted the publication. It does not confirm delivery to the subscriber.
+The payload is JSON text. `ZenohHost` encodes it as deterministic `axoloty/1`
+CBOR before it publishes, because `axoloty/1` carries CBOR on the wire. The
+subscriber prints the received CBOR bytes:
+
+```text
+RECEIVED channel=demo bytes=40 hex=a16b7072697661746544617461a1676d6573736167657168656c6c6f2066726f6d20686f73742042
+```
+
+Stop the subscriber and router with Ctrl-C. `PUBLISHED` means the Zenoh
+session accepted the publication. It does not confirm delivery to the
+subscriber.
 See [`docs/dependencies/zenoh.md`](../dependencies/zenoh.md) for the pinned
 versions, artifacts, and live-tier details.
 
 Use the command form `ZenohHost <mode> <endpoint> <channel> [payload]`. The
-endpoint follows the mode. Use a valid Coaty Channel JSON payload with `send`.
+endpoint follows the mode. Use a valid Coaty Channel JSON payload with `send`;
+the example encodes it as `axoloty/1` CBOR before publishing.
 `ZenohBindingConfiguration` defaults to `tcp/127.0.0.1:7447` in client mode,
 but this example passes the endpoint explicitly. Both processes must use the same namespace and
 channel identifier. The example uses namespace `zenoh-example`.

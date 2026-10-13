@@ -147,6 +147,9 @@ extension ZenohBinding {
             case .result(.frameTooLarge):
                 diagnostics?.recordOversizedSample()
                 continue
+            case .result(.unsupportedEncoding):
+                diagnostics?.recordReceiveDrop()
+                continue
             case let .result(result):
                 return ZenohBindingSupport.failure(for: ZenohBindingSupport.error(
                     for: result,

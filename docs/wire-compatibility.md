@@ -38,9 +38,11 @@ fields retain the exact bytes of the profile that produced them and are tagged
 with that profile; a cross-profile re-encode is rejected as
 `WireEncodeError.profileMismatch` rather than transcoded. The value classes
 and the lossy cases are recorded in
-[wire-value-mapping.md](./wire-value-mapping.md). The Zenoh binding and the
-trace-parity gate are tracked by epic #977. No `coaty/3` field presence or
-wire bytes change in this corpus.
+[wire-value-mapping.md](./wire-value-mapping.md). The Zenoh binding now carries
+only `axoloty/1` CBOR key expressions and payloads, and the trace-parity gate
+replays one corpus through the MQTT `coaty/3` leg and the Zenoh `axoloty/1` leg;
+both are part of epic #977. No `coaty/3` field presence or wire bytes change in
+this corpus.
 
 ### G5 host typed IO evidence
 
