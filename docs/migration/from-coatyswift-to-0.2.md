@@ -142,5 +142,5 @@ the container. macOS runs the same plan natively.
   (no argument) for inspecting all advertised objects regardless of type. The
   legacy `for:` argument label is obsolete.
 - `axoloty-inspect` CLI provides passive catalogue and active discovery
-  against a live broker without writing a custom agent. See
-  [inspector.md](../inspector.md).
+  against a live broker without writing a custom agent. See the
+  [axoloty-debug inspector reference](https://github.com/phynics/axoloty-debug/blob/main/docs/inspector.md).
