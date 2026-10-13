@@ -495,7 +495,7 @@ private func makeAuthorityFixture(
         "Tools/AxolotyTooling/Commands/AxolotyCommandDispatcher.swift": "private static let version = \"\(version)\"\n",
         "Apps/AxolotyInspectorCore/InspectorArgumentParser.swift": "public static let version = \"\(version)\"\n",
         "Tools/AxolotyToolingTests/Commands/AxolotyCommandDispatcherTests.swift": "#expect(result.standardOutput == \"axoloty-tool \(version)\")\n",
-        "Tools/AxolotyToolingTests/Commands/AxolotyServeParserTests.swift": "#expect(result.standardOutput == \"ax \(version)\")\n",
+        "Tools/AxolotyToolingTests/Commands/AxolotyServeRoutingTests.swift": "#expect(result.standardOutput == \"ax \(version)\")\n",
         "Apps/AxolotyInspectorCoreTests/InspectorArgumentParserTests.swift": "#expect(InspectorArgumentParser.version == \"\(version)\")\n",
         "docs/API.md": "# Axoloty \(version) API documentation\n> Axoloty \(version) is current.\n",
         "docs/SUPPORT_MATRIX.md": "# Axoloty \(version) support matrix\nThis is the \(version) checkpoint.\n",

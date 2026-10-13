@@ -110,7 +110,7 @@ public struct AxolotyRepositoryAuthorityValidator: Sendable {
             ("Tools/AxolotyTooling/Commands/AxolotyCommandDispatcher.swift", "private static let version = \"" + semanticVersion + "\"", false),
             ("Apps/AxolotyInspectorCore/InspectorArgumentParser.swift", "public static let version = \"" + semanticVersion + "\"", false),
             ("Tools/AxolotyToolingTests/Commands/AxolotyCommandDispatcherTests.swift", "axoloty-tool " + semanticVersion, true),
-            ("Tools/AxolotyToolingTests/Commands/AxolotyServeParserTests.swift", "(?:ax|axoloty-tool) " + semanticVersion, true),
+            ("Tools/AxolotyToolingTests/Commands/AxolotyServeRoutingTests.swift", "(?:ax|axoloty-tool) " + semanticVersion, true),
             ("Apps/AxolotyInspectorCoreTests/InspectorArgumentParserTests.swift", "version == \"" + semanticVersion + "\"", true),
             ("docs/API.md", "Axoloty " + semanticVersion, true),
             ("docs/SUPPORT_MATRIX.md", "(?:Axoloty )?" + semanticVersion + " (?:support matrix|checkpoint)", true),

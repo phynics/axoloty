@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
 import Foundation
+import AxolotyDebug
 import AxolotyVersion
 
 /// Parses the stable command surface of the ``axoloty-tool`` executable.
@@ -12,7 +13,7 @@ public struct AxolotyCommandDispatcher: Sendable {
     private let version: String
     private let checkCommands: AxolotyCheckCommands
     private let wireCommands: AxolotyWireCommands
-    private let serveCommands: AxolotyServeCommandRunner
+    private let serveSession: AxolotyServeSession
     private let repositoryValidationCommands: AxolotyRepositoryValidationCommands
     private let releaseCommands: AxolotyReleaseCommands
     private let embeddedConsumerPreparation: AxolotyEmbeddedConsumerPreparation
@@ -50,9 +51,6 @@ public struct AxolotyCommandDispatcher: Sendable {
         integrationRunner: any AxolotyIntegrationRunning? = nil,
         fileSystem: any AxolotyFileSystem? = nil,
         environment: [String: String] = ProcessInfo.processInfo.environment,
-        processRunnerFactory: (@Sendable () -> any AxolotyManagedProcessRunning)? = nil,
-        portProbe: any AxolotyServiceProbing? = nil,
-        tempDirProvider: any AxolotyTempDirectoryProvider? = nil,
         repositoryRoot: URL? = nil,
         installSignalHandler: Bool = true,
         cancellation: AxolotyCommandCancellation? = nil,
@@ -96,9 +94,6 @@ public struct AxolotyCommandDispatcher: Sendable {
         let normalizedRepositoryRoot = (
             repositoryRoot ?? environmentRepositoryRoot ?? URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
         ).standardizedFileURL
-        let processRunnerFactory = processRunnerFactory ?? { FoundationProcessRunner() }
-        let portProbe = portProbe ?? FoundationServiceProbe()
-        let tempDirProvider = tempDirProvider ?? FoundationTempDirectoryProvider()
         let executor = AxolotyCheckExecutor(
             commandRunner: CanonicalTierCommandRunner(
                 commandRunner: configuredCommandRunner,
@@ -132,14 +127,9 @@ public struct AxolotyCommandDispatcher: Sendable {
             planResolver: planResolution,
             executor: executor
         )
-        self.serveCommands = AxolotyServeCommandRunner(
+        self.serveSession = AxolotyServeSession(
             executableName: executableName,
-            environment: environment,
-            fileSystem: fileSystem,
-            processRunnerFactory: processRunnerFactory,
-            portProbe: portProbe,
-            tempDirProvider: tempDirProvider,
-            cancellation: invocationCancellation
+            environment: environment
         )
         self.repositoryValidationCommands = AxolotyRepositoryValidationCommands(
             repositoryRoot: normalizedRepositoryRoot
@@ -170,7 +160,10 @@ public struct AxolotyCommandDispatcher: Sendable {
     /// - Returns: Text streams and exit status for the requested command.
     public func run(arguments: [String]) -> AxolotyCommandResult {
         let signalLease = installSignalHandler
-            ? AxolotySignalMultiplexer.shared.acquire { [cancellation] in cancellation.cancel() }
+            ? AxolotySignalMultiplexer.shared.acquire { [cancellation, serveSession] in
+                cancellation.cancel()
+                serveSession.cancel()
+            }
             : nil
         defer { signalLease?.cancel() }
         let invocation = AxolotyCommandParser(environment: environment).parse(arguments)
@@ -189,7 +182,12 @@ public struct AxolotyCommandDispatcher: Sendable {
                 exitCode: 64
             )
         case .serve(let arguments):
-            return serveCommands.run(arguments: arguments)
+            let result = serveSession.run(arguments: arguments)
+            return AxolotyCommandResult(
+                standardOutput: result.standardOutput,
+                standardError: result.standardError,
+                exitCode: result.exitCode
+            )
         case .repositoryValidation(let arguments):
             return repositoryValidationCommands.run(arguments: arguments)
         case .testOne(let filter, let repetition):
