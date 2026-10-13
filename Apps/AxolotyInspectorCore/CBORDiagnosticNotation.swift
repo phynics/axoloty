@@ -20,6 +20,8 @@ public enum CBORParseError: Error, Equatable, Sendable {
     case mixedStringChunks
     /// Bytes remained after the first complete value.
     case trailingCharacters
+    /// Nesting exceeded the profile depth bound.
+    case nestingTooDeep
 }
 
 /// Renders and parses RFC 8949 §8 diagnostic notation.
@@ -199,18 +201,19 @@ public enum CBORDiagnosticNotation {
             return true
         }
 
-        mutating func parseItem() throws(CBORParseError) -> CBORValue {
+        mutating func parseItem(depth: Int = 0) throws(CBORParseError) -> CBORValue {
+            guard depth <= CBORDecodeLimits.profile.maximumDepth else { throw CBORParseError.nestingTooDeep }
             skipWhitespace()
             guard let character = current else { throw CBORParseError.unexpectedEnd }
             switch character {
-            case "[": return try parseArray()
-            case "{": return try parseMap()
+            case "[": return try parseArray(depth: depth)
+            case "{": return try parseMap(depth: depth)
             case "(": return try parseChunkedString()
             case "\"": return .textString(try parseQuotedString())
             case "h" where peek(1) == "'": return .byteString(try parseByteString())
             case "-":
                 if matchKeyword("-Infinity") { return .float(-.infinity) }
-                return try parseNumber()
+                return try parseNumber(depth: depth)
             case "t":
                 if matchKeyword("true") { return .boolean(true) }
             case "f":
@@ -228,11 +231,11 @@ public enum CBORDiagnosticNotation {
             default:
                 break
             }
-            if character.isNumber { return try parseNumber() }
+            if character.isNumber { return try parseNumber(depth: depth) }
             throw CBORParseError.unexpectedCharacter(character)
         }
 
-        mutating func parseArray() throws(CBORParseError) -> CBORValue {
+        mutating func parseArray(depth: Int) throws(CBORParseError) -> CBORValue {
             try expect("[")
             skipWhitespace()
             let indefinite = match("_")
@@ -240,7 +243,7 @@ public enum CBORDiagnosticNotation {
             var items: [CBORValue] = []
             if match("]") { return .array(items, indefinite: indefinite) }
             while true {
-                items.append(try parseItem())
+                items.append(try parseItem(depth: depth + 1))
                 skipWhitespace()
                 if match("]") { break }
                 try expect(",")
@@ -248,7 +251,7 @@ public enum CBORDiagnosticNotation {
             return .array(items, indefinite: indefinite)
         }
 
-        mutating func parseMap() throws(CBORParseError) -> CBORValue {
+        mutating func parseMap(depth: Int) throws(CBORParseError) -> CBORValue {
             try expect("{")
             skipWhitespace()
             let indefinite = match("_")
@@ -256,10 +259,10 @@ public enum CBORDiagnosticNotation {
             var entries: [CBORMapEntry] = []
             if match("}") { return .map(entries, indefinite: indefinite) }
             while true {
-                let key = try parseItem()
+                let key = try parseItem(depth: depth + 1)
                 skipWhitespace()
                 try expect(":")
-                let value = try parseItem()
+                let value = try parseItem(depth: depth + 1)
                 entries.append(CBORMapEntry(key: key, value: value))
                 skipWhitespace()
                 if match("}") { break }
@@ -378,7 +381,7 @@ public enum CBORDiagnosticNotation {
             return .simple(value)
         }
 
-        mutating func parseNumber() throws(CBORParseError) -> CBORValue {
+        mutating func parseNumber(depth: Int) throws(CBORParseError) -> CBORValue {
             let start = index
             let negative = match("-")
             let digits = readDigits()
@@ -403,7 +406,7 @@ public enum CBORDiagnosticNotation {
             }
             if match("(") {
                 guard !negative, let tag = UInt64(digits) else { throw CBORParseError.invalidTag }
-                let inner = try parseItem()
+                let inner = try parseItem(depth: depth + 1)
                 skipWhitespace()
                 try expect(")")
                 return .tag(tag, inner)

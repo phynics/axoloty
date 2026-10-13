@@ -255,6 +255,7 @@ struct InspectorArgumentParserTests {
           --payload HEX        Decode a hexadecimal payload.
           --base64 TEXT        Decode a base64 payload.
           --file PATH          Decode a payload read from a file.
+          --encoding MODE      Payload content encoding: auto|json|cbor (default: auto).
           --format MODE        Output format: diagnostic|json (default: diagnostic).
 
         Other:

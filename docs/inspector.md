@@ -45,18 +45,27 @@ writes only the rendered payload to stdout.
 ```sh
 axoloty-inspect decode --payload a26161016162820203
 axoloty-inspect decode --base64 oWFhAQ== --format json
+axoloty-inspect decode --payload 30 --encoding cbor
 axoloty-inspect decode --file payload.cbor
 ```
 
 Provide exactly one of `--payload HEX`, `--base64 TEXT`, or `--file PATH`.
-`--format` selects `diagnostic` (default) or `json`. JSON payloads pass
-through for diagnostic rendering and are normalized to sorted JSON for JSON
-rendering. A CBOR payload that cannot be projected into a JSON object fails
-the `json` render with exit code 64.
+`--encoding` selects the payload content encoding: `auto` (default), `json`,
+or `cbor`. `--format` selects the output rendering: `diagnostic` (default) or
+`json`. JSON payloads pass through for diagnostic rendering and are normalized
+to sorted JSON for JSON rendering. A CBOR payload that cannot be projected
+into a JSON object fails the `json` render with exit code 64.
+
+`auto` detection is a convenience, not a proof. A short byte string can be
+valid JSON and valid CBOR at once: `0x30` is the JSON number `0` and the CBOR
+negative integer `-17`. Auto mode tests JSON first, which matches the `coaty/3`
+profile, so `decode --payload 30` prints `0`. Pass `--encoding cbor` to read
+the same bytes as `-17`.
 
 The `axoloty-mcp` server exposes the same rendering as the
 `axoloty_decode_payload` tool with `payload`, `encoding` (`hex` or `base64`),
-and `format` (`diagnostic` or `json`) arguments.
+`payloadEncoding` (`auto`, `json`, or `cbor`), and `format` (`diagnostic` or
+`json`) arguments.
 
 ## Connection options
 

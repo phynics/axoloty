@@ -52,6 +52,7 @@ public struct InspectorArgumentParser: Sendable {
       --payload HEX        Decode a hexadecimal payload.
       --base64 TEXT        Decode a base64 payload.
       --file PATH          Decode a payload read from a file.
+      --encoding MODE      Payload content encoding: auto|json|cbor (default: auto).
       --format MODE        Output format: diagnostic|json (default: diagnostic).
 
     Other:
@@ -217,6 +218,7 @@ private extension InspectorArgumentParser {
     func parseDecode(_ args: [String]) -> InspectorParseOutcome {
         var source: InspectorDecodeSource?
         var render = InspectorDecodeRender.diagnostic
+        var encoding = InspectorPayloadEncoding.auto
         var i = 0
         while i < args.count {
             let arg = args[i]
@@ -239,6 +241,12 @@ private extension InspectorArgumentParser {
                     return .error(.invalidConfiguration(field: "format", reason: "must be one of: diagnostic, json"))
                 }
                 render = parsed; i = next
+            case "--encoding":
+                guard let (value, next) = consumeValue(args, at: i) else { return .error(.invalidArguments(reason: "--encoding requires a value")) }
+                guard let parsed = InspectorPayloadEncoding(rawValue: value) else {
+                    return .error(.invalidConfiguration(field: "encoding", reason: "must be one of: auto, json, cbor"))
+                }
+                encoding = parsed; i = next
             default:
                 return .error(.invalidArguments(reason: "unknown option: \(arg)"))
             }
@@ -248,7 +256,7 @@ private extension InspectorArgumentParser {
             return .error(.invalidArguments(reason: "decode requires one of --payload, --base64, or --file"))
         }
         return .run(InspectorConfiguration(
-            command: .decode(DecodeCommand(source: source, render: render)),
+            command: .decode(DecodeCommand(source: source, render: render, encoding: encoding)),
             connection: InspectorConnectionConfiguration(host: "localhost", port: 1883, namespace: "-"),
             output: .auto,
             logLevel: "info"

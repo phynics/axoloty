@@ -131,6 +131,21 @@ struct CBORDiagnosticNotationTests {
     }
 
     @Test
+    func parseRejectsExcessiveNesting() {
+        // 33 nested one-element arrays exceed the profile depth of 32.
+        let tooDeep = String(repeating: "[", count: 33) + "0" + String(repeating: "]", count: 33)
+        #expect(throws: CBORParseError.nestingTooDeep) { try CBORDiagnosticNotation.parse(tooDeep) }
+
+        // 33 nested tags exceed the same bound.
+        let tooManyTags = String(repeating: "1(", count: 33) + "0" + String(repeating: ")", count: 33)
+        #expect(throws: CBORParseError.nestingTooDeep) { try CBORDiagnosticNotation.parse(tooManyTags) }
+
+        // 32 nested arrays remain accepted.
+        let boundary = String(repeating: "[", count: 32) + "0" + String(repeating: "]", count: 32)
+        #expect((try? CBORDiagnosticNotation.parse(boundary)) != nil)
+    }
+
+    @Test
     func parsePreservesNegativeFloatSigns() throws {
         #expect(try CBORDiagnosticNotation.parse("-1.5") == .float(-1.5))
         #expect(CBORDiagnosticNotation.render(try CBORDiagnosticNotation.parse("-0.0")) == "-0.0")

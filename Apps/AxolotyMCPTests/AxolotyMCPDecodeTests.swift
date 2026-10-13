@@ -31,6 +31,40 @@ struct AxolotyMCPDecodeTests {
         #expect(text == #"{"a":1}"#)
     }
 
+    @Test("Decode tool honors an explicit payload content encoding")
+    func decodeHonorsExplicitPayloadEncoding() throws {
+        let auto = AxolotyMCPServer.handleDecodePayload(["payload": .string("30")])
+        guard case let .text(autoText, _, _)? = auto.content.first else {
+            Issue.record("expected text content")
+            return
+        }
+        #expect(autoText == "0")
+
+        let cbor = AxolotyMCPServer.handleDecodePayload([
+            "payload": .string("30"),
+            "payloadEncoding": .string("cbor"),
+        ])
+        guard case let .text(cborText, _, _)? = cbor.content.first else {
+            Issue.record("expected text content")
+            return
+        }
+        #expect(cborText == "-17")
+    }
+
+    @Test("Decode tool rejects an unknown payload content encoding")
+    func decodeRejectsUnknownPayloadEncoding() throws {
+        let result = AxolotyMCPServer.handleDecodePayload([
+            "payload": .string("00"),
+            "payloadEncoding": .string("yaml"),
+        ])
+        #expect(result.isError == true)
+        guard case let .text(text, _, _)? = result.content.first else {
+            Issue.record("expected text content")
+            return
+        }
+        #expect(text.contains("Invalid payloadEncoding"))
+    }
+
     @Test("Decode tool requires a payload")
     func decodeRequiresPayload() throws {
         let result = AxolotyMCPServer.handleDecodePayload([:])

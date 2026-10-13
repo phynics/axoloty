@@ -112,7 +112,14 @@ choose an application-specific representation.
 
 An owned value records its profile. `OwnedWireEvent.encodedBytes()` selects the
 writer from that profile, and `OwnedWireEvent.encode(to:)` rejects a writer
-whose profile differs. The result is that:
+whose profile differs. One owned raw field is bounded by
+`WireBufferConfig.maxPayloadSize` (2,048 bytes), the same limit as the wire
+payload, so validation rejects a larger field with
+`WireDecodeError.payloadExceedsLimit` before ownership is published.
+Validation is necessary but not sufficient for encodability: the enclosing
+event adds its own keys and structure. `OwnedWireEvent.encode(to:)` remains
+the authoritative fit check and throws `WireEncodeError.bufferOverflow` when an
+accepted field does not fit the writer. The result is that:
 
 - a JSON raw field round-trips through the JSON path unchanged;
 - a CBOR raw field round-trips through the CBOR path unchanged, including

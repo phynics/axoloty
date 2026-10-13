@@ -1,15 +1,16 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
-#if canImport(_JSONCore)
-import _JSONCore
-#endif
-
 /// The shared bound for one owned raw field, in bytes.
 ///
-/// The payload as a whole is bounded by the transport, but an owned field is
-/// materialized and copied on the host, which tolerates a larger fragment than
-/// the embedded payload budget.
-private let maxOwnedRawValueSize = 16 * 1_024 * 1_024
+/// An owned raw field is one complete encoded object, array, or value. The
+/// wire payload that carries it is bounded by
+/// ``WireBufferConfig/maxPayloadSize``, so a raw field larger than that can
+/// never fit a wire frame and validation rejects it up front. Validation is
+/// necessary but not sufficient for encodability: the enclosing event adds
+/// its own keys and structure, and only the encoder knows whether the complete
+/// event fits. ``WireEncodeError/bufferOverflow`` remains the authoritative
+/// rejection when an accepted field does not fit its writer.
+private let maxOwnedRawValueSize = WireBufferConfig.maxPayloadSize
 
 /// The semantic shape an owned raw field must have in its profile encoding.
 enum OwnedValueShape {
@@ -27,21 +28,6 @@ enum OwnedValueShape {
 }
 
 #if canImport(_JSONCore)
-private struct JSONValidationDestination: JSONTokenizerDestination {
-    typealias ArrayStartContext = UInt8
-    typealias ObjectStartContext = UInt8
-
-    mutating func arrayStartFound(_ start: JSONToken.ArrayStart) -> UInt8 { 0 }
-    mutating func arrayEndFound(_ end: JSONToken.ArrayEnd, context: consuming UInt8) {}
-    mutating func objectStartFound(_ start: JSONToken.ObjectStart) -> UInt8 { 0 }
-    mutating func objectEndFound(_ end: JSONToken.ObjectEnd, context: consuming UInt8) {}
-    mutating func booleanTrueFound(_ boolean: JSONToken.BooleanTrue) {}
-    mutating func booleanFalseFound(_ boolean: JSONToken.BooleanFalse) {}
-    mutating func nullFound(_ null: JSONToken.Null) {}
-    mutating func stringFound(_ string: JSONToken.String) {}
-    mutating func numberFound(_ number: JSONToken.Number) {}
-}
-
 private func invalidOwnedJSON(field: StaticString) -> WireDecodeError {
     WireDecodeError(.unexpectedToken(expected: "valid JSON value", actual: nil), field: field)
 }
@@ -56,11 +42,6 @@ private func validateOwnedJSONSyntax(
 
     guard bytes.count <= maxOwnedRawValueSize else {
         throw WireDecodeError(.payloadExceedsLimit, byteOffset: bytes.count, field: field)
-    }
-
-    if bytes.count > WireBufferConfig.maxPayloadSize {
-        try validateLargeOwnedJSONSyntax(bytes, field: field)
-        return
     }
 
     let isValid = bytes.withUnsafeBufferPointer { buffer -> Bool in
@@ -80,39 +61,6 @@ private func validateOwnedJSONSyntax(
     }
     if let validationFailure { throw validationFailure }
     throw invalidOwnedJSON(field: field)
-}
-
-private func validateLargeOwnedJSONSyntax(
-    _ bytes: [UInt8],
-    field: StaticString
-) throws(WireDecodeError) {
-    var padded = bytes
-    padded.append(contentsOf: repeatElement(0x7D, count: 8))
-    let result = padded.withUnsafeBufferPointer { buffer -> (valid: Bool, offset: Int) in
-        var tokenizer = JSONTokenizer(
-            bytes: buffer,
-            destination: JSONValidationDestination()
-        )
-        if tokenizer.scanValueResult() != nil {
-            return (false, tokenizer.currentOffset)
-        }
-
-        var offset = tokenizer.currentOffset
-        while offset < bytes.count && isJSONWhitespace(bytes[offset]) {
-            offset += 1
-        }
-        return (offset == bytes.count, offset)
-    }
-    guard result.valid else {
-        if result.offset >= bytes.count {
-            throw WireDecodeError(.unexpectedEndOfInput, byteOffset: bytes.count, field: field)
-        }
-        throw WireDecodeError(
-            .unexpectedToken(expected: "valid JSON value", actual: bytes[result.offset]),
-            byteOffset: result.offset,
-            field: field
-        )
-    }
 }
 
 /// Validates one owned raw field encoded as `coaty/3` JSON.

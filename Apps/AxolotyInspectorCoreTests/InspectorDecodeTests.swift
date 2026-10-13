@@ -63,6 +63,27 @@ struct InspectorDecodeTests {
     }
 
     @Test
+    func parsesExplicitPayloadEncoding() {
+        let outcome = InspectorArgumentParser().parse([
+            "decode", "--payload", "30", "--encoding", "cbor",
+        ])
+        guard case let .run(config) = outcome else {
+            Issue.record("Expected run outcome")
+            return
+        }
+        #expect(config.command == .decode(
+            DecodeCommand(source: .hex("30"), render: .diagnostic, encoding: .cbor)
+        ))
+    }
+
+    @Test
+    func decodeRejectsUnknownEncoding() {
+        #expect(InspectorArgumentParser().parse([
+            "decode", "--payload", "00", "--encoding", "yaml",
+        ]) == .error(.invalidConfiguration(field: "encoding", reason: "must be one of: auto, json, cbor")))
+    }
+
+    @Test
     func decodeRejectsUnknownOption() {
         #expect(InspectorArgumentParser().parse([
             "decode", "--payload", "00", "--host", "broker.local",
@@ -82,6 +103,9 @@ struct InspectorDecodeTests {
         )))
         #expect(InspectorArgumentParser().parse(["decode", "--payload", "00", "--format"]) == .error(
             .invalidArguments(reason: "--format requires a value")
+        ))
+        #expect(InspectorArgumentParser().parse(["decode", "--payload", "00", "--encoding"]) == .error(
+            .invalidArguments(reason: "--encoding requires a value")
         ))
     }
 
@@ -117,6 +141,23 @@ struct InspectorDecodeTests {
             DecodeCommand(source: .hex("7b2262223a312c2261223a327d"), render: .json)
         )
         #expect(text == #"{"a":2,"b":1}"#)
+    }
+
+    @Test
+    func rendersAmbiguousPayloadByDeclaredEncoding() throws {
+        #expect(try InspectorDecodeRunner.render(DecodeCommand(source: .hex("30"))) == "0")
+        #expect(try InspectorDecodeRunner.render(
+            DecodeCommand(source: .hex("30"), encoding: .cbor)
+        ) == "-17")
+    }
+
+    @Test
+    func declaredEncodingRejectsAMismatch() {
+        #expect(throws: InspectorDecodeError.unsupportedPayload) {
+            try InspectorDecodeRunner.render(
+                DecodeCommand(source: .hex("a1616101"), encoding: .json)
+            )
+        }
     }
 
     @Test

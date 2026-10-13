@@ -30,11 +30,23 @@ public struct DecodeCommand: Equatable, Sendable {
     public let source: InspectorDecodeSource
     /// How to render the decoded payload.
     public let render: InspectorDecodeRender
+    /// The declared payload encoding, or `.auto` to detect.
+    public let encoding: InspectorPayloadEncoding
 
     /// Creates decode command options.
-    public init(source: InspectorDecodeSource, render: InspectorDecodeRender = .diagnostic) {
+    ///
+    /// - Parameters:
+    ///   - source: The byte source.
+    ///   - render: The rendering mode.
+    ///   - encoding: The declared payload encoding, or `.auto` to detect.
+    public init(
+        source: InspectorDecodeSource,
+        render: InspectorDecodeRender = .diagnostic,
+        encoding: InspectorPayloadEncoding = .auto
+    ) {
         self.source = source
         self.render = render
+        self.encoding = encoding
     }
 }
 
@@ -111,7 +123,7 @@ public enum InspectorDecodeRunner {
         let codec = InspectorCBORCodec()
         switch command.render {
         case .diagnostic:
-            switch codec.format(of: payload) {
+            switch codec.format(of: payload, encoding: command.encoding) {
             case .cbor:
                 do {
                     return try codec.diagnosticNotation(of: payload)
@@ -124,7 +136,7 @@ public enum InspectorDecodeRunner {
                 throw .unsupportedPayload
             }
         case .json:
-            switch codec.format(of: payload) {
+            switch codec.format(of: payload, encoding: command.encoding) {
             case .cbor:
                 guard let text = codec.jsonText(of: payload) else { throw .notAJSONMap }
                 return text
