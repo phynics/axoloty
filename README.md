@@ -42,6 +42,9 @@ collaborative, and ad-hoc fashion. Its key properties include:
 * standardized event-based communication patterns — Advertise / Deadvertise,
   Discover / Resolve, Query / Retrieve, Update / Complete, Channel, and
   Call / Return — on top of [MQTT](https://mqtt.org),
+* a sealed `coaty/3` JSON profile on MQTT and an `axoloty/1` CBOR profile for
+  the Zenoh transport, both carrying the same Coaty Core Profile 3 event
+  families and object semantics,
 * a fixed synchronous `AxolotyStaticRuntime` profile for Embedded Swift,
 * a platform-agnostic, extensible object model to discover, distribute, share,
   query, and persist hierarchically typed data,
@@ -241,7 +244,10 @@ swift run --package-path Apps axoloty-inspect discover --core-type Identity
 See [docs/inspector.md](./docs/inspector.md) for the full reference.
 
 For the current release's changes, see
-[0.9.0 release notes](./docs/releases/0.9.0.md). For migrating from legacy
+[0.9.0 release notes](./docs/releases/0.9.0.md). The `axoloty/1` CBOR profile
+and the 1.0 direction are recorded in
+[protocol/axoloty-1.md](./docs/protocol/axoloty-1.md) and
+[1.0.0 release notes](./docs/releases/1.0.0.md). For migrating from legacy
 CoatySwift, see [the 0.2 migration guide](./docs/migration/from-coatyswift-to-0.2.md).
 For the 0.7 runtime-registration migration, see
 [the 0.6-to-0.7 guide](./docs/migration/from-0.6-to-0.7.md). For the 0.8

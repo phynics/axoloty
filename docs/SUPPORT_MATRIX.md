@@ -21,6 +21,20 @@ product surface. Support levels use a consistent vocabulary:
 - **Unsupported** — not implemented.
 - **Planned** — tracked but not implemented.
 
+## Wire profiles
+
+The route prefix selects exactly one profile. MQTT carries the sealed
+`coaty/3` JSON profile; Zenoh carries only the `axoloty/1` CBOR profile.
+
+| Transport | Encoding | Support level | Evidence |
+|---|---|---|---|
+| MQTT | `coaty/3` JSON | Validated | Sealed profile. Offline fixtures, live CoatyJS directions, and the `wire` tier. The `axoloty/1` work does not change `coaty/3` field presence or bytes. |
+| Zenoh (host, client and peer) | `axoloty/1` CBOR | Experimental | `wire-cbor` golden corpus and host/static trace parity, plus the `zenoh-offline` and `zenoh-live` tiers. From 1.0, Zenoh carries only `axoloty/1` CBOR ([ADR 0009](./adr/0009-zenoh-carries-only-axoloty-1.md)); 0.9.x Zenoh peers do not interoperate with 1.0 Zenoh peers. |
+| ESP32-C6 (Embedded Swift) | `coaty/3` JSON | Validated at 0.8 scope | Advertise/Deadvertise and Discover/Resolve only. Device qualification lives in `phynics/axoloty-embedded`. |
+
+CBOR-only consumers have three known limitations; see
+[protocol/axoloty-1.md](./protocol/axoloty-1.md#cbor-only-consumers).
+
 ## Communication events
 
 | Capability | Support level | Evidence |

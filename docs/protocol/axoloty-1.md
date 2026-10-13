@@ -1,10 +1,12 @@
 # The `axoloty/1` CBOR wire profile
 
-Status: accepted profile, first implementation increment in progress under
+Status: accepted and implemented profile under
 [epic #977](https://github.com/phynics/axoloty/issues/977). The profile
 decisions below are settled by
 [ADR 0008](../adr/0008-axoloty-1-cbor-extension-profile.md) and
-[ADR 0009](../adr/0009-zenoh-carries-only-axoloty-1.md).
+[ADR 0009](../adr/0009-zenoh-carries-only-axoloty-1.md). This document is the
+profile contract for the shipped codec, routes, trace parity, and embedded
+consumer surfaces.
 
 `axoloty/1` carries the Coaty Core Profile 3 event families and object
 semantics unchanged. Only the payload encoding differs: CBOR (RFC 8949)
@@ -108,32 +110,78 @@ fixed buffer.
 
 uuid = #6.37(bytes .size 16)
 
-advertise = { "object": object }
+; Advertise / Deadvertise
+advertise   = { "object": object, ? "privateData": any }
 deadvertise = { "objectIds": [* uuid] }
-channel = { "object": object, ? "channelId": tstr }
-associate = { "ioSourceId": uuid, "ioActorId": uuid, ? "object": object }
-ioValue = { "payload": any, ? "object": object }
 
-discover = { "objectTypes": [* tstr] }
-resolve = { "object": object }
-query = { "objectTypes": [* tstr] }
-retrieve = { "object": object }
-update = { "object": object }
-complete = { "object": object }
-call = { "parameters": any, ? "filter": any }
-return = { "result": any }
+; Channel
+channel = {
+  ? "object": object,
+  ? "objects": [* object],
+  ? "privateData": any,
+}
+
+; Associate / IoValue
+associate = {
+  "ioSourceId": uuid,
+  "ioActorId": uuid,
+  ? "associatingRoute": tstr,
+  ? "isExternalRoute": true,
+  ? "updateRate": uint,
+}
+ioValue = { "payload": any }
+
+; Discover / Resolve
+discover = {
+  ? "externalId": tstr,
+  ? "objectId": tstr,
+  ? "objectTypes": [* tstr],
+  ? "coreTypes": [* tstr],
+}
+resolve = {
+  "object": object,
+  ? "relatedObjects": [* object],
+  ? "privateData": any,
+}
+
+; Query / Retrieve
+query = {
+  ? "objectTypes": [* tstr],
+  ? "coreTypes": [* tstr],
+  ? "objectFilter": any,
+  ? "objectJoinConditions": [* any],
+}
+retrieve = { "objects": [* object], ? "privateData": any }
+
+; Update / Complete
+update   = { "object": object }
+complete = { ? "object": object, ? "privateData": any }
+
+; Call / Return
+call   = { ? "parameters": any, ? "filter": any }
+return = { ? "result": any, ? "executionInfo": any, ? "error": any }
 
 object = {
   ? "objectId": uuid,
   ? "objectType": tstr,
+  ? "coreType": tstr,
   ? "name": tstr,
   * tstr => any,
 }
 ```
 
-The object payload keeps unknown fields and numeric lexemes, matching the
-`coaty/3` object-model contract. See
-[wire-value-mapping.md](../wire-value-mapping.md) for the JSON/CBOR value
+The CDDL shows the emitted field set. Map keys are sorted by their
+deterministic encoded bytes, so key order in a payload is not the order above.
+An object payload keeps unknown fields and numeric lexemes, matching the
+`coaty/3` object-model contract. Two field forms are deliberate and are
+locked by the golden corpus:
+
+- An object's `objectId` is a tag-37 `uuid`, but `discover.objectId` is a
+  plain text UUID string, matching the pinned CoatyJS shape.
+- `retrieve` encodes `objects`; the reader also accepts the legacy `object`
+  field so an older peer stays decodable.
+
+See [wire-value-mapping.md](../wire-value-mapping.md) for the JSON/CBOR value
 classes and the raw-field retention rules.
 
 ## Error model
@@ -153,14 +201,40 @@ specific reasons are `cborIndefiniteLength`, `cborInvalidAdditionalInfo`,
 | Bounded deterministic CBOR reader and writer | Implemented |
 | `WireDecodable`/`WireEncodable` DTO codec seam (format-neutral, [ADR 0011](../adr/0011-codec-format-seam.md)) | Implemented |
 | Raw/custom CBOR payload retention | Implemented ([wire-value-mapping.md](../wire-value-mapping.md)) |
-| Zenoh binding on `axoloty/1` only | Follow-up under #977 |
+| Zenoh binding on `axoloty/1` only | Implemented |
 | Golden `coaty/3`/`axoloty/1` corpus with independent CBOR decode | Implemented |
-| Trace-parity gate | Follow-up under #977 |
-| Embedded consumer contract surface | Follow-up under #977 |
+| Trace-parity gate | Implemented |
+| Embedded consumer contract surface | Implemented |
 
-The first increment ships `AxolotyWire`'s CBOR primitives and `axoloty/1`
-routes with RFC 8949 Appendix A conformance vectors. The frozen golden corpus
-under `Tests/AxolotyTests/WireCompatibility/Golden` covers every event family
-and DTO field-presence variant, and the wire tool independently decodes every
-CBOR golden with `cbor-x`. The remaining rows are tracked by epic #977 and do
-not change the decisions above.
+Every row is implemented under epic #977. `AxolotyWire` ships the CBOR
+primitives and `axoloty/1` routes with RFC 8949 Appendix A conformance
+vectors. The frozen golden corpus under
+`Tests/AxolotyTests/WireCompatibility/Golden` covers every event family and
+DTO field-presence variant, and the wire tool independently decodes every CBOR
+golden with `cbor-x`. The `wire-cbor` tier runs the golden corpus and the
+host/static trace-parity replay on every pull request; `coaty/3` JSON bytes are
+unchanged. See [../testing.md](../testing.md) for the tier contract.
+
+## CBOR-only consumers
+
+A CBOR-only `AxolotyWire` build, produced with `--disable-default-traits`, does
+not link `_JSONCore`. Three known limitations apply today. They are recorded
+here and are not fixed in the profile code:
+
+1. `BorrowedMessage.ownedEvent()` and `BorrowedMessage.reader()` are gated by
+   `#if canImport(_JSONCore)` and are absent from a CBOR-only build. Decode
+   through `WireCodec.reader(bytes:length:)` and
+   `BorrowedWireEvent.init(eventType:from:)` instead. See
+   [../embedded-consumer-contract.md](../embedded-consumer-contract.md) for the
+   supported build shape.
+2. `axoloty-tool embedded consumer prepare` still resolves and requires
+   `_JSONCore`, even for a CBOR-only contract. The contract validator accepts a
+   CBOR-only contract, but the preparation command does not. A CBOR-only
+   preparation path is a tracked follow-up under
+   [#977](https://github.com/phynics/axoloty/issues/977).
+3. `ProtocolTraceRuntimeReplay.seedObject` in
+   `AxolotyProtocolTraceTestSupport` hardcodes a JSON Advertise payload, so the
+   trace-parity replay seed path is JSON-only today. This is test support, not
+   production code: no shipping path switches on the active profile. If a
+   CBOR-only replay seed is required, that helper must encode the seed with the
+   route profile.
