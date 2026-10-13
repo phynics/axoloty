@@ -102,6 +102,7 @@ shared contract suite. In particular:
 | Multiple subscribers | `multipleSubscribersReceiveSameFrame` |
 | Concurrent subscriptions and independent removal | `concurrentSubscriptionSlots` |
 | Queue overflow | `fullQueueDropsNewest` |
+| Advisory encoding admission | `profileRouteForeignEncodingIsAdmitted`, `profileRouteUnlabeledSampleIsAdmitted`, `externalRouteForeignEncodingIsAdmitted` |
 | Key overflow | `oversizedFramesAreNotTruncated` |
 | Payload overflow | `oversizedFramesAreNotTruncated` |
 | Session failure | `unreachableClientCleansUp` |

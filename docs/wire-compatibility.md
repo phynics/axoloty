@@ -66,11 +66,13 @@ Both are locked by regression tests, and neither changes a `coaty/3` byte.
   therefore accepts any payload, and the bounded DTO decode at the handler
   remains the validation gate. Regression: `WireCodecTests`
   (`wireCodecAppliesTheProfilesBareValueGate`) and `WireCodecParityTests`.
-- **External Zenoh route encoding.** The transport enforces the
-  `application/cbor` encoding only on the `axoloty/1/` profile prefix. External
-  routes admit any encoding, because their payloads are application-defined
-  and the carrier does not interpret them. Regression: `ZenohBindingTests` and
-  `ZenohBindingReceivePumpTests`.
+- **Zenoh `Encoding` is advisory.** The binding admits every inbound sample
+  whatever its `Encoding` label, decodes it by route, and counts a label other
+  than `application/cbor` as a diagnostic. External routes admit any encoding,
+  because their payloads are application-defined and the carrier does not
+  interpret them. A profile-route payload that is not valid CBOR fails as a
+  structured rejection. Regression: `ZenohBindingTests`,
+  `ZenohBindingReceivePumpTests`, and the `CAxolotyZenoh` contract suite.
 
 These are the wire-visible consequences of
 [ADR 0011](./adr/0011-codec-format-seam.md): the format conditionals live
