@@ -566,6 +566,26 @@ extension WireWriter {
         try advancePosition(by: 36)
     }
 
+    /// Writes one UUID as a standalone value rather than an object member.
+    ///
+    /// Use this inside an array. The JSON engine writes the canonical
+    /// hyphenated string including the surrounding quotes, which
+    /// ``writeUUID(_:)`` deliberately omits. The CBOR engine writes the
+    /// canonical tag-37 16-byte byte string. Use ``writeUUIDField(_:_:)`` for
+    /// an object member.
+    ///
+    /// - Parameter value: The UUID to encode.
+    /// - Throws: ``WireEncodeError`` if the destination buffer is too small.
+    public mutating func writeUUIDValue(_ value: UUID16) throws(WireEncodeError) {
+        if isCBOR {
+            try writeUUID(value)
+            return
+        }
+        try writeByte(0x22)
+        try writeUUID(value)
+        try writeByte(0x22)
+    }
+
     @inline(__always)
     private static func hexChar(_ nibble: UInt8) -> UInt8 {
         nibble < 10 ? 0x30 + nibble : 0x61 + (nibble - 10)

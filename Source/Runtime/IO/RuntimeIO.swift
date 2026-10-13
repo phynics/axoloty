@@ -332,34 +332,15 @@ private func runtimeAdvertisePayload(
 ) throws(ProtocolError) -> [UInt8] {
     switch profile {
     case .coaty3JSON:
-        var output = [UInt8](repeating: 0, count: WireBufferConfig.maxPayloadSize)
-        var length = 0
-        var failed = false
-        output.withUnsafeMutableBufferPointer { buffer in
-            guard let base = buffer.baseAddress else {
-                failed = true
-                return
-            }
-            var writer = WireWriter(buffer: base, capacity: buffer.count)
-            do throws(WireEncodeError) {
-                try writer.beginObject(); try writer.writeKey("object")
-                objectBytes.withBytes { bytes in do { try writer.writeRawValue(bytes) } catch { failed = true } }
-                if failed { throw WireEncodeError.bufferOverflow }
-                try writer.endObject(); length = writer.position
-            } catch { failed = true }
-        }
-        guard !failed else { throw ProtocolError(.capacityExceeded) }
-        output.removeSubrange(length..<output.count)
-        return output
+        var object: [UInt8] = []
+        objectBytes.withBytes { bytes in object = bytes.ownedBytes() }
+        return try RuntimeWirePayload.advertiseEnvelope(object: object, profile: .coaty3JSON)
     case .axoloty1CBOR:
-        // The object metadata stays JSON, so wrap it in the JSON envelope and
-        // let the runtime payload encoder translate the whole value to CBOR.
-        var json = Array("{\"object\":".utf8)
-        objectBytes.withBytes { bytes in
-            for index in 0..<bytes.length { json.append(bytes.byte(at: index) ?? 0) }
-        }
-        json.append(0x7D)
-        return try RuntimeWirePayload.encode(json: json, profile: .axoloty1CBOR)
+        // The stored metadata is sealed `coaty/3` JSON. Rebuild the fixed
+        // envelope and IO schema fields as CBOR instead of transcoding raw
+        // fields between profiles.
+        let object = try RuntimeWirePayload.cborIoEndpointObject(storedJSON: objectBytes)
+        return try RuntimeWirePayload.advertiseEnvelope(object: object, profile: .axoloty1CBOR)
     }
 }
 

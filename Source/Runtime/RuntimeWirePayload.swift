@@ -3,368 +3,339 @@
 import AxolotyProtocol
 import AxolotyWire
 
-/// Re-encodes an internally generated host payload for the bound wire profile.
+/// Builds the host runtime's generated wire envelopes through the
+/// profile-aware `AxolotyWire` encoder.
 ///
-/// The host runtime's object model and lifecycle payload builders produce
-/// `coaty/3` JSON. ADR 0009 binds Zenoh to `axoloty/1` CBOR, so a host runtime
-/// composed with a CBOR transport must publish CBOR bytes for the envelopes it
-/// generates itself. `coaty/3` JSON is returned unchanged, so the sealed MQTT
-/// byte contract never changes.
+/// The host object model stores endpoint metadata as sealed `coaty/3` JSON.
+/// A transport bound to `axoloty/1` must publish deterministic CBOR, and
+/// Axoloty never transcodes a raw field between profiles
+/// (`docs/wire-value-mapping.md`). This type therefore rebuilds each
+/// host-generated envelope from typed values through ``WireWriter``: UUIDs
+/// become canonical tag-37 byte strings, strings are emitted as UTF-8 text,
+/// and integers keep their exact value.
 ///
-/// This is not a public or general JSON/CBOR bridge. It converts only the
-/// bounded payloads the runtime builds from its own object metadata and
-/// lifecycle values, and the result must fit ``WireBufferConfig/maxPayloadSize``.
+/// `coaty/3` JSON is the sealed MQTT byte contract, so
+/// ``RuntimeLifecyclePayload`` keeps its existing JSON byte order. The
+/// profile-aware ``advertiseEnvelope(object:profile:)`` and
+/// ``deadvertise(uuid:profile:)`` serve both profiles, and the JSON forms are
+/// byte-identical to the previous literals. The remaining builders produce
+/// the `axoloty/1` form directly.
 enum RuntimeWirePayload {
-    /// Returns `json` unchanged for `coaty/3`, or its deterministic CBOR form
-    /// for `axoloty/1`.
+    // MARK: - Identity advertise
+
+    /// Builds the `axoloty/1` advertise payload for the runtime identity.
+    ///
+    /// - Parameter identity: The runtime identity to advertise.
+    /// - Returns: The canonical CBOR advertise payload.
+    /// - Throws: ``ProtocolError`` when the value cannot be encoded.
+    static func cborAdvertise(identity: RuntimeIdentity) throws(ProtocolError) -> [UInt8] {
+        let object = try encode(profile: .axoloty1CBOR) { writer in
+            try writer.beginObject()
+            try writeStringField(&writer, "coreType", "Identity")
+            try writer.writeComma()
+            try writeStringField(&writer, "name", identity.name)
+            try writer.writeComma()
+            try writer.writeUUIDField("objectId", identity.id)
+            try writer.writeComma()
+            try writeStringField(&writer, "objectType", "coaty.Identity")
+            try writer.endObject()
+        }
+        return try advertiseEnvelope(object: object, profile: .axoloty1CBOR)
+    }
+
+    // MARK: - Deadvertise
+
+    /// Builds the deadvertise payload for `profile`.
+    ///
+    /// The single-element identifier array is written through ``WireWriter``,
+    /// so the JSON form stays byte-identical to the sealed `coaty/3` literal
+    /// and the CBOR form carries a canonical tag-37 byte string.
     ///
     /// - Parameters:
-    ///   - json: A complete JSON value produced by an internal encoder.
-    ///   - profile: The profile the transport binding carries.
-    /// - Returns: The bytes to publish for `profile`.
-    /// - Throws: ``ProtocolError`` with ``ProtocolError/Code/capacityExceeded``
-    ///   when the CBOR form does not fit the bounded payload buffer, or with
-    ///   ``ProtocolError/Code/malformedPayload`` when `json` is not one
-    ///   complete JSON value.
-    static func encode(json: [UInt8], profile: WireProfile) throws(ProtocolError) -> [UInt8] {
-        switch profile {
-        case .coaty3JSON:
-            return json
-        case .axoloty1CBOR:
-            return try RuntimeJSONCBOR.encode(json)
+    ///   - uuid: The object identifier to deadvertise.
+    ///   - profile: The bound transport profile.
+    /// - Returns: The deadvertise payload bytes.
+    /// - Throws: ``ProtocolError`` when the value cannot be encoded.
+    static func deadvertise(uuid: UUID16, profile: WireProfile) throws(ProtocolError) -> [UInt8] {
+        let objectIds = try encode(profile: profile, capacity: 64) { writer in
+            try writer.beginArray()
+            try writer.writeUUIDValue(uuid)
+            try writer.endArray()
         }
-    }
-}
-
-/// Converts one bounded JSON value into deterministic CBOR.
-///
-/// The encoder parses the JSON text directly and writes CBOR through
-/// ``CBORWriter``. Map keys use the RFC 8949 §4.2.1 canonical order. Integers
-/// keep their exact value when they fit a CBOR integer; every other number uses
-/// the shortest lossless float form.
-enum RuntimeJSONCBOR {
-    /// Encodes one complete JSON value as CBOR.
-    ///
-    /// - Parameter json: The JSON text bytes.
-    /// - Returns: The canonical CBOR encoding.
-    /// - Throws: ``ProtocolError`` for malformed input or capacity exhaustion.
-    static func encode(_ json: [UInt8]) throws(ProtocolError) -> [UInt8] {
-        guard let value = RuntimeJSONValue.parse(json) else {
+        let fields: OwnedDeadvertiseWireData
+        do throws(WireDecodeError) {
+            fields = try OwnedDeadvertiseWireData(profile: profile, objectIds: objectIds)
+        } catch {
             throw ProtocolError(.malformedPayload)
         }
-        var output = [UInt8](repeating: 0, count: WireBufferConfig.maxPayloadSize)
+        do throws(WireEncodeError) {
+            return try OwnedWireEvent.deadvertise(fields).encodedBytes(capacity: 128)
+        } catch {
+            throw protocolError(error)
+        }
+    }
+
+    // MARK: - Advertise envelope
+
+    /// Wraps one complete object in the advertise envelope for `profile`.
+    ///
+    /// - Parameters:
+    ///   - object: The complete object bytes in `profile`'s encoding.
+    ///   - profile: The bound transport profile.
+    /// - Returns: The advertise payload bytes.
+    /// - Throws: ``ProtocolError`` when the object is malformed or too large.
+    static func advertiseEnvelope(object: [UInt8], profile: WireProfile) throws(ProtocolError) -> [UInt8] {
+        let fields: OwnedAdvertiseWireData
+        do throws(WireDecodeError) {
+            fields = try OwnedAdvertiseWireData(profile: profile, object: object, privateData: nil)
+        } catch {
+            throw ProtocolError(.malformedPayload)
+        }
+        do throws(WireEncodeError) {
+            return try OwnedWireEvent.advertise(fields).encodedBytes()
+        } catch {
+            throw protocolError(error)
+        }
+    }
+
+    // MARK: - Conformance payloads
+
+    /// Builds an empty object in `profile`'s encoding.
+    ///
+    /// - Parameter profile: The bound transport profile.
+    /// - Returns: `{}` for JSON or the empty CBOR map.
+    /// - Throws: ``ProtocolError`` when the value cannot be encoded.
+    static func emptyObject(profile: WireProfile) throws(ProtocolError) -> [UInt8] {
+        try encode(profile: profile, capacity: 8) { writer in
+            try writer.beginObject()
+            try writer.endObject()
+        }
+    }
+
+    /// Builds an empty array in `profile`'s encoding.
+    ///
+    /// - Parameter profile: The bound transport profile.
+    /// - Returns: `[]` for JSON or the empty CBOR array.
+    /// - Throws: ``ProtocolError`` when the value cannot be encoded.
+    static func emptyArray(profile: WireProfile) throws(ProtocolError) -> [UInt8] {
+        try encode(profile: profile, capacity: 8) { writer in
+            try writer.beginArray()
+            try writer.endArray()
+        }
+    }
+
+    /// Builds the `axoloty/1` conformance error object.
+    ///
+    /// - Parameters:
+    ///   - code: The numeric remote-error code.
+    ///   - message: The remote-error message.
+    /// - Returns: A canonical CBOR object with `code` and `message`.
+    /// - Throws: ``ProtocolError`` when the value cannot be encoded.
+    static func cborErrorObject(code: UInt16, message: String) throws(ProtocolError) -> [UInt8] {
+        try encode(profile: .axoloty1CBOR) { writer in
+            try writer.beginObject()
+            try writer.writeIntField("code", Int(code))
+            try writer.writeComma()
+            try writeStringField(&writer, "message", message)
+            try writer.endObject()
+        }
+    }
+
+    // MARK: - IO endpoint metadata object
+
+    /// Rebuilds one host-owned IO endpoint metadata object as deterministic
+    /// CBOR from its sealed `coaty/3` JSON bytes.
+    ///
+    /// The encoder walks the stored object's top-level fields and writes each
+    /// known envelope or IO metadata field through ``WireWriter``. It rejects
+    /// an unknown field with ``ProtocolError/Code/malformedPayload`` instead of
+    /// dropping it: silently losing a caller field would change the advertised
+    /// object. The IO metadata schema is fixed and first-party, so an unknown
+    /// field is a caller defect, not a peer shape to tolerate.
+    ///
+    /// - Parameter storedJSON: The endpoint metadata object as canonical JSON.
+    /// - Returns: The canonical CBOR object.
+    /// - Throws: ``ProtocolError`` when the object is malformed, carries an
+    ///   unknown field, or does not fit the bounded payload buffer.
+    static func cborIoEndpointObject(storedJSON: BoundedIoBytes<2048>) throws(ProtocolError) -> [UInt8] {
+        return try encode(profile: .axoloty1CBOR) { writer in
+            try writer.beginObject()
+            var failure: WireEncodeError?
+            storedJSON.withBytes { bytes in
+                bytes.withBytes { pointer, count in
+                    let reader = WireCodec(profile: .coaty3JSON).reader(
+                        bytes: pointer.assumingMemoryBound(to: UInt8.self),
+                        length: count
+                    )
+                    do throws(WireDecodeError) { try reader.validate() } catch {
+                        failure = .invalidValue
+                        return
+                    }
+                    do throws(WireDecodeError) {
+                        try reader.withObjectFields { field in
+                            guard failure == nil else { return }
+                            do throws(WireEncodeError) {
+                                try writeIOField(field, reader: reader, writer: &writer)
+                            } catch {
+                                failure = error
+                            }
+                        }
+                    } catch {
+                        failure = failure ?? .invalidValue
+                    }
+                }
+            }
+            if let failure { throw failure }
+            try writer.endObject()
+        }
+    }
+
+    // MARK: - Private encoding
+
+    /// Encodes one value into a new, exactly sized byte array.
+    private static func encode(
+        profile: WireProfile,
+        capacity: Int = WireBufferConfig.maxPayloadSize,
+        _ body: (inout WireWriter) throws -> Void
+    ) throws(ProtocolError) -> [UInt8] {
+        var output = [UInt8](repeating: 0, count: capacity)
         var length = 0
-        var failed = false
+        var failure: WireEncodeError?
         output.withUnsafeMutableBufferPointer { buffer in
             guard let base = buffer.baseAddress else {
-                failed = true
+                failure = .bufferOverflow
                 return
             }
-            var writer = CBORWriter(buffer: base, capacity: buffer.count)
+            var writer = WireCodec(profile: profile).writer(buffer: base, capacity: buffer.count)
             do {
-                try value.write(to: &writer)
+                try body(&writer)
                 length = writer.position
+            } catch let error as WireEncodeError {
+                failure = error
             } catch {
-                failed = true
+                failure = .invalidValue
             }
         }
-        guard !failed else { throw ProtocolError(.capacityExceeded) }
+        if let failure { throw protocolError(failure) }
         output.removeSubrange(length..<output.count)
         return output
     }
 
-    /// Returns the encoded CBOR text-string bytes for one map key.
-    static func encodedText(_ text: String) -> [UInt8] {
-        let content = Array(text.utf8)
-        var result: [UInt8] = []
-        result.reserveCapacity(content.count + 5)
-        appendTextHead(content.count, to: &result)
-        result.append(contentsOf: content)
-        return result
-    }
-
-    private static func appendTextHead(_ length: Int, to output: inout [UInt8]) {
-        if length < 24 {
-            output.append(0x60 | UInt8(length))
-        } else if length <= 0xFF {
-            output.append(0x78)
-            output.append(UInt8(length))
-        } else if length <= 0xFFFF {
-            output.append(0x79)
-            output.append(UInt8(length >> 8))
-            output.append(UInt8(length & 0xFF))
-        } else {
-            output.append(0x7A)
-            output.append(UInt8((length >> 24) & 0xFF))
-            output.append(UInt8((length >> 16) & 0xFF))
-            output.append(UInt8((length >> 8) & 0xFF))
-            output.append(UInt8(length & 0xFF))
-        }
-    }
-}
-
-/// One parsed JSON value used only to derive CBOR.
-enum RuntimeJSONValue {
-    case null
-    case bool(Bool)
-    case number([UInt8])
-    case string([UInt8])
-    case array([RuntimeJSONValue])
-    case object([(String, RuntimeJSONValue)])
-
-    /// Parses one complete JSON value.
-    ///
-    /// - Parameter bytes: The JSON text bytes.
-    /// - Returns: The parsed value, or `nil` when `bytes` is not one complete
-    ///   JSON value.
-    static func parse(_ bytes: [UInt8]) -> RuntimeJSONValue? {
-        var scanner = RuntimeJSONScanner(bytes: bytes)
-        scanner.skipWhitespace()
-        guard let value = scanner.parseValue() else { return nil }
-        scanner.skipWhitespace()
-        guard scanner.isAtEnd else { return nil }
-        return value
-    }
-
-    /// Writes this value through a CBOR writer.
-    func write(to writer: inout CBORWriter) throws {
-        switch self {
-        case .null:
-            try writer.writeNull()
-        case .bool(let flag):
-            try writer.writeBool(flag)
-        case .number(let lexeme):
-            try Self.writeNumber(lexeme, to: &writer)
-        case .string(let content):
-            try Self.writeText(content, to: &writer)
-        case .array(let items):
-            try writer.writeArrayHeader(items.count)
-            for item in items { try item.write(to: &writer) }
-        case .object(let members):
-            let ordered = members.sorted { lhs, rhs in
-                RuntimeJSONCBOR.encodedText(lhs.0).lexicographicallyPrecedes(
-                    RuntimeJSONCBOR.encodedText(rhs.0)
-                )
-            }
-            try writer.writeMapHeader(ordered.count)
-            for (key, value) in ordered {
-                try Self.writeText(Array(key.utf8), to: &writer)
-                try value.write(to: &writer)
-            }
-        }
-    }
-
-    private static func writeText(_ content: [UInt8], to writer: inout CBORWriter) throws {
+    /// Writes one plain UTF-8 string field from a Swift string.
+    private static func writeStringField(
+        _ writer: inout WireWriter,
+        _ key: StaticString,
+        _ value: String
+    ) throws(WireEncodeError) {
+        let utf8 = Array(value.utf8)
         var failure: WireEncodeError?
-        content.withUnsafeBufferPointer { buffer in
-            do {
+        utf8.withUnsafeBufferPointer { buffer in
+            do throws(WireEncodeError) {
                 if let base = buffer.baseAddress {
-                    try writer.writeTextString(ByteSlice(bytes: base, length: buffer.count))
+                    try writer.writeStringField(key, ByteSlice(bytes: base, length: buffer.count))
                 } else {
-                    try writer.writeTextString(ByteSlice.empty)
+                    try writer.writeStringField(key, ByteSlice.empty)
                 }
-            } catch let thrown as WireEncodeError {
-                failure = thrown
             } catch {
-                failure = .invalidValue
+                failure = error
             }
         }
         if let failure { throw failure }
     }
 
-    private static func writeNumber(_ lexeme: [UInt8], to writer: inout CBORWriter) throws {
-        let text = String(decoding: lexeme, as: UTF8.self)
-        let isIntegral = !lexeme.contains(0x2E) && !lexeme.contains(0x65) && !lexeme.contains(0x45)
-        if isIntegral, let value = Int64(text) {
-            try writer.writeInteger(value)
+    /// Writes one known envelope or IO metadata field.
+    private static func writeIOField(
+        _ field: borrowing WireObjectField,
+        reader: WireReader,
+        writer: inout WireWriter
+    ) throws(WireEncodeError) {
+        if field.kind == .null {
+            if field.keyEquals("externalId") { try writer.writeNullField("externalId") }
+            else if field.keyEquals("parentObjectId") { try writer.writeNullField("parentObjectId") }
+            else if field.keyEquals("locationId") { try writer.writeNullField("locationId") }
+            else if field.keyEquals("isDeactivated") { try writer.writeNullField("isDeactivated") }
+            else if field.keyEquals("updateStrategy") { try writer.writeNullField("updateStrategy") }
+            else if field.keyEquals("useRawIoValues") { try writer.writeNullField("useRawIoValues") }
+            else if field.keyEquals("updateRate") { try writer.writeNullField("updateRate") }
+            else if field.keyEquals("externalRoute") { try writer.writeNullField("externalRoute") }
+            else { throw .invalidValue }
             return
         }
-        if isIntegral, let value = UInt64(text) {
-            try writer.writeUnsigned(value)
-            return
-        }
-        guard let value = Double(text) else { throw WireEncodeError.invalidValue }
-        try writer.writeFloat64(value)
-    }
-}
-
-/// A byte-oriented recursive-descent JSON reader.
-struct RuntimeJSONScanner {
-    private let bytes: [UInt8]
-    private var index = 0
-
-    init(bytes: [UInt8]) { self.bytes = bytes }
-
-    var isAtEnd: Bool { index >= bytes.count }
-
-    mutating func skipWhitespace() {
-        let whitespace: Set<UInt8> = [0x20, 0x09, 0x0A, 0x0D]
-        while index < bytes.count, whitespace.contains(bytes[index]) { index += 1 }
-    }
-
-    mutating func parseValue() -> RuntimeJSONValue? {
-        skipWhitespace()
-        guard index < bytes.count else { return nil }
-        switch bytes[index] {
-        case 0x7B: return parseObject()
-        case 0x5B: return parseArray()
-        case 0x22: return parseString().map(RuntimeJSONValue.string)
-        case 0x74: return consume("true") ? .bool(true) : nil
-        case 0x66: return consume("false") ? .bool(false) : nil
-        case 0x6E: return consume("null") ? .null : nil
-        case 0x2D, 0x30...0x39: return parseNumber().map(RuntimeJSONValue.number)
-        default: return nil
-        }
-    }
-
-    private mutating func parseObject() -> RuntimeJSONValue? {
-        index += 1
-        var members: [(String, RuntimeJSONValue)] = []
-        skipWhitespace()
-        if peek(0x7D) { index += 1; return .object(members) }
-        while true {
-            skipWhitespace()
-            guard let key = parseString() else { return nil }
-            skipWhitespace()
-            guard consumeByte(0x3A), let value = parseValue() else { return nil }
-            members.append((String(decoding: key, as: UTF8.self), value))
-            skipWhitespace()
-            if consumeByte(0x2C) { continue }
-            guard consumeByte(0x7D) else { return nil }
-            return .object(members)
+        if field.keyEquals("objectId") {
+            guard let value = reader.readUUID("objectId") else { throw .invalidValue }
+            try writer.writeUUIDField("objectId", value)
+        } else if field.keyEquals("parentObjectId") {
+            guard let value = reader.readUUID("parentObjectId") else { throw .invalidValue }
+            try writer.writeUUIDField("parentObjectId", value)
+        } else if field.keyEquals("locationId") {
+            guard let value = reader.readUUID("locationId") else { throw .invalidValue }
+            try writer.writeUUIDField("locationId", value)
+        } else if field.keyEquals("isDeactivated") {
+            guard let value = reader.readBool("isDeactivated") else { throw .invalidValue }
+            try writer.writeBoolField("isDeactivated", value)
+        } else if field.keyEquals("useRawIoValues") {
+            guard let value = reader.readBool("useRawIoValues") else { throw .invalidValue }
+            try writer.writeBoolField("useRawIoValues", value)
+        } else if field.keyEquals("updateStrategy") {
+            guard let value = reader.readInt("updateStrategy") else { throw .invalidValue }
+            try writer.writeIntField("updateStrategy", value)
+        } else if field.keyEquals("updateRate") {
+            guard let value = reader.readInt("updateRate") else { throw .invalidValue }
+            try writer.writeIntField("updateRate", value)
+        } else if field.keyEquals("objectType") {
+            try writeDecodedStringField(&writer, "objectType", reader: reader)
+        } else if field.keyEquals("name") {
+            try writeDecodedStringField(&writer, "name", reader: reader)
+        } else if field.keyEquals("coreType") {
+            try writeDecodedStringField(&writer, "coreType", reader: reader)
+        } else if field.keyEquals("externalId") {
+            try writeDecodedStringField(&writer, "externalId", reader: reader)
+        } else if field.keyEquals("valueType") {
+            try writeDecodedStringField(&writer, "valueType", reader: reader)
+        } else if field.keyEquals("externalRoute") {
+            try writeDecodedStringField(&writer, "externalRoute", reader: reader)
+        } else {
+            throw .invalidValue
         }
     }
 
-    private mutating func parseArray() -> RuntimeJSONValue? {
-        index += 1
-        var items: [RuntimeJSONValue] = []
-        skipWhitespace()
-        if peek(0x5D) { index += 1; return .array(items) }
-        while true {
-            guard let value = parseValue() else { return nil }
-            items.append(value)
-            skipWhitespace()
-            if consumeByte(0x2C) { continue }
-            guard consumeByte(0x5D) else { return nil }
-            return .array(items)
+    /// Decodes one JSON string field and writes it as plain UTF-8 text.
+    private static func writeDecodedStringField(
+        _ writer: inout WireWriter,
+        _ key: StaticString,
+        reader: WireReader
+    ) throws(WireEncodeError) {
+        guard let content = reader.readString(key) else { throw .invalidValue }
+        var decoded = InlineArray<2048, UInt8>(repeating: 0)
+        let count: Int
+        do throws(WireDecodeError) {
+            count = try WireCodec(profile: .coaty3JSON).copyDecodedString(content, into: &decoded)
+        } catch {
+            throw .invalidValue
         }
-    }
-
-    private mutating func parseString() -> [UInt8]? {
-        guard consumeByte(0x22) else { return nil }
-        var scalars: [UInt8] = []
-        while index < bytes.count {
-            let byte = bytes[index]
-            index += 1
-            switch byte {
-            case 0x22:
-                return scalars
-            case 0x5C:
-                guard index < bytes.count else { return nil }
-                let escape = bytes[index]
-                index += 1
-                switch escape {
-                case 0x22: scalars.append(0x22)
-                case 0x5C: scalars.append(0x5C)
-                case 0x2F: scalars.append(0x2F)
-                case 0x62: scalars.append(0x08)
-                case 0x66: scalars.append(0x0C)
-                case 0x6E: scalars.append(0x0A)
-                case 0x72: scalars.append(0x0D)
-                case 0x74: scalars.append(0x09)
-                case 0x75:
-                    guard let scalar = parseUnicodeEscape() else { return nil }
-                    scalars.append(contentsOf: Array(String(scalar).utf8))
-                default:
-                    return nil
-                }
-            default:
-                guard byte >= 0x20 else { return nil }
-                scalars.append(byte)
+        var failure: WireEncodeError?
+        withUnsafeBytes(of: &decoded) { raw in
+            guard let base = raw.baseAddress else {
+                failure = .invalidValue
+                return
+            }
+            do throws(WireEncodeError) {
+                try writer.writeStringField(
+                    key,
+                    ByteSlice(bytes: base.assumingMemoryBound(to: UInt8.self), length: count)
+                )
+            } catch {
+                failure = error
             }
         }
-        return nil
+        if let failure { throw failure }
     }
 
-    private mutating func parseUnicodeEscape() -> UnicodeScalar? {
-        guard let value = parseHexQuad() else { return nil }
-        if (0xD800...0xDBFF).contains(value) {
-            guard consumeByte(0x5C), consumeByte(0x75), let trail = parseHexQuad(),
-                  (0xDC00...0xDFFF).contains(trail) else { return nil }
-            let combined = 0x10000 + ((value - 0xD800) << 10) + (trail - 0xDC00)
-            return UnicodeScalar(combined)
-        }
-        guard !(0xDC00...0xDFFF).contains(value) else { return nil }
-        return UnicodeScalar(value)
-    }
-
-    private mutating func parseHexQuad() -> UInt32? {
-        var value: UInt32 = 0
-        for _ in 0..<4 {
-            guard index < bytes.count, let digit = Self.hexDigit(bytes[index]) else { return nil }
-            value = (value << 4) | digit
-            index += 1
-        }
-        return value
-    }
-
-    private mutating func parseNumber() -> [UInt8]? {
-        let start = index
-        if peek(0x2D) { index += 1 }
-        var digits = 0
-        while index < bytes.count, (0x30...0x39).contains(bytes[index]) {
-            index += 1
-            digits += 1
-        }
-        guard digits > 0 else { index = start; return nil }
-        if index < bytes.count, bytes[index] == 0x2E {
-            index += 1
-            var fraction = 0
-            while index < bytes.count, (0x30...0x39).contains(bytes[index]) {
-                index += 1
-                fraction += 1
-            }
-            guard fraction > 0 else { index = start; return nil }
-        }
-        if index < bytes.count, bytes[index] == 0x65 || bytes[index] == 0x45 {
-            index += 1
-            if index < bytes.count, bytes[index] == 0x2B || bytes[index] == 0x2D { index += 1 }
-            var exponent = 0
-            while index < bytes.count, (0x30...0x39).contains(bytes[index]) {
-                index += 1
-                exponent += 1
-            }
-            guard exponent > 0 else { index = start; return nil }
-        }
-        return Array(bytes[start..<index])
-    }
-
-    private mutating func consume(_ literal: String) -> Bool {
-        let literalBytes = Array(literal.utf8)
-        guard index + literalBytes.count <= bytes.count else { return false }
-        for offset in literalBytes.indices where bytes[index + offset] != literalBytes[offset] {
-            return false
-        }
-        index += literalBytes.count
-        return true
-    }
-
-    private mutating func consumeByte(_ byte: UInt8) -> Bool {
-        guard index < bytes.count, bytes[index] == byte else { return false }
-        index += 1
-        return true
-    }
-
-    private func peek(_ byte: UInt8) -> Bool {
-        index < bytes.count && bytes[index] == byte
-    }
-
-    private static func hexDigit(_ byte: UInt8) -> UInt32? {
-        switch byte {
-        case 0x30...0x39: return UInt32(byte - 0x30)
-        case 0x41...0x46: return UInt32(byte - 0x41 + 10)
-        case 0x61...0x66: return UInt32(byte - 0x61 + 10)
-        default: return nil
+    /// Maps one writer failure onto the structured protocol error.
+    private static func protocolError(_ error: WireEncodeError) -> ProtocolError {
+        switch error {
+        case .bufferOverflow: return ProtocolError(.capacityExceeded)
+        case .invalidValue, .profileMismatch: return ProtocolError(.malformedPayload)
         }
     }
 }
