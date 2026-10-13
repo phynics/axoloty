@@ -54,7 +54,12 @@ struct AxolotyEmbeddedConsumerPreparationReport: Codable, Equatable, Sendable {
     let core: Core
     let swift: Swift
     let portablePackages: [PortablePackage]
-    let jsonCore: JSONCore
+    /// The resolved `_JSONCore` checkout.
+    ///
+    /// Present exactly when the contract declares a wire profile that sets
+    /// `requiresJSONCore`. A CBOR-only contract omits this field, so the
+    /// report remains schema version 1.
+    let jsonCore: JSONCore?
     let staticRuntimeMacro: StaticRuntimeMacro
     let zenohCore: ZenohCore
 }
@@ -252,15 +257,22 @@ struct AxolotyEmbeddedConsumerPreparation: Sendable {
             return failure("static-runtime macro executable must be inside caller-owned scratch", code: 1)
         }
         let jsonURL = scratchURL.appendingPathComponent("checkouts/swift-json/Sources/_JSONCore")
-        guard let jsonCore = canonicalExistingDirectory(jsonURL.path), isWithin(path: jsonCore, root: scratchURL) else {
-            return failure("resolved swift-json _JSONCore source is missing under scratch", code: 1)
-        }
-        let jsonCheckout = scratchURL.appendingPathComponent("checkouts/swift-json")
-        let jsonSHAResult = runGit(["-C", jsonCheckout.path, "rev-parse", "--verify", "HEAD^{commit}"])
-        let jsonSHA = jsonSHAResult.standardOutput.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard jsonSHAResult.exitCode == 0, jsonSHA == contract.jsonRevision,
-              let lockRevision = lockedRevision(coreURL: coreURL), lockRevision == contract.jsonRevision else {
-            return failure("resolved swift-json revision does not match the embedded consumer contract", code: 1)
+        // A CBOR-only contract needs no JSON parser. Skip the checkout and
+        // lock agreement entirely and omit `jsonCore` from the report, so
+        // preparation succeeds without `_JSONCore`.
+        var resolvedJSONCore: AxolotyEmbeddedConsumerPreparationReport.JSONCore?
+        if let jsonRevision = contract.jsonRevision {
+            guard let jsonCore = canonicalExistingDirectory(jsonURL.path), isWithin(path: jsonCore, root: scratchURL) else {
+                return failure("resolved swift-json _JSONCore source is missing under scratch", code: 1)
+            }
+            let jsonCheckout = scratchURL.appendingPathComponent("checkouts/swift-json")
+            let jsonSHAResult = runGit(["-C", jsonCheckout.path, "rev-parse", "--verify", "HEAD^{commit}"])
+            let jsonSHA = jsonSHAResult.standardOutput.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard jsonSHAResult.exitCode == 0, jsonSHA == jsonRevision,
+                  let lockRevision = lockedRevision(coreURL: coreURL), lockRevision == jsonRevision else {
+                return failure("resolved swift-json revision does not match the embedded consumer contract", code: 1)
+            }
+            resolvedJSONCore = .init(revision: jsonRevision, sourceDir: jsonCore.path)
         }
 
         let finalSHAResult = runGit(["-C", coreURL.path, "rev-parse", "--verify", "HEAD^{commit}"])
@@ -294,7 +306,7 @@ struct AxolotyEmbeddedConsumerPreparation: Sendable {
                     sourcePath: coreURL.appendingPathComponent(package.sourcePath).path
                 )
             },
-            jsonCore: .init(revision: contract.jsonRevision, sourceDir: jsonCore.path),
+            jsonCore: resolvedJSONCore,
             staticRuntimeMacro: .init(executable: macro.path, pluginModule: contract.pluginModule, scratchDir: scratchURL.path),
             zenohCore: .init(
                 module: contract.zenohCore.module,
@@ -330,7 +342,8 @@ struct AxolotyEmbeddedConsumerPreparation: Sendable {
     private struct Contract {
         let packages: [Package]
         let zenohCore: ZenohCoreContract
-        let jsonRevision: String
+        /// The locked `swift-json` revision, or `nil` for a CBOR-only contract.
+        let jsonRevision: String?
         let swiftToolsVersion: String
         let swiftLanguageMode: Int
         let compilerFlags: [String]
@@ -374,11 +387,23 @@ struct AxolotyEmbeddedConsumerPreparation: Sendable {
               let zenohSourcePath = zenoh["sourcePath"] as? String,
               let facadeModule = zenoh["facadeModule"] as? String,
               let facadeHeaderPath = zenoh["facadeHeaderPath"] as? String,
+              let wireProfiles = root["wireProfiles"] as? [[String: Any]],
               let macro = root["staticRuntimeMacro"] as? [String: Any],
               let executable = macro["executable"] as? String,
-              let plugin = macro["pluginModule"] as? String,
-              let json = root["jsonCore"] as? [String: Any],
-              let revision = json["revision"] as? String else { return nil }
+              let plugin = macro["pluginModule"] as? String else { return nil }
+        // `jsonCore` is present exactly when a declared profile requires the
+        // JSON parser. A CBOR-only contract declares only `axoloty1CBOR`, so
+        // preparation never touches the swift-json checkout.
+        let requiresJSONCore = wireProfiles.contains { ($0["requiresJSONCore"] as? Bool) == true }
+        let jsonRevision: String?
+        if requiresJSONCore {
+            guard let json = root["jsonCore"] as? [String: Any],
+                  let revision = json["revision"] as? String else { return nil }
+            jsonRevision = revision
+        } else {
+            guard root["jsonCore"] == nil else { return nil }
+            jsonRevision = nil
+        }
         let parsed = packages.compactMap { object -> Package? in
             guard let name = object["package"] as? String, let source = object["sourcePath"] as? String else { return nil }
             return Package(name: name, sourcePath: source)
@@ -393,7 +418,7 @@ struct AxolotyEmbeddedConsumerPreparation: Sendable {
                 facadeModule: facadeModule,
                 facadeHeaderPath: facadeHeaderPath
             ),
-            jsonRevision: revision,
+            jsonRevision: jsonRevision,
             swiftToolsVersion: tools,
             swiftLanguageMode: language,
             compilerFlags: flags,

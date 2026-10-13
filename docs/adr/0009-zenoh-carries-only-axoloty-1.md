@@ -55,3 +55,12 @@ explicitly subject to change, so no stable consumer depends on JSON over Zenoh.
   remains out of scope.
 - Zenoh embedded qualification happens once, on CBOR. A `coaty/3`-over-Zenoh
   device certificate would be superseded immediately and is not produced.
+
+## Clarification
+
+This decision binds the wire profile to the binding, not to the runtime type.
+`AxolotyStaticRuntime` keeps the sealed `coaty/3` JSON codec as its generic
+default because MQTT and host-only compositions also build on it. A Zenoh
+composition, host or embedded, selects `WireCodec(profile: .axoloty1CBOR)` at
+composition time. The frame-level `AxolotyZenohCore` module is profile-neutral
+and carries neither codec.

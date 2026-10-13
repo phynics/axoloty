@@ -49,11 +49,11 @@ Decode through `WireCodec.reader(bytes:length:)` and
 `.coaty3JSON` profile traps when `_JSONCore` is unavailable; a CBOR-only
 consumer selects `.axoloty1CBOR`.
 
-The validator accepts a CBOR-only contract, but the supported preparation
-command (`axoloty-tool embedded consumer prepare`) still resolves and requires
-`_JSONCore`. A CBOR-only preparation path is a tracked follow-up against
-[#977](https://github.com/phynics/axoloty/issues/977); the preparation report
-schema stays unchanged until that work lands.
+The preparation command accepts a CBOR-only contract. When no declared
+profile sets `requiresJSONCore: true`, it skips the swift-json checkout and
+lock agreement and omits `jsonCore` from the schema-version-1 report. A
+JSON-bearing contract still emits `jsonCore`. This keeps the report schema at
+version 1; a CBOR-only report simply omits `jsonCore`.
 
 Materializing a CBOR-only firmware consumer also requires the portable object
 model to carry CBOR; that work is tracked separately. The Core gate below proves
@@ -95,9 +95,9 @@ swift build \
   --target AxolotyStaticRuntime
 ```
 
-The committed standalone lock selects `swift-json`. After the build, verify
-that its checkout revision equals `jsonCore.revision`. Its portable source is
-at:
+The committed standalone lock selects `swift-json`. When the contract declares
+a JSON profile, after the build verify that its checkout revision equals
+`jsonCore.revision`. Its portable source is at:
 
 ```text
 $CONSUMER_CORE_TOOLS_SCRATCH/checkouts/swift-json/Sources/_JSONCore
@@ -120,8 +120,8 @@ with:
 -load-plugin-executable <absolute-executable-path>#AxolotyStaticRuntimeMacrosImplementation
 ```
 
-Both the `_JSONCore` source and the macro executable must remain inside
-`CONSUMER_CORE_TOOLS_SCRATCH`.
+The macro executable, and the `_JSONCore` source when the contract requires
+JSON, must remain inside `CONSUMER_CORE_TOOLS_SCRATCH`.
 
 ## Compile the portable modules
 
@@ -187,10 +187,11 @@ files, ESP-IDF, or hardware. Scratch and output paths must be outside Core.
 
 The report has schema version 1 and contains the Core commit and dirty state,
 the contract SHA-256, Swift 6.4 compiler flags, the five portable source
-directories in dependency order, the locked `_JSONCore` revision and source,
-the static-runtime macro executable and scratch directory, and the separate
-`zenohCore` source and façade metadata. This addition keeps the schema version
-and all existing fields unchanged. The new `zenohCore` object contains:
+directories in dependency order, the locked `_JSONCore` revision and source
+when a declared profile requires the JSON parser, the static-runtime macro
+executable and scratch directory, and the separate `zenohCore` source and
+façade metadata. A CBOR-only contract omits `jsonCore`; every other field is
+unchanged. The `zenohCore` object contains:
 
 - `module` and `sourceDir` for `AxolotyZenohCore`;
 - `facadeModule` and `facadeHeader` for the `CAxolotyZenoh` C module;
@@ -221,11 +222,14 @@ make check-embedded-core-consumer
 ```
 
 The gate compiles `_JSONCore` and all five portable packages for the repository's
-RISC-V Embedded Swift test target. It then compiles a real `@StaticIoActor`
+RISC-V Embedded Swift test target when the contract declares a JSON profile. It
+then compiles a real `@StaticIoActor`
 consumer with the resolved macro executable and performs a relocatable link of
 the resulting objects. A second leg compiles and links a CBOR-only consumer that
 imports no `_JSONCore` and asserts that the linked objects carry no JSON symbols,
-proving `axoloty/1` works without the JSON parser. The gate reads Core sources
+proving `axoloty/1` works without the JSON parser. A CBOR-only contract therefore runs
+only this leg, so a CBOR-only consumer can use the same gate. The gate reads
+Core sources
 and caller-owned scratch
 storage only. It does not read the firmware project, invoke ESP-IDF, use a
 broker, or probe hardware. Portable targets also enable the Swift 6.4
