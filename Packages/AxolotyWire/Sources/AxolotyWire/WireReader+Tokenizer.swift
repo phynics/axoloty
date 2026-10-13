@@ -35,9 +35,12 @@ import _JSONCore
         var rootObject = false; var completeValue = false; var failure: WireDecodeError?; var count = 0
         // Contiguous storage; valid entries are 0..<count. The capacity must
         // equal WireBufferConfig.maxIndexedFields (24); a static property is not
-        // accepted as an InlineArray value argument. The previous 24-tuple of
-        // optionals plus its switch-tree accessors copied and zero-initialized
-        // roughly 0.8 KB on every reader construction.
+        // accepted as an InlineArray value argument. `append` bounds against both
+        // the configuration constant and the actual storage count, mirroring
+        // `CBORReader.skipMapItems`, so a future drift rejects the field
+        // instead of indexing past the array. The previous 24-tuple of optionals
+        // plus its switch-tree accessors copied and zero-initialized roughly
+        // 0.8 KB on every reader construction.
         var slots = InlineArray<24, WireFieldSlot>(repeating: .empty)
 
         func slot(_ n: Int) -> WireFieldSlot? {
@@ -62,7 +65,8 @@ import _JSONCore
                 if failure == nil { failure = WireDecodeError(.duplicateField, byteOffset: value.key.lowerBound) }
                 return
             }
-            guard count < WireBufferConfig.maxIndexedFields else {
+            guard count < WireBufferConfig.maxIndexedFields,
+                  count < slots.count else {
                 failure = WireDecodeError(.fieldIndexOverflow, byteOffset: value.key.lowerBound)
                 return
             }
@@ -346,10 +350,7 @@ import _JSONCore
         while offset < range.upperBound && bytes[offset] >= 0x30 && bytes[offset] <= 0x39 { offset += 1 }
     }
 
-        var failure: WireDecodeError? {
-            get { index.pointee.failure }
-            set { index.pointee.failure = newValue }
-        }
+        var failure: WireDecodeError? { index.pointee.failure }
 
     }
 #endif
