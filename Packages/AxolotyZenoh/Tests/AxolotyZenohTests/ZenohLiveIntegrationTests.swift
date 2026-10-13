@@ -11,6 +11,7 @@ import Darwin
 import Axoloty
 @_spi(AxolotyRuntimeAdapter) import AxolotyProtocol
 @testable import AxolotyZenoh
+@testable import AxolotyProtocolTraceTestSupport
 
 @Suite(
     "Zenoh live router integration",
@@ -25,7 +26,7 @@ struct ZenohLiveIntegrationTests {
     @Test("two Axoloty bindings exchange a profile route through zenohd")
     func axolotyToAxoloty() async throws {
         let namespace = "live-\(UUID().uuidString.lowercased())"
-        let route = "coaty/3/\(namespace)/IOV/11111111-1111-4111-8111-111111111111"
+        let route = "axoloty/1/\(namespace)/IOV/11111111-1111-4111-8111-111111111111"
         let receiver = FrameRecorder()
         let first = try ZenohBinding(connectEndpoint: endpoint)
         let second = try ZenohBinding(connectEndpoint: endpoint)
@@ -193,7 +194,9 @@ struct ZenohLiveIntegrationTests {
                 await runtime.state() == .running && bindingRouterCount(binding) > 0
             }
             print("ZENOH_LIVE_RESTART_STAGE runtime-recovered=\(runtimeRecovered)")
-            let payload = Array(#"{"privateData":{"sequence":7}}"#.utf8)
+            // The runtime is composed with the CBOR `axoloty/1` Zenoh binding,
+            // so the channel envelope must be CBOR, not the `coaty/3` JSON text.
+            let payload = TracePayloadCBOR.encode(#"{"privateData":{"sequence":7}}"#)
             let messageResumed: Bool
             if runtimeRecovered {
                 messageResumed = await publishRuntimeUntilReceived(

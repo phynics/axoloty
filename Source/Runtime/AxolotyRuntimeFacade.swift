@@ -10,16 +10,16 @@ enum RuntimeQueuedTransportEffect: Sendable {
     case externalRouteActivated(OwnedExternalRouteTransition)
     case externalRouteDeactivated(OwnedExternalRouteTransition)
 
-    /// Resolves this effect against `namespace` into a transport effect.
+    /// Resolves this effect against `namespace` and `profile` into a transport effect.
     ///
     /// Publications carry a routing key and a target until this point; the
     /// route is synthesized here so every transport receives finished bytes.
-    func transportEffect(namespace: String) throws -> RuntimeTransportEffect {
+    func transportEffect(namespace: String, profile: WireProfile) throws -> RuntimeTransportEffect {
         switch self {
         case let .publish(publication):
-            return .publish(try RuntimeOutboundMessage(publication, namespace: namespace))
+            return .publish(try RuntimeOutboundMessage(publication, namespace: namespace, profile: profile))
         case let .typedIoPublication(publication, token: _):
-            return .publish(try RuntimeOutboundMessage(publication, namespace: namespace))
+            return .publish(try RuntimeOutboundMessage(publication, namespace: namespace, profile: profile))
         case let .externalRouteActivated(transition): return .externalRouteActivated(transition)
         case let .externalRouteDeactivated(transition): return .externalRouteDeactivated(transition)
         }
@@ -28,7 +28,7 @@ enum RuntimeQueuedTransportEffect: Sendable {
 
 extension RuntimeOutboundMessage {
     /// Resolves a publication's target into a finished route.
-    init(_ publication: OwnedProtocolPublication, namespace: String) throws {
+    init(_ publication: OwnedProtocolPublication, namespace: String, profile: WireProfile) throws {
         switch publication.target {
         case let .profile(eventTypeFilter, filterKind):
             self.init(
@@ -36,7 +36,8 @@ extension RuntimeOutboundMessage {
                     for: publication.routingKey,
                     namespace: namespace,
                     eventTypeFilter: eventTypeFilter,
-                    eventTypeFilterKind: filterKind
+                    eventTypeFilterKind: filterKind,
+                    profile: profile
                 ),
                 payload: publication.payload
             )

@@ -33,6 +33,9 @@ typedef enum {
     AXOLOTY_ZENOH_QUEUE_FULL = 6,
     /// An inbound key or payload exceeds its fixed receive bound.
     AXOLOTY_ZENOH_FRAME_TOO_LARGE = 7,
+    /// An inbound sample was labelled with an encoding other than
+    /// `application/cbor` and was dropped.
+    AXOLOTY_ZENOH_UNSUPPORTED_ENCODING = 8,
 } axoloty_zenoh_result_t;
 
 /// The lifecycle state of a session handle.
@@ -277,11 +280,12 @@ axoloty_zenoh_result_t axoloty_zenoh_unsubscribe(const axoloty_zenoh_session_t *
 /// lengths output pointers to valid storage. Empty payloads are valid. A too-
 /// small output buffer leaves the queued frame untouched and returns invalid
 /// argument. A successful poll releases one queue slot, including after drops.
-/// Once queued frames are drained, asynchronous full-queue and oversized-frame
-/// drops are each reported once as ``AXOLOTY_ZENOH_QUEUE_FULL`` and
-/// ``AXOLOTY_ZENOH_FRAME_TOO_LARGE`` respectively. Full-queue notifications
-/// are returned first when both kinds are pending; both counters remain
-/// cumulative for the lifetime of the subscription.
+/// Once queued frames are drained, asynchronous full-queue, oversized-frame,
+/// and unsupported-encoding drops are each reported once as
+/// ``AXOLOTY_ZENOH_QUEUE_FULL``, ``AXOLOTY_ZENOH_FRAME_TOO_LARGE``, and
+/// ``AXOLOTY_ZENOH_UNSUPPORTED_ENCODING`` respectively. Full-queue
+/// notifications are returned first when several kinds are pending; all
+/// counters remain cumulative for the lifetime of the subscription.
 ///
 /// - Parameters:
 ///   - session: An open session.
@@ -339,6 +343,22 @@ axoloty_zenoh_result_t axoloty_zenoh_dropped_frame_count(const axoloty_zenoh_ses
 axoloty_zenoh_result_t axoloty_zenoh_oversized_frame_count(const axoloty_zenoh_session_t *session,
                                                             const axoloty_zenoh_subscription_t *subscription,
                                                             uint32_t *out_count);
+
+/// Reads the total number of frames dropped because their Zenoh `Encoding`
+/// was not `application/cbor`.
+///
+/// The route prefix remains the authoritative decode signal; this counter
+/// only records samples a peer explicitly labelled with another encoding.
+///
+/// - Parameters:
+///   - session: An open session.
+///   - out_count: Receives the atomic unsupported-encoding count.
+/// - Returns: ``AXOLOTY_ZENOH_OK``, ``AXOLOTY_ZENOH_NOT_OPEN``, or
+///   ``AXOLOTY_ZENOH_INVALID_ARGUMENT``.
+axoloty_zenoh_result_t axoloty_zenoh_unsupported_encoding_count(
+    const axoloty_zenoh_session_t *session,
+    const axoloty_zenoh_subscription_t *subscription,
+    uint32_t *out_count);
 
 #ifdef __cplusplus
 }

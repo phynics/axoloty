@@ -14,17 +14,31 @@ extension ProtocolExecutor {
             withJSONObject: ["code": code, "message": message],
             options: [.sortedKeys]
         ) else { return nil }
-        let errorBytes = Array(error)
+        let profile = wireProfile
+        guard let errorBytes = try? RuntimeWirePayload.encode(json: Array(error), profile: profile) else {
+            return nil
+        }
+        let emptyObject = try? RuntimeWirePayload.encode(json: Array("{}".utf8), profile: profile)
+        let emptyArray = try? RuntimeWirePayload.encode(json: Array("[]".utf8), profile: profile)
         let event: OwnedWireEvent?
         switch capability {
         case .resolve:
-            event = try? .resolve(OwnedResolveWireData(object: Array("{}".utf8), relatedObjects: nil, privateData: errorBytes))
+            event = try? .resolve(OwnedResolveWireData(
+                profile: profile,
+                object: emptyObject ?? [],
+                relatedObjects: nil,
+                privateData: errorBytes
+            ))
         case .retrieve:
-            event = try? .retrieve(OwnedRetrieveWireData(objects: Array("[]".utf8), privateData: errorBytes))
+            event = try? .retrieve(OwnedRetrieveWireData(
+                profile: profile,
+                objects: emptyArray ?? [],
+                privateData: errorBytes
+            ))
         case .complete:
-            event = try? .complete(OwnedCompleteWireData(object: nil, privateData: errorBytes))
+            event = try? .complete(OwnedCompleteWireData(profile: profile, object: nil, privateData: errorBytes))
         case .returnEvent:
-            event = try? .returnEvent(OwnedReturnWireData(result: nil, executionInfo: nil, error: errorBytes))
+            event = try? .returnEvent(OwnedReturnWireData(profile: profile, result: nil, executionInfo: nil, error: errorBytes))
         default:
             event = nil
         }

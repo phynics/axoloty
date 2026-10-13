@@ -279,8 +279,8 @@ extension CAxolotyZenohSessionLifecycleTests {
         let vectors = contract.vectors.multiSubscription
         let receiver = try await openPeer()
         let publisher = try openPublisher()
-        let profileFourKey = Array("coaty/3/contracts/*/*".utf8)
-        let profileFiveKey = Array("coaty/3/contracts/*/*/*".utf8)
+        let profileFourKey = Array("axoloty/1/contracts/*/*".utf8)
+        let profileFiveKey = Array("axoloty/1/contracts/*/*/*".utf8)
         let externalKey = Array(vectors.exactExternalRoute.key.utf8)
 
         let (profileFourResult, profileFourMaybe) = subscribe(receiver, to: profileFourKey)

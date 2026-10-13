@@ -58,11 +58,12 @@ public func runRuntimeTransportContract(
     #expect(initialStartCount == 1)
 
     let namespace = "contract-node"
+    let profilePrefix = "\(fixture.transport.wireProfile.protocolName)/\(fixture.transport.wireProfile.protocolVersion)"
     try await fixture.transport.activateProfileInterest(namespace: namespace)
     let initialProfileSubscriptions = await fixture.profileSubscriptions()
     #expect(initialProfileSubscriptions == [
-        "coaty/3/\(namespace)/*/*",
-        "coaty/3/\(namespace)/*/*/*",
+        "\(profilePrefix)/\(namespace)/*/*",
+        "\(profilePrefix)/\(namespace)/*/*/*",
     ])
 
     let externalRoute = "contract/external/value"
@@ -72,12 +73,12 @@ public func runRuntimeTransportContract(
     #expect(activatedExternalRoutes == [externalRoute])
     #expect(diagnostics.snapshot().activeExternalSubscriptions == 1)
 
-    let outbound = RuntimeOutboundMessage(route: "coaty/3/\(namespace)/ADV/source", payload: [1, 2, 3])
+    let outbound = RuntimeOutboundMessage(route: "\(profilePrefix)/\(namespace)/ADV/source", payload: [1, 2, 3])
     try await fixture.transport.perform(.publish(outbound))
     let publications = await fixture.publications()
     #expect(publications == [outbound])
 
-    let profileRoute = "coaty/3/\(namespace)/IOV/00000000-0000-4000-8000-000000000001"
+    let profileRoute = "\(profilePrefix)/\(namespace)/IOV/00000000-0000-4000-8000-000000000001"
     var profilePayload = [UInt8(4), 5, 6]
     await fixture.inject(route: profileRoute, payload: &profilePayload)
     var externalPayload = [UInt8(7), 8, 9]
@@ -117,8 +118,8 @@ public func runRuntimeTransportContract(
     try await fixture.transport.activateProfileInterest(namespace: namespace)
     let subscriptionsAfterRestart = await fixture.profileSubscriptions()
     #expect(subscriptionsAfterRestart.suffix(2).elementsEqual([
-        "coaty/3/\(namespace)/*/*",
-        "coaty/3/\(namespace)/*/*/*",
+        "\(profilePrefix)/\(namespace)/*/*",
+        "\(profilePrefix)/\(namespace)/*/*/*",
     ]))
     await fixture.transport.stop()
 }

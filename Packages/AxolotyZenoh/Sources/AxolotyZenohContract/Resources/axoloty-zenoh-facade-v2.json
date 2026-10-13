@@ -11,15 +11,15 @@
     },
     "multiSubscription": {
       "profileFourSegments": {
-        "key": "coaty/3/contracts/ADV/source",
+        "key": "axoloty/1/contracts/ADV/source",
         "payload": [34, 68]
       },
       "profileFiveSegments": {
-        "key": "coaty/3/contracts/ADV/source/value",
+        "key": "axoloty/1/contracts/ADV/source/value",
         "payload": [51, 85]
       },
       "exactExternalRoute": {
-        "key": "coaty/3/contracts/external/route",
+        "key": "axoloty/1/contracts/external/route",
         "payload": [102, 119]
       },
       "maximumSubscribers": 8

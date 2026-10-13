@@ -11,7 +11,7 @@ set -eu
 
 root_dir=$(CDPATH= cd -- "$(dirname -- "$0")/../../.." && pwd)
 
-for tool in swift swiftc node nm; do
+for tool in swift swiftc nm; do
     command -v "$tool" >/dev/null 2>&1 || {
         echo "FAIL: $tool is required for the Embedded Swift Zenoh core check" >&2
         exit 1
@@ -29,8 +29,8 @@ for required in "$facade_header" "$zenoh_core_dir" "$wire_dir"; do
     }
 done
 
-# Compiler and SwiftPM checkout state stays in a caller-owned temporary tree
-# outside the source checkout.
+# Compiler state stays in a caller-owned temporary tree outside the source
+# checkout.
 scratch_parent=${AXOLOTY_EMBEDDED_ZENOH_CHECK_DIR:-/tmp/axoloty-embedded-zenoh-core}
 case "$scratch_parent" in
     /*) ;;
@@ -43,32 +43,10 @@ mkdir -p -- "$scratch_parent"
 workdir=$(mktemp -d "$scratch_parent/run.XXXXXX")
 trap 'rm -rf -- "$workdir"' EXIT HUP INT TERM
 
-# _JSONCore comes from the Zenoh package's own lock, which must agree with the
-# revision the embedded consumer contract pins.
-echo "Resolving the locked AxolotyZenoh dependencies..."
-swift package resolve \
-    --package-path "$zenoh_package" \
-    --scratch-path "$workdir/swiftpm" \
-    --cache-path "$root_dir/.swiftpm-cache" \
-    --disable-automatic-resolution \
-    >"$workdir/resolve.log" 2>&1 || {
-    cat "$workdir/resolve.log" >&2
-    echo "FAIL: cannot resolve the locked AxolotyZenoh dependencies" >&2
-    exit 1
-}
-json_checkout="$workdir/swiftpm/checkouts/swift-json"
-json_core_dir="$json_checkout/Sources/_JSONCore"
-[ -d "$json_core_dir" ] || {
-    echo "FAIL: resolved swift-json _JSONCore source is missing: $json_core_dir" >&2
-    exit 1
-}
-expected_revision=$(node -e 'const fs=require("fs"); process.stdout.write(JSON.parse(fs.readFileSync(process.argv[1], "utf8")).jsonCore.revision);' "$root_dir/docs/embedded-consumer-contract.json")
-actual_revision=$(git -C "$json_checkout" rev-parse HEAD)
-[ "$actual_revision" = "$expected_revision" ] || {
-    echo "FAIL: AxolotyZenoh locks swift-json $actual_revision; the embedded consumer contract pins $expected_revision" >&2
-    exit 1
-}
-
+# AxolotyZenohCore carries the `axoloty/1` CBOR profile only, so the gate
+# compiles and links AxolotyWire without the `_JSONCore` parser module. The
+# profile-neutral WireCodec guards its JSON paths behind
+# `#if canImport(_JSONCore)`, which is false here.
 embedded_swiftc() {
     swiftc \
         -target riscv32-none-none-eabi \
@@ -85,15 +63,6 @@ swift_sources() {
         [ -f "$source" ] && printf '%s\n' "$source"
     done
 }
-
-echo "Compiling _JSONCore as Embedded Swift..."
-# shellcheck disable=SC2046 # Source paths contain no whitespace.
-embedded_swiftc \
-    -package-name IkigaJSON \
-    -module-name _JSONCore \
-    -emit-module -emit-module-path "$workdir/_JSONCore.swiftmodule" \
-    -c $(swift_sources "$json_core_dir"/*.swift "$json_core_dir"/Parser/*.swift "$json_core_dir"/SIMD/*.swift) \
-    -o "$workdir/_JSONCore.o"
 
 echo "Compiling AxolotyWire as Embedded Swift..."
 # shellcheck disable=SC2046
@@ -146,8 +115,7 @@ riscv_linker=$(find_riscv_linker)
 "$riscv_linker" -r \
     -o "$workdir/embedded-zenoh-core-linked.o" \
     "$workdir/AxolotyZenohCore.o" \
-    "$workdir/AxolotyWire.o" \
-    "$workdir/_JSONCore.o"
+    "$workdir/AxolotyWire.o"
 
 # A relocatable link has no libc or firmware image. Only the C façade entry
 # points and the runtime symbols the Core gate already allows may remain.

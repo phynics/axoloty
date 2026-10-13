@@ -108,6 +108,13 @@ public protocol AxolotyRuntimeTransport: AnyObject, Sendable {
     /// The borrowed route is valid only for this synchronous call. The
     /// transport must not retain it or impose a profile-wide route grammar.
     func classifyRoute(_ route: ByteSlice) -> ProtocolRouteClassification
+    /// The single wire profile this binding carries.
+    ///
+    /// Each binding selects exactly one profile at composition time; the
+    /// runtime never negotiates or switches profiles per message. The
+    /// profile determines the route prefix the runtime synthesizes and the
+    /// ``WireCodec`` the shared processor reads and writes.
+    var wireProfile: WireProfile { get }
 }
 
 public extension AxolotyRuntimeTransport {
@@ -156,4 +163,10 @@ public extension AxolotyRuntimeTransport {
     func classifyRoute(_ route: ByteSlice) -> ProtocolRouteClassification {
         route.length == 0 ? .unrelated : .coaty
     }
+    /// Defaults to the sealed `coaty/3` JSON profile.
+    ///
+    /// MQTT and every adapter written before profiles existed keep the
+    /// original wire contract. Only a binding that declares another profile
+    /// (for example the Zenoh binding's `axoloty/1` CBOR) overrides this.
+    var wireProfile: WireProfile { .coaty3JSON }
 }

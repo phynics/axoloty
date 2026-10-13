@@ -20,6 +20,8 @@ public enum ZenohResult: Equatable {
     case queueFull
     /// A frame was dropped because its key or payload exceeded the receive bound.
     case frameTooLarge
+    /// A frame was dropped because its Zenoh `Encoding` was not `application/cbor`.
+    case unsupportedEncoding
 
     /// Converts one C façade result without collapsing distinct errors.
     ///
@@ -43,6 +45,8 @@ public enum ZenohResult: Equatable {
             self = .queueFull
         case AXOLOTY_ZENOH_FRAME_TOO_LARGE:
             self = .frameTooLarge
+        case AXOLOTY_ZENOH_UNSUPPORTED_ENCODING:
+            self = .unsupportedEncoding
         default:
             preconditionFailure("CAxolotyZenoh added a result without a Swift mapping")
         }

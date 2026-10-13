@@ -21,7 +21,7 @@ struct ZenohBindingReceivePumpTests {
         try await binding.activateProfileInterest(namespace: "node")
         let externalRoute = "legacy/source/value"
         try await binding.perform(.externalRouteActivated(transition(externalRoute)))
-        let profileRoute = "coaty/3/node/IOV/00000000-0000-4000-8000-000000000001"
+        let profileRoute = "axoloty/1/node/IOV/00000000-0000-4000-8000-000000000001"
         session.enqueue(.frame(PollFrameSource(key: Array(profileRoute.utf8), payload: [0, 1, 255])), for: 1)
         session.enqueue(.frame(PollFrameSource(key: Array(externalRoute.utf8), payload: [3, 4])), for: 3)
 
@@ -46,12 +46,13 @@ struct ZenohBindingReceivePumpTests {
         try await binding.activateProfileInterest(namespace: "node")
         session.enqueue(.result(.queueFull), for: 1)
         session.enqueue(.result(.frameTooLarge), for: 1)
+        session.enqueue(.result(.unsupportedEncoding), for: 1)
 
         binding.drainReceiveQueues()
 
         #expect(recorder.snapshot().isEmpty)
-        #expect(session.pollCount >= 3)
-        #expect(counters.snapshot().receiveDrops == 1)
+        #expect(session.pollCount >= 4)
+        #expect(counters.snapshot().receiveDrops == 2)
         #expect(counters.snapshot().oversizedSamples == 1)
         #expect(counters.snapshot().sessionOpens == 1)
         await binding.stop()

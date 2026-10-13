@@ -164,7 +164,11 @@ PROBE_ROUNDTRIP_OK
 ```
 
 The Coaty route was carried unchanged as a Zenoh key expression, which is the
-behavior AD-5 requires.
+behavior AD-5 requires. **This capture predates ADR 0009.** Zenoh now carries
+only the `axoloty/1` CBOR profile, so current keys read
+`axoloty/1/<namespace>/<event>/<identifier>` and the binding labels every
+published payload `application/cbor`. The probe above was not re-run; MQTT
+still uses the sealed `coaty/3` JSON profile.
 
 ### Host (macOS 26.6 arm64, Xcode 27, Swift 6.4, native)
 

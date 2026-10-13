@@ -30,8 +30,10 @@ struct axoloty_zenoh_subscription {
     atomic_uint receive_dequeue_position;
     atomic_uint dropped_frames;
     atomic_uint oversized_frames;
+    atomic_uint unsupported_encoding_frames;
     atomic_uint pending_full_results;
     atomic_uint pending_oversized_results;
+    atomic_uint pending_unsupported_results;
     atomic_uint active_callbacks;
     atomic_bool callback_enabled;
     atomic_uint generation;
@@ -95,11 +97,13 @@ static void axoloty_zenoh_reset_receive_queue(struct axoloty_zenoh_subscription 
     }
     atomic_store_explicit(&subscription->pending_full_results, 0, memory_order_relaxed);
     atomic_store_explicit(&subscription->pending_oversized_results, 0, memory_order_relaxed);
+    atomic_store_explicit(&subscription->pending_unsupported_results, 0, memory_order_relaxed);
 }
 
 static void axoloty_zenoh_reset_receive_counters(struct axoloty_zenoh_subscription *subscription) {
     atomic_store_explicit(&subscription->dropped_frames, 0, memory_order_relaxed);
     atomic_store_explicit(&subscription->oversized_frames, 0, memory_order_relaxed);
+    atomic_store_explicit(&subscription->unsupported_encoding_frames, 0, memory_order_relaxed);
 }
 
 static struct axoloty_zenoh_session *axoloty_zenoh_slot(const axoloty_zenoh_session_t *session);
@@ -400,8 +404,14 @@ axoloty_zenoh_result_t axoloty_zenoh_publish(const axoloty_zenoh_session_t *sess
         return AXOLOTY_ZENOH_TRANSPORT_ERROR;
     }
 
+    // Zenoh carries only the `axoloty/1` CBOR profile, so every publication
+    // is labelled `application/cbor` for peers that inspect the hint.
+    z_owned_encoding_t encoding;
+    z_encoding_clone(&encoding, z_encoding_application_cbor());
+
     z_put_options_t options;
     z_put_options_default(&options);
+    options.encoding = z_encoding_move(&encoding);
     z_result_t result = z_put(
         z_session_loan(&slot->zenoh_session),
         z_keyexpr_loan(&key_expr),
@@ -441,6 +451,18 @@ static void axoloty_zenoh_receive_sample(z_loaned_sample_t *sample, void *contex
         payload_length > AXOLOTY_ZENOH_MAX_PAYLOAD_BYTES) {
         atomic_fetch_add_explicit(&subscription->pending_oversized_results, 1, memory_order_relaxed);
         atomic_fetch_add_explicit(&subscription->oversized_frames, 1, memory_order_release);
+        goto callback_done;
+    }
+
+    // Zenoh carries only `axoloty/1` CBOR. The route prefix stays the
+    // authoritative decode signal; this check only refuses a sample that a
+    // peer explicitly labelled as something other than `application/cbor`.
+    // The comparison never changes how an admitted payload is decoded.
+    const struct z_loaned_encoding_t *sample_encoding = z_sample_encoding(sample);
+    if (sample_encoding == NULL ||
+        !z_encoding_equals(sample_encoding, z_encoding_application_cbor())) {
+        atomic_fetch_add_explicit(&subscription->pending_unsupported_results, 1, memory_order_relaxed);
+        atomic_fetch_add_explicit(&subscription->unsupported_encoding_frames, 1, memory_order_release);
         goto callback_done;
     }
 
@@ -618,6 +640,9 @@ axoloty_zenoh_result_t axoloty_zenoh_poll(const axoloty_zenoh_session_t *session
             if (axoloty_zenoh_consume_pending_result(&subscription->pending_oversized_results)) {
                 return AXOLOTY_ZENOH_FRAME_TOO_LARGE;
             }
+            if (axoloty_zenoh_consume_pending_result(&subscription->pending_unsupported_results)) {
+                return AXOLOTY_ZENOH_UNSUPPORTED_ENCODING;
+            }
             return AXOLOTY_ZENOH_QUEUE_EMPTY;
         }
         if (!frame->valid) {
@@ -666,25 +691,32 @@ axoloty_zenoh_result_t axoloty_zenoh_queue_depth(const axoloty_zenoh_session_t *
 static axoloty_zenoh_result_t axoloty_zenoh_counter(const axoloty_zenoh_session_t *session,
                                                     const axoloty_zenoh_subscription_t *handle,
                                                     uint32_t *out_count,
-                                                    bool oversized) {
+                                                    int kind) {
     struct axoloty_zenoh_session *slot = axoloty_zenoh_slot(session);
     if (slot == NULL || out_count == NULL) return AXOLOTY_ZENOH_INVALID_ARGUMENT;
     if (!slot->open) { *out_count = 0; return AXOLOTY_ZENOH_NOT_OPEN; }
     struct axoloty_zenoh_subscription *subscription = axoloty_zenoh_subscription_slot(session, handle);
     if (subscription == NULL) return AXOLOTY_ZENOH_INVALID_ARGUMENT;
-    *out_count = atomic_load_explicit(oversized ? &subscription->oversized_frames : &subscription->dropped_frames,
-                                      memory_order_acquire);
+    atomic_uint *counter = kind == 0 ? &subscription->dropped_frames
+        : (kind == 1 ? &subscription->oversized_frames : &subscription->unsupported_encoding_frames);
+    *out_count = atomic_load_explicit(counter, memory_order_acquire);
     return AXOLOTY_ZENOH_OK;
 }
 
 axoloty_zenoh_result_t axoloty_zenoh_dropped_frame_count(const axoloty_zenoh_session_t *session,
                                                          const axoloty_zenoh_subscription_t *handle,
                                                          uint32_t *out_count) {
-    return axoloty_zenoh_counter(session, handle, out_count, false);
+    return axoloty_zenoh_counter(session, handle, out_count, 0);
 }
 
 axoloty_zenoh_result_t axoloty_zenoh_oversized_frame_count(const axoloty_zenoh_session_t *session,
                                                             const axoloty_zenoh_subscription_t *handle,
                                                             uint32_t *out_count) {
-    return axoloty_zenoh_counter(session, handle, out_count, true);
+    return axoloty_zenoh_counter(session, handle, out_count, 1);
+}
+
+axoloty_zenoh_result_t axoloty_zenoh_unsupported_encoding_count(const axoloty_zenoh_session_t *session,
+                                                                const axoloty_zenoh_subscription_t *handle,
+                                                                uint32_t *out_count) {
+    return axoloty_zenoh_counter(session, handle, out_count, 2);
 }

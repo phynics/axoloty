@@ -10,6 +10,14 @@ struct axoloty_zenoh_test_publisher {
     z_owned_session_t session;
 };
 
+static int32_t axoloty_zenoh_test_publisher_put_with_encoding(
+    void *handle,
+    const uint8_t *key,
+    size_t key_length,
+    const uint8_t *payload,
+    size_t payload_length,
+    const struct z_loaned_encoding_t *encoding);
+
 void *axoloty_zenoh_test_publisher_open(void) {
     struct axoloty_zenoh_test_publisher *publisher = malloc(sizeof(*publisher));
     if (publisher == NULL) {
@@ -42,6 +50,28 @@ int32_t axoloty_zenoh_test_publisher_put(void *handle,
                                          size_t key_length,
                                          const uint8_t *payload,
                                          size_t payload_length) {
+    return axoloty_zenoh_test_publisher_put_with_encoding(
+        handle, key, key_length, payload, payload_length, z_encoding_application_cbor()
+    );
+}
+
+int32_t axoloty_zenoh_test_publisher_put_json(void *handle,
+                                              const uint8_t *key,
+                                              size_t key_length,
+                                              const uint8_t *payload,
+                                              size_t payload_length) {
+    return axoloty_zenoh_test_publisher_put_with_encoding(
+        handle, key, key_length, payload, payload_length, NULL
+    );
+}
+
+static int32_t axoloty_zenoh_test_publisher_put_with_encoding(
+    void *handle,
+    const uint8_t *key,
+    size_t key_length,
+    const uint8_t *payload,
+    size_t payload_length,
+    const struct z_loaned_encoding_t *encoding) {
     struct axoloty_zenoh_test_publisher *publisher = handle;
     if (publisher == NULL || key == NULL || key_length == 0 ||
         (payload == NULL && payload_length != 0)) {
@@ -60,6 +90,19 @@ int32_t axoloty_zenoh_test_publisher_put(void *handle,
     }
     z_put_options_t options;
     z_put_options_default(&options);
+    if (encoding == NULL) {
+        z_owned_encoding_t json_encoding;
+        if (z_encoding_from_str(&json_encoding, "application/json") != Z_OK) {
+            z_keyexpr_drop(z_keyexpr_move(&key_expr));
+            z_bytes_drop(z_bytes_move(&bytes));
+            return Z_EGENERIC;
+        }
+        options.encoding = z_encoding_move(&json_encoding);
+    } else {
+        z_owned_encoding_t cbor_encoding;
+        z_encoding_clone(&cbor_encoding, encoding);
+        options.encoding = z_encoding_move(&cbor_encoding);
+    }
     result = z_put(z_session_loan(&publisher->session),
                    z_keyexpr_loan(&key_expr),
                    z_bytes_move(&bytes),

@@ -8,6 +8,7 @@ import Axoloty
 import AxolotyObjectModel
 import AxolotyWire
 @testable import AxolotyZenoh
+@testable import AxolotyProtocolTraceTestSupport
 
 @Suite("Zenoh soft recovery")
 struct ZenohSoftRecoveryTests {
@@ -38,9 +39,10 @@ struct ZenohSoftRecoveryTests {
         let cycles = configuration.maximumExternalRoutes + 2
         for cycle in 0..<cycles {
             let route = "legacy/soft-recovery/\(cycle)"
+            let associateJSON = #"{"ioSourceId":"\#(Self.remoteSourceID)","ioActorId":"\#(Self.actorID)","associatingRoute":"\#(route)"}"#
             session.enqueuePublication(
-                route: "coaty/3/\(Self.namespace)/ASC/\(Self.remoteSourceID)",
-                payload: Array(#"{"ioSourceId":"\#(Self.remoteSourceID)","ioActorId":"\#(Self.actorID)","associatingRoute":"\#(route)"}"#.utf8)
+                route: "axoloty/1/\(Self.namespace)/ASC/\(Self.remoteSourceID)",
+                payload: TracePayloadCBOR.encode(associateJSON)
             )
             _ = binding.drainReceiveQueues()
             try await Self.waitUntil("external route \(cycle) to be subscribed") {
@@ -91,7 +93,7 @@ struct ZenohSoftRecoveryTests {
             switch operation {
             case let .subscribe(route, id):
                 let text = String(decoding: route, as: UTF8.self)
-                if !text.hasPrefix("coaty/") { live[id] = text }
+                if !text.hasPrefix("axoloty/1/") { live[id] = text }
             case let .unsubscribe(id):
                 live[id] = nil
             default:
