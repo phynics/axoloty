@@ -129,6 +129,7 @@ public struct BorrowedMessage: ~Sendable {
         ))
     }
 
+    #if canImport(_JSONCore)
     /// Creates a WireReader for the payload, enabling typed field access
     /// without allocating a String or intermediate JSON tree.
     public func reader() -> WireReader {
@@ -155,6 +156,7 @@ public struct BorrowedMessage: ~Sendable {
             )
         }
     }
+    #endif
 
     /// Whether this message is a raw (non-Coaty) topic.
     public var isRawTopic: Bool {

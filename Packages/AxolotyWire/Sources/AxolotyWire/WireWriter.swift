@@ -217,8 +217,12 @@ extension WireWriter {
             try writeByteSlice(value)
             return
         }
+        #if canImport(_JSONCore)
         guard WireReader.isValidJSON(value) else { throw .invalidValue }
         try writeByteSlice(value)
+        #else
+        throw WireEncodeError.invalidValue
+        #endif
     }
 
     /// Writes one string value from encoded string-content bytes.
@@ -265,9 +269,13 @@ extension WireWriter {
             try writeByteSlice(value)
             return
         }
+        #if canImport(_JSONCore)
         guard WireReader.isValidJSON(value) else { throw .invalidValue }
         try writeKey(key)
         try writeByteSlice(value)
+        #else
+        throw WireEncodeError.invalidValue
+        #endif
     }
 
     /// Writes a raw fragment previously validated by ``WireReader``.

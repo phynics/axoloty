@@ -17,6 +17,48 @@ format. A downstream lock selects the exact Axoloty revision. The contract does
 not contain its own commit because a file cannot name the commit that contains
 it.
 
+## Wire profiles
+
+The `wireProfiles` array declares the wire profiles this contract can serve.
+Each entry names a `protocolName`/`protocolVersion` pair, its `encoding`, whether
+it needs the `_JSONCore` parser (`requiresJSONCore`), and whether it is the
+`default` profile.
+
+- `coaty3JSON` is `coaty/3` JSON, requires `_JSONCore`, and is the default. It
+  keeps the sealed `coaty/3` wire bytes unchanged.
+- `axoloty1CBOR` is `axoloty/1` CBOR and does not require `_JSONCore`.
+
+`axoloty1CBOR` is mandatory. `coaty3JSON` is required only when a declared
+profile needs the JSON parser, so the two profiles are not symmetric: every
+contract names the CBOR profile, and a JSON-only contract is not accepted.
+Exactly one declared profile is the default; `coaty3JSON` is the default when it
+is declared, otherwise `axoloty1CBOR`.
+
+`jsonCore` is present exactly when a declared profile sets
+`requiresJSONCore: true`. A contract that declares only CBOR profiles omits
+`jsonCore`, so a CBOR-only consumer needs no JSON parser. The
+`Packages/AxolotyWire` package gates `IkigaJSONCore` behind the default-enabled
+`CoatyJSON` SwiftPM trait; build the package with `--disable-default-traits` to
+link a CBOR-only `AxolotyWire`.
+
+A CBOR-only `AxolotyWire` build drops the JSON-only borrowed entry points:
+`BorrowedMessage.reader()` and `BorrowedWireEvent.init(message:)` are absent.
+Decode through `WireCodec.reader(bytes:length:)` and
+`BorrowedWireEvent.init(eventType:from:)` instead. Calling
+`WireCodec.reader(bytes:length:)` or `WireCodec.isValidBareValue(_:)` for the
+`.coaty3JSON` profile traps when `_JSONCore` is unavailable; a CBOR-only
+consumer selects `.axoloty1CBOR`.
+
+The validator accepts a CBOR-only contract, but the supported preparation
+command (`axoloty-tool embedded consumer prepare`) still resolves and requires
+`_JSONCore`. A CBOR-only preparation path is a tracked follow-up against
+[#977](https://github.com/phynics/axoloty/issues/977); the preparation report
+schema stays unchanged until that work lands.
+
+Materializing a CBOR-only firmware consumer also requires the portable object
+model to carry CBOR; that work is tracked separately. The Core gate below proves
+the wire layer compiles and links without `_JSONCore`.
+
 ## Validate the contract
 
 Run the Core-owned validator from the selected checkout:
@@ -181,7 +223,10 @@ make check-embedded-core-consumer
 The gate compiles `_JSONCore` and all five portable packages for the repository's
 RISC-V Embedded Swift test target. It then compiles a real `@StaticIoActor`
 consumer with the resolved macro executable and performs a relocatable link of
-the resulting objects. The gate reads Core sources and caller-owned scratch
+the resulting objects. A second leg compiles and links a CBOR-only consumer that
+imports no `_JSONCore` and asserts that the linked objects carry no JSON symbols,
+proving `axoloty/1` works without the JSON parser. The gate reads Core sources
+and caller-owned scratch
 storage only. It does not read the firmware project, invoke ESP-IDF, use a
 broker, or probe hardware. Portable targets also enable the Swift 6.4
 `EmbeddedRestrictions` warning group as an advisory host-build signal; this

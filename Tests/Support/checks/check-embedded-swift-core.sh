@@ -328,6 +328,42 @@ check_unresolved_symbols "$workdir/embedded-core-linked.o"
 
 linked_size=$(wc -c < "$workdir/embedded-core-linked.o")
 
+# CBOR-only leg: compile the same portable AxolotyWire sources with no
+# `_JSONCore` module in the include path, link a CBOR-only consumer, and assert
+# that no JSON symbol survives. This proves `axoloty/1` works without the JSON
+# parser, which is the point of the default-enabled `CoatyJSON` trait.
+cbor_dir="$workdir/cbor-only"
+cbor_fixture=${AXOLOTY_EMBEDDED_CBOR_FIXTURE:-$source_root/Tests/Support/fixtures/embedded-cbor-consumer.swift}
+[ -f "$cbor_fixture" ] || {
+    echo "FAIL: CBOR-only Embedded consumer fixture is missing: $cbor_fixture" >&2
+    exit 1
+}
+mkdir -p -- "$cbor_dir"
+
+echo "Compiling the CBOR-only Embedded consumer without _JSONCore..."
+swiftc \
+    -target riscv32-none-none-eabi \
+    -swift-version 6 \
+    -enable-experimental-feature Embedded \
+    -enable-experimental-feature Lifetimes \
+    -parse-as-library -Osize -wmo \
+    -module-name AxolotyWire \
+    -I "$cbor_dir" \
+    -c "$AXOLOTY_WIRE_SOURCE_DIR"/*.swift "$cbor_fixture" \
+    -o "$cbor_dir/EmbeddedCBORConsumer.o"
+
+"$riscv_linker" -r \
+    -o "$workdir/embedded-cbor-linked.o" \
+    "$cbor_dir/EmbeddedCBORConsumer.o"
+
+check_unresolved_symbols "$workdir/embedded-cbor-linked.o"
+if nm "$workdir/embedded-cbor-linked.o" | grep -q '_JSONCore'; then
+    echo "FAIL: the CBOR-only partial link still references _JSONCore" >&2
+    exit 1
+fi
+cbor_linked_size=$(wc -c < "$workdir/embedded-cbor-linked.o")
+echo "  CBOR-only consumer link: ${cbor_linked_size} bytes"
+
 echo "Running Embedded Swift parser behavior probe..."
 host_target=$(swiftc -print-target-info | node -e 'let data=""; process.stdin.on("data", chunk => data += chunk); process.stdin.on("end", () => process.stdout.write(JSON.parse(data).target.triple));')
 swift_resource_dir=$(swiftc -print-target-info | node -e 'let data=""; process.stdin.on("data", chunk => data += chunk); process.stdin.on("end", () => process.stdout.write(JSON.parse(data).paths.runtimeResourcePath));')
@@ -377,4 +413,22 @@ swiftc \
 "$workdir/embedded-parser-probe"
 
 echo "  Parser behavior: valid, missing-data, literal, number, and nesting mappings passed"
-echo "EMBEDDED SWIFT CORE OK — five portable modules, StaticIoActor consumer, RISC-V link probe, and parser probe passed: ${linked_size} bytes"
+
+echo "Running the CBOR-only Embedded consumer on the host..."
+swiftc \
+    -target "$host_target" \
+    -swift-version 6 \
+    -enable-experimental-feature Embedded \
+    -enable-experimental-feature Lifetimes \
+    -enable-experimental-feature StrictConcurrency \
+    -Osize -wmo \
+    -I "$cbor_dir" \
+    "$AXOLOTY_WIRE_SOURCE_DIR"/*.swift "$cbor_fixture" \
+    "$workdir/embedded-host-shims.o" \
+    "$unicode_archive" \
+    -Xlinker -lm \
+    -o "$workdir/embedded-cbor-consumer"
+"$workdir/embedded-cbor-consumer"
+
+echo "  CBOR behavior: axoloty/1 encode and decode passed without _JSONCore"
+echo "EMBEDDED SWIFT CORE OK — five portable modules, StaticIoActor consumer, RISC-V link probe, CBOR-only consumer, and parser probe passed: ${linked_size} bytes"

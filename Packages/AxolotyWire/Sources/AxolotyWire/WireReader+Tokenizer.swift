@@ -1,6 +1,8 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
+#if canImport(_JSONCore)
 import _JSONCore
+#endif
 
     @usableFromInline struct WireFieldSlot {
         let key: Range<Int>; let value: Range<Int>; let content: Range<Int>; let kind: WireTokenKind
@@ -113,6 +115,7 @@ import _JSONCore
         }
     }
 
+#if canImport(_JSONCore)
     struct WireTokenContext { let start: Int; let key: Range<Int>? }
     struct WireFieldDestination: JSONTokenizerDestination {
         typealias ArrayStartContext = WireTokenContext; typealias ObjectStartContext = WireTokenContext
@@ -378,3 +381,4 @@ import _JSONCore
         }
 
     }
+#endif

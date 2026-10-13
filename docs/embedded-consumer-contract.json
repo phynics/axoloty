@@ -80,6 +80,24 @@
     "executable": "AxolotyStaticRuntimeMacrosImplementation-tool",
     "pluginModule": "AxolotyStaticRuntimeMacrosImplementation"
   },
+  "wireProfiles": [
+    {
+      "id": "coaty3JSON",
+      "protocolName": "coaty",
+      "protocolVersion": "3",
+      "encoding": "json",
+      "requiresJSONCore": true,
+      "default": true
+    },
+    {
+      "id": "axoloty1CBOR",
+      "protocolName": "axoloty",
+      "protocolVersion": "1",
+      "encoding": "cbor",
+      "requiresJSONCore": false,
+      "default": false
+    }
+  ],
   "jsonCore": {
     "identity": "swift-json",
     "repository": "https://github.com/phynics/swift-json.git",

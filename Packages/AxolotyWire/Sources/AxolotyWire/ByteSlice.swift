@@ -86,6 +86,7 @@ public struct ByteSlice: Equatable, Hashable, ~Sendable {
         }
     }
 
+    #if canImport(_JSONCore)
     /// Copies JSON string-content bytes after interpreting escapes into a
     /// caller-owned fixed buffer.
     ///
@@ -151,6 +152,7 @@ public struct ByteSlice: Equatable, Hashable, ~Sendable {
         }
         return count
     }
+    #endif
 
     /// Returns the index of the first occurrence of `target`, or nil if absent.
     ///
@@ -271,6 +273,7 @@ extension ByteSlice {
         return true
     }
 
+    #if canImport(_JSONCore)
     /// Runs a synchronous callback with a noncopyable view of this value.
     public func withBorrowedWireValue(_ body: (borrowing WireValueView) -> Void) {
         withBytes { pointer, count in
@@ -346,4 +349,5 @@ extension ByteSlice {
         default: return .invalid
         }
     }
+    #endif
 }

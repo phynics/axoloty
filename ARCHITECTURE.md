@@ -152,8 +152,9 @@ intentional divergence from Coaty, which does not define a 2 KiB payload limit.
 Firmware outside this repository consumes the portable packages through one
 versioned contract, `docs/embedded-consumer-contract.json`, and the
 `axoloty-tool embedded consumer prepare` command. The contract names the five
-portable packages, their required compiler flags, the macro plugin inputs, and
-the pinned `swift-json` identity. A consumer selects a checkout with
+portable packages, their wire profiles and the optional `_JSONCore`
+dependency, their required compiler flags, the macro plugin inputs, and the
+pinned `swift-json` identity. A consumer selects a checkout with
 `AXOLOTY_SOURCE_DIR` and owns its scratch space; Axoloty's root `.build`, a
 parent-directory layout, and the `Tests/` tree are outside the boundary. A
 required, hardware-free gate compiles the portable packages for riscv32

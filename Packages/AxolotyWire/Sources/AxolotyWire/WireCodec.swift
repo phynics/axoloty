@@ -37,10 +37,18 @@ public struct WireCodec: Sendable, Equatable {
     ///   - bytes: A pointer to the borrowed payload bytes.
     ///   - length: The number of valid payload bytes.
     /// - Returns: A reader over the payload in this codec's format.
+    ///
+    /// - Important: In a build without `_JSONCore`, requesting the
+    ///   `.coaty3JSON` profile is a programmer error and traps. A CBOR-only
+    ///   consumer selects `.axoloty1CBOR`.
     public func reader(bytes: UnsafePointer<UInt8>, length: Int) -> WireReader {
         switch profile {
         case .coaty3JSON:
+            #if canImport(_JSONCore)
             return WireReader(bytes: bytes, length: length)
+            #else
+            preconditionFailure("coaty/3 JSON is unavailable in a CBOR-only build")
+            #endif
         case .axoloty1CBOR:
             return WireReader(cborBytes: bytes, length: length)
         }
@@ -75,9 +83,14 @@ public struct WireCodec: Sendable, Equatable {
     ///
     /// - Parameter payload: The borrowed bare-value payload to accept.
     /// - Returns: Whether the payload passes the profile's bare-value gate.
+    ///
+    /// - Important: In a build without `_JSONCore`, calling this method for the
+    ///   `.coaty3JSON` profile traps. A CBOR-only consumer selects
+    ///   `.axoloty1CBOR`.
     public func isValidBareValue(_ payload: ByteSlice) -> Bool {
         switch profile {
         case .coaty3JSON:
+            #if canImport(_JSONCore)
             guard let first = payload.byte(at: 0) else { return true }
             switch first {
             case 0x22, 0x2D, 0x30...0x39, 0x5B, 0x66, 0x6E, 0x74, 0x7B:
@@ -85,6 +98,9 @@ public struct WireCodec: Sendable, Equatable {
             default:
                 return true
             }
+            #else
+            preconditionFailure("coaty/3 JSON is unavailable in a CBOR-only build")
+            #endif
         case .axoloty1CBOR:
             return true
         }
@@ -109,7 +125,11 @@ public struct WireCodec: Sendable, Equatable {
     ) throws(WireDecodeError) -> Int {
         switch profile {
         case .coaty3JSON:
+            #if canImport(_JSONCore)
             return try content.copyDecodedJSONString(into: &output)
+            #else
+            throw WireDecodeError(.invalidValue, byteOffset: content.length)
+            #endif
         case .axoloty1CBOR:
             guard content.isValidUTF8() else {
                 throw WireDecodeError(.invalidUTF8, byteOffset: content.length)
