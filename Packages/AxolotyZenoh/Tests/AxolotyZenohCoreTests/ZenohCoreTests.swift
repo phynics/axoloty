@@ -152,7 +152,7 @@ struct AxolotyZenohCoreTests {
         var receiver = ZenohSession()
         let configuration = ZenohConfiguration(mode: .peer, multicastScoutingEnabled: true)
         #expect(receiver.open(configuration: configuration) == .success)
-        let subscriptionResult = withSlice("axoloty/core/**") { receiver.subscribe(key: $0) }
+        let subscriptionResult = withSlice("axoloty/1/core/**") { receiver.subscribe(key: $0) }
         guard case let .subscribed(subscription) = subscriptionResult else {
             Issue.record("Could not declare the Core encoding subscription")
             #expect(receiver.close() == .success)
@@ -167,7 +167,7 @@ struct AxolotyZenohCoreTests {
         defer { axoloty_zenoh_test_publisher_close(publisher) }
 
         try await Task.sleep(for: .milliseconds(250))
-        let key = Array("axoloty/core/encoding".utf8)
+        let key = Array("axoloty/1/core/ADV/00000000-0000-4000-8000-000000000001".utf8)
         let payload: [UInt8] = [0x00, 0x41, 0x80, 0xFF]
 
         let jsonPut = key.withUnsafeBufferPointer { keyBuffer in

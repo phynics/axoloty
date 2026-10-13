@@ -454,16 +454,24 @@ static void axoloty_zenoh_receive_sample(z_loaned_sample_t *sample, void *contex
         goto callback_done;
     }
 
-    // Zenoh carries only `axoloty/1` CBOR. The route prefix stays the
-    // authoritative decode signal; this check only refuses a sample that a
-    // peer explicitly labelled as something other than `application/cbor`.
+    // The route prefix is the authoritative profile signal. Axoloty carries
+    // the `axoloty/1` CBOR profile, so a sample on that prefix must be labelled
+    // `application/cbor`; external routes admit any encoding, matching
+    // `WireCodec.isValidBareValue`, which accepts application-defined bytes.
     // The comparison never changes how an admitted payload is decoded.
-    const struct z_loaned_encoding_t *sample_encoding = z_sample_encoding(sample);
-    if (sample_encoding == NULL ||
-        !z_encoding_equals(sample_encoding, z_encoding_application_cbor())) {
-        atomic_fetch_add_explicit(&subscription->pending_unsupported_results, 1, memory_order_relaxed);
-        atomic_fetch_add_explicit(&subscription->unsupported_encoding_frames, 1, memory_order_release);
-        goto callback_done;
+    static const char profile_prefix[] = "axoloty/1/";
+    const size_t profile_prefix_length = sizeof(profile_prefix) - 1;
+    const char *sample_key_bytes = z_string_data(key_string);
+    const bool is_profile_route = key_length >= profile_prefix_length &&
+        memcmp(sample_key_bytes, profile_prefix, profile_prefix_length) == 0;
+    if (is_profile_route) {
+        const struct z_loaned_encoding_t *sample_encoding = z_sample_encoding(sample);
+        if (sample_encoding == NULL ||
+            !z_encoding_equals(sample_encoding, z_encoding_application_cbor())) {
+            atomic_fetch_add_explicit(&subscription->pending_unsupported_results, 1, memory_order_relaxed);
+            atomic_fetch_add_explicit(&subscription->unsupported_encoding_frames, 1, memory_order_release);
+            goto callback_done;
+        }
     }
 
     unsigned position = atomic_load_explicit(&subscription->receive_enqueue_position, memory_order_relaxed);

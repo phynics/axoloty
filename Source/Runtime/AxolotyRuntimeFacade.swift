@@ -14,7 +14,7 @@ enum RuntimeQueuedTransportEffect: Sendable {
     ///
     /// Publications carry a routing key and a target until this point; the
     /// route is synthesized here so every transport receives finished bytes.
-    func transportEffect(namespace: String, profile: WireProfile) throws -> RuntimeTransportEffect {
+    func transportEffect(namespace: String, profile: WireProfile) throws(AxolotyError) -> RuntimeTransportEffect {
         switch self {
         case let .publish(publication):
             return .publish(try RuntimeOutboundMessage(publication, namespace: namespace, profile: profile))
@@ -28,7 +28,7 @@ enum RuntimeQueuedTransportEffect: Sendable {
 
 extension RuntimeOutboundMessage {
     /// Resolves a publication's target into a finished route.
-    init(_ publication: OwnedProtocolPublication, namespace: String, profile: WireProfile) throws {
+    init(_ publication: OwnedProtocolPublication, namespace: String, profile: WireProfile) throws(AxolotyError) {
         switch publication.target {
         case let .profile(eventTypeFilter, filterKind):
             self.init(

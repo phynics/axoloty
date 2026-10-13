@@ -20,7 +20,8 @@ public enum ZenohResult: Equatable {
     case queueFull
     /// A frame was dropped because its key or payload exceeded the receive bound.
     case frameTooLarge
-    /// A frame was dropped because its Zenoh `Encoding` was not `application/cbor`.
+    /// A profile-route frame was dropped because its Zenoh `Encoding` was not
+    /// `application/cbor`.
     case unsupportedEncoding
 
     /// Converts one C façade result without collapsing distinct errors.

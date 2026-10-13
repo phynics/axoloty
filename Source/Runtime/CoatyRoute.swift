@@ -39,7 +39,7 @@ public enum CoatyRoute {
         eventTypeFilter: [UInt8]? = nil,
         eventTypeFilterKind: ProtocolEventTypeFilterKind = .direct,
         profile: WireProfile = .coaty3JSON
-    ) throws -> String {
+    ) throws(AxolotyError) -> String {
         let namespaceBytes = Array(namespace.utf8)
         let namespaceStorage = namespaceBytes.isEmpty ? [UInt8(0)] : namespaceBytes
         let filterBytes = eventTypeFilter ?? []
@@ -51,9 +51,12 @@ public enum CoatyRoute {
             + 1
         let capacity = prefixLength + namespaceBytes.count + 1 + 3 + filterLength + 1 + 36 + (key.correlationID == nil ? 0 : 37)
         var bytes = [UInt8](repeating: 0, count: capacity)
-        let writtenLength: Int = try bytes.withUnsafeMutableBufferPointer { output in
-            try namespaceStorage.withUnsafeBufferPointer { namespace in
-                try filterStorage.withUnsafeBufferPointer { filter in
+        // The buffer helpers are `rethrows`, so the build closure returns `nil`
+        // on a wire-encode failure instead of throwing through them. The typed
+        // error is raised once, after the buffer scopes end.
+        let writtenLength: Int? = bytes.withUnsafeMutableBufferPointer { output -> Int? in
+            namespaceStorage.withUnsafeBufferPointer { namespace -> Int? in
+                filterStorage.withUnsafeBufferPointer { filter -> Int? in
                     var builder = TopicBuilder(buffer: output.baseAddress!, capacity: output.count)
                     let namespaceSlice = ByteSlice(bytes: namespace.baseAddress!, length: namespaceBytes.count)
                     do {
@@ -72,14 +75,17 @@ public enum CoatyRoute {
                             try builder.writeCorrelationId(correlationID)
                         }
                     } catch {
-                        throw AxolotyError.runtime(
-                            code: .capacityExceeded,
-                            reason: "Coaty route storage capacity calculation is invalid"
-                        )
+                        return nil
                     }
                     return builder.position
                 }
             }
+        }
+        guard let writtenLength else {
+            throw AxolotyError.runtime(
+                code: .capacityExceeded,
+                reason: "Coaty route storage capacity calculation is invalid"
+            )
         }
         return String(decoding: bytes[0..<writtenLength], as: UTF8.self)
     }

@@ -9,6 +9,10 @@ import Foundation
 /// `AxolotyRuntime.publish`. This example-local converter handles the JSON value
 /// subset the example needs. It is not a runtime bridge: the runtime never
 /// converts between `coaty/3` JSON and `axoloty/1` CBOR.
+///
+/// The scanner accepts objects, arrays, strings, booleans, null, and integers.
+/// It builds string scalars one byte at a time, so non-ASCII text is Latin-1
+/// rather than UTF-8, and it rejects fractional or exponent numbers.
 enum JSONToCBOR {
     /// Returns the deterministic CBOR encoding of `json`.
     ///

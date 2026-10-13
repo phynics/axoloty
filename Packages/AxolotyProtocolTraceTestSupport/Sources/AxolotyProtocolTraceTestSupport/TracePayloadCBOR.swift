@@ -15,6 +15,11 @@ import Foundation
 /// which no decoder accepts as a complete item. The trace corpus marks such
 /// payloads malformed, so the CBOR leg rejects them the same way the JSON leg
 /// does.
+///
+/// The scanner accepts the subset the sealed corpus uses: objects, arrays,
+/// strings, booleans, null, and integers. It builds string scalars one byte at
+/// a time, so non-ASCII text is Latin-1 rather than UTF-8, and it rejects
+/// fractional or exponent numbers. The corpus holds only ASCII integers.
 enum TracePayloadCBOR {
     /// Returns the CBOR encoding of `json`, or a malformed item when `json`
     /// is not a complete JSON value.

@@ -16,7 +16,7 @@ void *axoloty_zenoh_test_publisher_open(void);
 /// Publishes caller bytes labelled `application/cbor`.
 ///
 /// Zenoh carries only `axoloty/1` CBOR, so the receive-side façade admits
-/// this sample. The bytes are not decoded here.
+/// this sample on any route. The bytes are not decoded here.
 int32_t axoloty_zenoh_test_publisher_put(void *publisher,
                                          const uint8_t *key,
                                          size_t key_length,
@@ -25,8 +25,9 @@ int32_t axoloty_zenoh_test_publisher_put(void *publisher,
 
 /// Publishes caller bytes labelled `application/json`.
 ///
-/// The façade must drop this sample as an unsupported encoding; the bytes are
-/// never admitted to a receive queue.
+/// A receiver must drop this sample on an `axoloty/1/` profile route as an
+/// unsupported encoding and admit it on any external route; the bytes are
+/// never decoded here.
 int32_t axoloty_zenoh_test_publisher_put_json(void *publisher,
                                               const uint8_t *key,
                                               size_t key_length,

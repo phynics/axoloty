@@ -33,8 +33,8 @@ typedef enum {
     AXOLOTY_ZENOH_QUEUE_FULL = 6,
     /// An inbound key or payload exceeds its fixed receive bound.
     AXOLOTY_ZENOH_FRAME_TOO_LARGE = 7,
-    /// An inbound sample was labelled with an encoding other than
-    /// `application/cbor` and was dropped.
+    /// An inbound sample on an `axoloty/1/` profile route was labelled with an
+    /// encoding other than `application/cbor` and was dropped.
     AXOLOTY_ZENOH_UNSUPPORTED_ENCODING = 8,
 } axoloty_zenoh_result_t;
 
@@ -344,11 +344,13 @@ axoloty_zenoh_result_t axoloty_zenoh_oversized_frame_count(const axoloty_zenoh_s
                                                             const axoloty_zenoh_subscription_t *subscription,
                                                             uint32_t *out_count);
 
-/// Reads the total number of frames dropped because their Zenoh `Encoding`
-/// was not `application/cbor`.
+/// Reads the total number of profile-route frames dropped because their Zenoh
+/// `Encoding` was not `application/cbor`.
 ///
 /// The route prefix remains the authoritative decode signal; this counter
-/// only records samples a peer explicitly labelled with another encoding.
+/// records only samples on the `axoloty/1/` prefix that a peer labelled with
+/// another encoding. External routes admit any encoding and never increment
+/// this counter.
 ///
 /// - Parameters:
 ///   - session: An open session.

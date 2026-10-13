@@ -38,9 +38,9 @@ CBOR profile the only wire format on Zenoh. Profile routes such as
 `axoloty/1/<namespace>/<event>/<identifier>` become Zenoh key expressions
 unchanged, and the binding publishes every payload with the
 `application/cbor` Zenoh encoding. MQTT keeps the sealed `coaty/3` JSON
-profile. A Zenoh binding drops and counts every inbound sample that is not
-labelled `application/cbor`. Zenoh peers on 0.9.x do not interoperate with
-1.0 Zenoh peers.
+profile. A Zenoh binding drops and counts an inbound sample on a profile route
+that is not labelled `application/cbor`; external routes admit any encoding.
+Zenoh peers on 0.9.x do not interoperate with 1.0 Zenoh peers.
 
 ### Axoloty Zenoh binding
 
@@ -60,10 +60,13 @@ The binding's receive queues hold up to four frames per subscription. This is a
 fixed façade bound and cannot be configured. It accepts keys up to 256 UTF-8
 bytes and payloads up to 2,048 bytes. Configuration can lower the key and
 payload limits. Frames above either configured limit are dropped and counted in
-`oversizedSamples`, and a sample labelled with an encoding other than
-`application/cbor` is dropped and counted in `receiveDrops`; neither limit can
-be raised above the façade maximum. The façade reserves two of eight subscriber
-slots for profile subscriptions, so the binding supports at most six exact
+`oversizedSamples`, and a sample on an `axoloty/1/` profile route labelled with
+an encoding other than `application/cbor` is dropped and counted in
+`receiveDrops`. External routes admit any encoding, because the route prefix is
+the authoritative profile signal and external payloads are application-defined.
+Neither limit can be raised above the façade maximum. The façade reserves two
+of eight subscriber slots for profile subscriptions, so the binding supports at
+most six exact
 external routes. A route containing `*` is not exact and is rejected.
 
 The binding has no lifecycle last will. The runtime passes an MQTT-compatible
