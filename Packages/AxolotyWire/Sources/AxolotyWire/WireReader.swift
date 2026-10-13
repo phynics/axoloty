@@ -464,23 +464,27 @@ public struct WireReader: ~Sendable {
         buffer: UnsafeBufferPointer<UInt8>,
         padded: UnsafeBufferPointer<UInt8>
     ) -> WireFieldIndex {
-        let destination = WireFieldDestination(bytes: buffer)
-        var tokenizer = JSONTokenizer(bytes: padded, destination: destination)
-        if let parserError = tokenizer.scanValueResult() {
-            let missingData: Bool
-            if case .missingData = parserError { missingData = true } else { missingData = false }
-            tokenizer.destination.failure = Self.parserFailure(
-                buffer,
-                offset: tokenizer.currentOffset,
-                destination: tokenizer.destination,
-                parserErrorIsMissingData: missingData
+        var index = WireFieldIndex()
+        withUnsafeMutablePointer(to: &index) { indexPointer in
+            let destination = WireFieldDestination(bytes: buffer, index: indexPointer)
+            var tokenizer = JSONTokenizer(bytes: padded, destination: destination)
+            if let parserError = tokenizer.scanValueResult() {
+                let missingData: Bool
+                if case .missingData = parserError { missingData = true } else { missingData = false }
+                indexPointer.pointee.failure = Self.parserFailure(
+                    buffer,
+                    offset: tokenizer.currentOffset,
+                    destination: tokenizer.destination,
+                    parserErrorIsMissingData: missingData
+                )
+            }
+            Self.finalizeIndex(
+                indexPointer,
+                bytes: buffer,
+                currentOffset: tokenizer.currentOffset
             )
         }
-        return Self.finalizedIndex(
-            tokenizer.destination,
-            bytes: buffer,
-            currentOffset: tokenizer.currentOffset
-        )
+        return index
     }
     #endif
 
@@ -632,25 +636,23 @@ public struct WireReader: ~Sendable {
     #if canImport(_JSONCore)
     @inline(__always) private static func isWhitespace(_ byte: UInt8) -> Bool { byte == 32 || byte == 9 || byte == 10 || byte == 13 }
 
-    private static func finalizedIndex(
-        _ initialDestination: WireFieldDestination,
+    private static func finalizeIndex(
+        _ index: UnsafeMutablePointer<WireFieldIndex>,
         bytes: UnsafeBufferPointer<UInt8>,
         currentOffset: Int
-    ) -> WireFieldIndex {
-        var destination = initialDestination
-        if destination.failure == nil && currentOffset > bytes.count {
-            destination.failure = WireDecodeError(.unexpectedEndOfInput, byteOffset: bytes.count)
+    ) {
+        if index.pointee.failure == nil && currentOffset > bytes.count {
+            index.pointee.failure = WireDecodeError(.unexpectedEndOfInput, byteOffset: bytes.count)
         } else {
             var offset = currentOffset
             while offset < bytes.count && isWhitespace(bytes[offset]) { offset += 1 }
-            if destination.failure == nil && offset != bytes.count {
-                destination.failure = WireDecodeError(
+            if index.pointee.failure == nil && offset != bytes.count {
+                index.pointee.failure = WireDecodeError(
                     .unexpectedToken(expected: "end of input", actual: bytes[offset]),
                     byteOffset: offset
                 )
             }
         }
-        return destination.index
     }
 
     private static func parserFailure(

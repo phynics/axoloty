@@ -120,7 +120,7 @@ import _JSONCore
     struct WireFieldDestination: JSONTokenizerDestination {
         typealias ArrayStartContext = WireTokenContext; typealias ObjectStartContext = WireTokenContext
         let bytes: UnsafeBufferPointer<UInt8>
-        var index = WireFieldIndex()
+        let index: UnsafeMutablePointer<WireFieldIndex>
         var depth = 0
         var pendingKey: Range<Int>?
         var expectingKey = false
@@ -128,7 +128,7 @@ import _JSONCore
         var containers = (UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0), UInt8(0))
 
         mutating func objectStartFound(_ token: JSONToken.ObjectStart) -> WireTokenContext {
-            if depth == 0 { index.rootObject = true; expectingKey = true }
+            if depth == 0 { index.pointee.rootObject = true; expectingKey = true }
             if depth >= 8 { record(.init(.invalidNesting, byteOffset: token.start.byteOffset)) }
             pushContainer(0x7B)
             let context = WireTokenContext(start: token.start.byteOffset, key: depth == 1 ? pendingKey : nil)
@@ -141,10 +141,10 @@ import _JSONCore
             depth -= 1
             popContainer()
             if depth == 1, let key = context.key {
-                index.append(WireFieldSlot(key: key, value: context.start..<token.end.byteOffset, content: context.start..<token.end.byteOffset, kind: .object), bytes: bytes)
+                index.pointee.append(WireFieldSlot(key: key, value: context.start..<token.end.byteOffset, content: context.start..<token.end.byteOffset, kind: .object), bytes: bytes)
                 expectingKey = true
             }
-            if depth == 0 { index.completeValue = true; expectingKey = false }
+            if depth == 0 { index.pointee.completeValue = true; expectingKey = false }
         }
 
         mutating func arrayStartFound(_ token: JSONToken.ArrayStart) -> WireTokenContext {
@@ -160,10 +160,10 @@ import _JSONCore
             depth -= 1
             popContainer()
             if depth == 1, let key = context.key {
-                index.append(WireFieldSlot(key: key, value: context.start..<token.end.byteOffset, content: context.start..<token.end.byteOffset, kind: .array), bytes: bytes)
+                index.pointee.append(WireFieldSlot(key: key, value: context.start..<token.end.byteOffset, content: context.start..<token.end.byteOffset, kind: .array), bytes: bytes)
                 expectingKey = true
             }
-            if depth == 0 { index.completeValue = true }
+            if depth == 0 { index.pointee.completeValue = true }
         }
 
         mutating func stringFound(_ token: JSONToken.String) {
@@ -185,16 +185,16 @@ import _JSONCore
         mutating func nullFound(_ token: JSONToken.Null) { let raw = token.start.byteOffset - 4..<token.start.byteOffset; value(raw, raw, .nullValue) }
 
         mutating func value(_ raw: Range<Int>, _ content: Range<Int>, _ kind: WireTokenKind) {
-            if depth == 0 { index.completeValue = true; return }
+            if depth == 0 { index.pointee.completeValue = true; return }
             guard depth == 1, let key = pendingKey else { return }
-            index.append(WireFieldSlot(key: key, value: raw, content: content, kind: kind), bytes: bytes)
+            index.pointee.append(WireFieldSlot(key: key, value: raw, content: content, kind: kind), bytes: bytes)
             pendingKey = nil
             expectingKey = true
-            index.completeValue = true
+            index.pointee.completeValue = true
         }
 
         mutating func record(_ error: WireDecodeError) {
-            if index.failure == nil { index.failure = error }
+            if index.pointee.failure == nil { index.pointee.failure = error }
         }
 
         mutating func pushContainer(_ kind: UInt8) {
@@ -376,8 +376,8 @@ import _JSONCore
     }
 
         var failure: WireDecodeError? {
-            get { index.failure }
-            set { index.failure = newValue }
+            get { index.pointee.failure }
+            set { index.pointee.failure = newValue }
         }
 
     }
