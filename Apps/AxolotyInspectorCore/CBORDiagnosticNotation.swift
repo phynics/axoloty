@@ -278,6 +278,7 @@ public enum CBORDiagnosticNotation {
             var expectsBytes: Bool?
             while true {
                 skipWhitespace()
+                if match(")") { break }
                 if current == "h", peek(1) == "'" {
                     guard expectsBytes != false else { throw CBORParseError.mixedStringChunks }
                     expectsBytes = true
