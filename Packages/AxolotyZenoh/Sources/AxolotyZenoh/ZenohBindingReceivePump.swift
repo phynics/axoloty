@@ -148,7 +148,8 @@ extension ZenohBinding {
                 diagnostics?.recordOversizedSample()
                 continue
             case .result(.unsupportedEncoding):
-                diagnostics?.recordReceiveDrop()
+                // Advisory Zenoh `Encoding` divergence: the frame was already
+                // delivered, so this is a diagnostic and not a receive drop.
                 continue
             case let .result(result):
                 return ZenohBindingSupport.failure(for: ZenohBindingSupport.error(

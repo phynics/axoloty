@@ -35,3 +35,20 @@ test("the corpus covers every event family and field-presence variant", () => {
   }
   assert.ok(manifest.cases.length >= 28);
 });
+
+test("the corpus covers the CBOR value classes the profile must keep", () => {
+  const { manifest } = renderGoldenCorpus();
+  const ids = new Set(manifest.cases.map(goldenCase => goldenCase.id));
+  for (const id of [
+    "iovalue-float-single",
+    "iovalue-float-double",
+    "iovalue-integer-wide",
+    "iovalue-negative",
+    "iovalue-null",
+    "iovalue-bytes",
+  ]) {
+    assert.ok(ids.has(id), `corpus must include ${id}`);
+  }
+  const bytes = manifest.cases.find(goldenCase => goldenCase.id === "iovalue-bytes");
+  assert.equal(bytes?.jsonSurrogate, true);
+});

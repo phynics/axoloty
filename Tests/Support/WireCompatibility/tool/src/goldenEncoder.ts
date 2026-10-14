@@ -4,10 +4,10 @@
  * Deterministic CBOR encoder for the frozen golden corpus.
  *
  * The encoder follows RFC 8949 Section 4.2.1 deterministic encoding: definite
- * lengths, shortest-form heads, and map keys sorted by the bytewise
- * lexicographic order of their deterministic encodings. It intentionally does
- * not depend on Axoloty so that the corpus generator stays independent of the
- * implementation it pins.
+ * lengths, shortest-form heads, the shortest lossless float width, and map
+ * keys sorted by the bytewise lexicographic order of their deterministic
+ * encodings. It intentionally does not depend on Axoloty so that the corpus
+ * generator stays independent of the implementation it pins.
  *
  * `uuidPointers` is a list of JSON-Pointer-style paths whose string values are
  * encoded as CBOR tag 37 (byte string of the 16 RFC 4122 bytes). A `*` path
@@ -15,12 +15,18 @@
  * string.
  */
 
-/** A JSON-compatible value that the deterministic encoder accepts. */
+/**
+ * A value that the deterministic encoder accepts.
+ *
+ * It is JSON-compatible except for ``Uint8Array``, which encodes as a CBOR
+ * byte string and has no JSON equivalent.
+ */
 export type CBORValue =
   | string
   | number
   | boolean
   | null
+  | Uint8Array
   | CBORValue[]
   | { [key: string]: CBORValue };
 
@@ -50,9 +56,10 @@ function encodeValue(value: CBORValue, pointer: string, patterns: readonly strin
   if (typeof value === "boolean") return [value ? 0xf5 : 0xf4];
   if (typeof value === "number") {
     if (!Number.isFinite(value)) throw new Error(`non-finite number at ${pointer || "/"}`);
-    return Number.isInteger(value) ? encodeInteger(value) : encodeFloat64(value);
+    return Number.isInteger(value) ? encodeInteger(value) : encodeFloat(value);
   }
   if (typeof value === "string") return encodeText(value);
+  if (value instanceof Uint8Array) return encodeByteString(value);
   if (Array.isArray(value)) {
     const out = encodeHead(4, value.length);
     value.forEach((item, index) => {
@@ -134,7 +141,22 @@ function uuidToBytes(uuid: string): number[] {
   return bytes;
 }
 
-function encodeFloat64(value: number): number[] {
+function encodeByteString(value: Uint8Array): number[] {
+  return [...encodeHead(2, value.length), ...value];
+}
+
+/**
+ * Encode a finite non-integer with the shortest lossless width.
+ *
+ * RFC 8949 Section 4.2.1 requires single or double, whichever preserves the
+ * value. Half-precision is read but never emitted, so it is not considered.
+ */
+function encodeFloat(value: number): number[] {
+  if (Math.fround(value) === value) {
+    const buffer = new ArrayBuffer(4);
+    new DataView(buffer).setFloat32(0, value, false);
+    return [0xfa, ...new Uint8Array(buffer)];
+  }
   const buffer = new ArrayBuffer(8);
   new DataView(buffer).setFloat64(0, value, false);
   return [0xfb, ...new Uint8Array(buffer)];

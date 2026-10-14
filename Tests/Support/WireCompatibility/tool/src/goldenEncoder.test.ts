@@ -22,6 +22,15 @@ test("encodes CBOR primitives in shortest deterministic form", () => {
   assert.equal(toHex(encodeDeterministicCBOR("IETF")), "6449455446");
   assert.equal(toHex(encodeDeterministicCBOR([])), "80");
   assert.equal(toHex(encodeDeterministicCBOR({})), "a0");
+  assert.equal(toHex(encodeDeterministicCBOR(9007199254740992)), "1b0020000000000000");
+  assert.equal(toHex(encodeDeterministicCBOR(-42)), "3829");
+  assert.equal(toHex(encodeDeterministicCBOR(Uint8Array.from([0xde, 0xad, 0xbe, 0xef]))), "44deadbeef");
+});
+
+test("encodes floats with the shortest lossless width", () => {
+  assert.equal(toHex(encodeDeterministicCBOR(1.5)), "fa3fc00000");
+  assert.equal(toHex(encodeDeterministicCBOR(-1.5)), "fabfc00000");
+  assert.equal(toHex(encodeDeterministicCBOR(1.1)), "fb3ff199999999999a");
 });
 
 test("sorts map keys by encoded bytes, preserving array order", () => {

@@ -8,7 +8,7 @@ Axoloty is a Swift runtime and protocol suite for collaborative distributed agen
 
 Historical release outcomes are preserved in [`docs/releases/`](./releases/) and [`CHANGELOG.md`](../CHANGELOG.md). They do not define current strategy.
 
-## Active direction: qualify Zenoh, then scope 1.0
+## Active direction: scope 1.0 and qualify Zenoh
 
 Axoloty 0.9.0 closes [epic #845](https://github.com/phynics/axoloty/issues/845),
 which moved concrete firmware and device qualification into
@@ -23,9 +23,10 @@ release record is [`docs/releases/0.9.0.md`](./releases/0.9.0.md).
 - **Embedded binding:** the build and carrier work is done in
   `phynics/axoloty-embedded`. Device qualification is tracked in
   [phynics/axoloty-embedded#8](https://github.com/phynics/axoloty-embedded/issues/8).
-- **Wire encoding will change.** [ADR 0009](./adr/0009-zenoh-carries-only-axoloty-1.md)
-  makes Zenoh carry only the `axoloty/1` CBOR profile. Zenoh peers built on
-  0.9.x will not interoperate with the next release.
+- **Wire encoding moves to `axoloty/1` CBOR.** The profile is implemented on
+  `main`. [ADR 0009](./adr/0009-zenoh-carries-only-axoloty-1.md) makes Zenoh
+  carry only the `axoloty/1` CBOR profile. Zenoh peers built on 0.9.x will not
+  interoperate with the 1.0 release.
 - **Consumption:** the adapter is consumed by path from a checkout, not through
   a URL dependency ([ADR 0007](./adr/0007-zenoh-adapter-package-boundary.md)).
   Zenoh stays experimental until its packaging is resolved.
@@ -39,10 +40,16 @@ The 1.0 API freeze covers the following:
 - **Everything else is experimental** for 1.0, including the Zenoh transport,
   the optional SensorThings and IO-routing products, the `Tools/` harness, and
   the runtime/debug products in the sibling `phynics/axoloty-debug` package.
-- **`axoloty/1` CBOR is in 1.0 scope.** [ADR 0009](./adr/0009-zenoh-carries-only-axoloty-1.md)
-  makes it the only Zenoh encoding, and `coaty/3` JSON stays sealed on MQTT for
-  CoatyJS compatibility. [Epic #977](https://github.com/phynics/axoloty/issues/977)
-  is the tracker for the profile details.
+- **`axoloty/1` CBOR is in 1.0 scope and implemented on `main`.** The bounded
+  codec, `axoloty/1` routes, frozen golden corpus, host/static trace parity,
+  Zenoh-only profile, and embedded consumer contract surface are in the tree.
+  [ADR 0009](./adr/0009-zenoh-carries-only-axoloty-1.md) makes it the only
+  Zenoh encoding, and `coaty/3` JSON stays sealed on MQTT for CoatyJS
+  compatibility. [Epic #977](https://github.com/phynics/axoloty/issues/977)
+  tracks the remaining pre-release work, including the CBOR-only preparation
+  path noted in
+  [protocol/axoloty-1.md](./protocol/axoloty-1.md#cbor-only-consumers). The
+  `wire-cbor` tier runs the corpus and trace parity on every pull request.
 - **Not frozen:** a JSON Zenoh encoding, or any JSON-only codec surface that the
   CBOR profile would replace.
 

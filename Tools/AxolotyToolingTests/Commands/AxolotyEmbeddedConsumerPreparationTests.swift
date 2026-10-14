@@ -137,6 +137,57 @@ func preparationReportsZenohCoreWithoutChangingLegacyPackageOutput() throws {
 }
 
 @Test
+func preparationAcceptsCBOROnlyContractWithoutJSONCore() throws {
+    let fixture = try makeEmbeddedContractFixture()
+    let scratch = FileManager.default.temporaryDirectory
+        .appendingPathComponent("axoloty-consumer-preparation-scratch-" + UUID().uuidString)
+    let reportURL = FileManager.default.temporaryDirectory
+        .appendingPathComponent("axoloty-consumer-preparation-report-" + UUID().uuidString + ".json")
+    defer {
+        try? FileManager.default.removeItem(at: fixture)
+        try? FileManager.default.removeItem(at: scratch)
+        try? FileManager.default.removeItem(at: reportURL)
+    }
+
+    // Rewrite the fixture contract to declare only the mandatory CBOR profile
+    // and drop `jsonCore`, the shape the validator already accepts.
+    let contractURL = fixture.appendingPathComponent("docs/embedded-consumer-contract.json")
+    var contract = try JSONSerialization.jsonObject(with: Data(contentsOf: contractURL)) as! [String: Any]
+    var profiles = contract["wireProfiles"] as! [[String: Any]]
+    let cborIndex = profiles.firstIndex { ($0["id"] as? String) == "axoloty1CBOR" }!
+    profiles[cborIndex]["default"] = true
+    contract["wireProfiles"] = [profiles[cborIndex]]
+    contract.removeValue(forKey: "jsonCore")
+    try JSONSerialization.data(withJSONObject: contract, options: [.sortedKeys]).write(to: contractURL)
+
+    let macroBin = scratch.appendingPathComponent("bin")
+    try FileManager.default.createDirectory(at: macroBin, withIntermediateDirectories: true)
+    let macroExecutable = macroBin.appendingPathComponent("AxolotyStaticRuntimeMacrosImplementation-tool")
+    try Data().write(to: macroExecutable)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: macroExecutable.path)
+
+    // The swift-json checkout is intentionally absent. Preparation must not
+    // require or report it.
+    let runner = EmbeddedConsumerPreparationRunner(coreRoot: fixture, macroBin: macroBin, jsonRevision: "")
+    let preparation = AxolotyEmbeddedConsumerPreparation(
+        environment: [
+            "AXOLOTY_SOURCE_DIR": fixture.path,
+            "PATH": ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin",
+        ],
+        commandRunner: runner
+    )
+
+    let result = preparation.run(arguments: ["--scratch", scratch.path, "--output", reportURL.path])
+    #expect(result.exitCode == 0, "\(result.standardError)")
+
+    let report = try JSONSerialization.jsonObject(with: Data(contentsOf: reportURL)) as! [String: Any]
+    #expect(report["schemaVersion"] as? Int == 1)
+    #expect(report["status"] as? String == "prepared")
+    #expect(report["jsonCore"] == nil)
+    #expect((report["portablePackages"] as? [[String: Any]])?.count == 5)
+}
+
+@Test
 func moduleMapContentsEscapeHeaderPathCharacters() {
     let expected = "module CAxolotyZenoh {\n" +
         "    header \"/tmp/core/with \\\"quote\\\"/and\\\\slash/axoloty_zenoh.h\"\n" +

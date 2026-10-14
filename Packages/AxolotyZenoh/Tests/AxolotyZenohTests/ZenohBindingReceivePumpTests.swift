@@ -35,7 +35,7 @@ struct ZenohBindingReceivePumpTests {
         await binding.stop()
     }
 
-    @Test("consumes queue drop notifications without delivering frames")
+    @Test("consumes queue and advisory notifications without delivering frames")
     func consumesDropNotifications() async throws {
         let session = RecordingZenohSession()
         let binding = try makeBinding(session: session)
@@ -52,7 +52,7 @@ struct ZenohBindingReceivePumpTests {
 
         #expect(recorder.snapshot().isEmpty)
         #expect(session.pollCount >= 4)
-        #expect(counters.snapshot().receiveDrops == 2)
+        #expect(counters.snapshot().receiveDrops == 1)
         #expect(counters.snapshot().oversizedSamples == 1)
         #expect(counters.snapshot().sessionOpens == 1)
         await binding.stop()

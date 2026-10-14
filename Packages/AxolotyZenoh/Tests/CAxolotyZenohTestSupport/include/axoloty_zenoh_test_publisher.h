@@ -25,14 +25,25 @@ int32_t axoloty_zenoh_test_publisher_put(void *publisher,
 
 /// Publishes caller bytes labelled `application/json`.
 ///
-/// A receiver must drop this sample on an `axoloty/1/` profile route as an
-/// unsupported encoding and admit it on any external route; the bytes are
-/// never decoded here.
+/// A receiver admits this sample on any route, because the Zenoh `Encoding`
+/// hint is advisory and admission follows the validated route. The non-CBOR
+/// label is counted as a diagnostic; the bytes are never decoded here.
 int32_t axoloty_zenoh_test_publisher_put_json(void *publisher,
                                               const uint8_t *key,
                                               size_t key_length,
                                               const uint8_t *payload,
                                               size_t payload_length);
+
+/// Publishes caller bytes with no explicit Zenoh `Encoding`.
+///
+/// The peer uses the Zenoh default (`zenoh/bytes`), which is what a publisher
+/// that sets no label sends. A receiver still admits the sample and decodes it
+/// by route; the bytes are never decoded here.
+int32_t axoloty_zenoh_test_publisher_put_unlabeled(void *publisher,
+                                                   const uint8_t *key,
+                                                   size_t key_length,
+                                                   const uint8_t *payload,
+                                                   size_t payload_length);
 
 /// Closes and releases a test publisher returned by open.
 void axoloty_zenoh_test_publisher_close(void *publisher);

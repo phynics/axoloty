@@ -104,12 +104,24 @@ json_field() {
     node -e 'const fs=require("fs"); const value=JSON.parse(fs.readFileSync(process.argv[1], "utf8")); let current=value; for (const key of process.argv[2].split(".")) current=current[key]; if (typeof current === "boolean") process.stdout.write(current ? "true" : "false"); else if (Array.isArray(current)) process.stdout.write(current.join("\n")); else process.stdout.write(String(current));' "$preparation_report" "$field"
 }
 
+json_has() {
+    field=$1
+    node -e 'const fs=require("fs"); const value=JSON.parse(fs.readFileSync(process.argv[1], "utf8")); let current=value; for (const key of process.argv[2].split(".")) { if (current === null || typeof current !== "object" || !(key in current)) process.exit(1); current=current[key]; } process.exit(0);' "$preparation_report" "$field"
+}
+
 test "$(json_field status)" = prepared || { echo "FAIL: preparation status is not prepared" >&2; exit 1; }
 test "$(json_field core.dirty)" = false || { echo "FAIL: Core checkout is dirty" >&2; exit 1; }
 test "$(json_field core.sourceDir)" = "$AXOLOTY_SOURCE_DIR" || { echo "FAIL: preparation report selected a different Core root" >&2; exit 1; }
 
 source_root=$(json_field core.sourceDir)
-json_core_dir=$(json_field jsonCore.sourceDir)
+# The preparation report omits `jsonCore` for a CBOR-only contract. Build the
+# trait-selected profile: keep the JSON parser and its probes only when the
+# contract declares a profile that requires it.
+if json_has jsonCore; then
+    json_core_dir=$(json_field jsonCore.sourceDir)
+else
+    json_core_dir=
+fi
 macro_tool=$(json_field staticRuntimeMacro.executable)
 macro_scratch=$(json_field staticRuntimeMacro.scratchDir)
 package_names=$(node -e 'const fs=require("fs"); const value=JSON.parse(fs.readFileSync(process.argv[1], "utf8")); process.stdout.write(value.portablePackages.map(item => item.name).join(","));' "$preparation_report")
@@ -129,10 +141,10 @@ fixture=${AXOLOTY_EMBEDDED_CORE_FIXTURE:-$source_root/Tests/Support/fixtures/Sta
     exit 1
 }
 
-[ -d "$json_core_dir" ] || {
+if [ -n "$json_core_dir" ] && [ ! -d "$json_core_dir" ]; then
     echo "FAIL: resolved swift-json _JSONCore source is missing: $json_core_dir" >&2
     exit 1
-}
+fi
 
 compile_json_core() {
     set --
@@ -204,7 +216,9 @@ compile_module() {
     fi
 }
 
-compile_json_core
+if [ -n "$json_core_dir" ]; then
+    compile_json_core
+fi
 compile_module AxolotyWire "$AXOLOTY_WIRE_SOURCE_DIR"
 compile_module AxolotyObjectModel "$AXOLOTY_OBJECT_MODEL_SOURCE_DIR"
 compile_module AxolotyProtocol "$AXOLOTY_PROTOCOL_SOURCE_DIR"
@@ -281,11 +295,15 @@ find_riscv_linker() {
 
 echo "Partially linking the Core modules and consumer..."
 riscv_linker=$(find_riscv_linker)
+json_core_object=
+if [ -n "$json_core_dir" ]; then
+    json_core_object=$workdir/_JSONCore.o
+fi
 "$riscv_linker" -r \
     -o "$workdir/embedded-wire-linked.o" \
     "$workdir/embedded-wire-link-probe.o" \
     "$workdir/AxolotyWire.o" \
-    "$workdir/_JSONCore.o"
+    $json_core_object
 wire_linked_size=$(wc -c < "$workdir/embedded-wire-linked.o")
 echo "  AxolotyWire link probe: ${wire_linked_size} bytes"
 
@@ -297,7 +315,7 @@ echo "  AxolotyWire link probe: ${wire_linked_size} bytes"
     "$workdir/AxolotyProtocol.o" \
     "$workdir/AxolotyObjectModel.o" \
     "$workdir/AxolotyWire.o" \
-    "$workdir/_JSONCore.o"
+    $json_core_object
 
 # A relocatable link intentionally has no executable entry point, libgcc, or
 # libc. It must still resolve Core and consumer references among these objects.
@@ -372,47 +390,50 @@ unicode_archive="$swift_resource_dir/embedded/$host_target/libswiftUnicodeDataTa
     echo "FAIL: Embedded Unicode archive not found for host target $host_target at $unicode_archive" >&2
     exit 1
 }
-
-set --
-for source in "$json_core_dir"/*.swift "$json_core_dir"/Parser/*.swift "$json_core_dir"/SIMD/*.swift; do
-    [ -f "$source" ] || continue
-    set -- "$@" "$source"
-done
-[ "$#" -gt 0 ] || {
-    echo "FAIL: no _JSONCore source files found for the host parser probe" >&2
-    exit 1
-}
-
-swiftc \
-    -target "$host_target" \
-    -swift-version 6 \
-    -enable-experimental-feature Embedded \
-    -enable-experimental-feature Lifetimes \
-    -enable-experimental-feature StrictConcurrency \
-    -package-name IkigaJSON \
-    -parse-as-library -Osize -wmo \
-    -module-name _JSONCore \
-    -emit-module -c "$@" \
-    -o "$workdir/JSONCore-host.o" \
-    -emit-module-path "$workdir/_JSONCore.swiftmodule"
 clang -c "$host_shims" -o "$workdir/embedded-host-shims.o"
-swiftc \
-    -target "$host_target" \
-    -swift-version 6 \
-    -enable-experimental-feature Embedded \
-    -enable-experimental-feature Lifetimes \
-    -enable-experimental-feature StrictConcurrency \
-    -Osize -wmo \
-    -I "$workdir" \
-    "$AXOLOTY_WIRE_SOURCE_DIR"/*.swift "$parser_probe" \
-    "$workdir/JSONCore-host.o" \
-    "$workdir/embedded-host-shims.o" \
-    "$unicode_archive" \
-    -Xlinker -lm \
-    -o "$workdir/embedded-parser-probe"
-"$workdir/embedded-parser-probe"
 
-echo "  Parser behavior: valid, missing-data, literal, number, and nesting mappings passed"
+# The JSON parser probe only runs when the contract selects a JSON profile.
+if [ -n "$json_core_dir" ]; then
+    set --
+    for source in "$json_core_dir"/*.swift "$json_core_dir"/Parser/*.swift "$json_core_dir"/SIMD/*.swift; do
+        [ -f "$source" ] || continue
+        set -- "$@" "$source"
+    done
+    [ "$#" -gt 0 ] || {
+        echo "FAIL: no _JSONCore source files found for the host parser probe" >&2
+        exit 1
+    }
+
+    swiftc \
+        -target "$host_target" \
+        -swift-version 6 \
+        -enable-experimental-feature Embedded \
+        -enable-experimental-feature Lifetimes \
+        -enable-experimental-feature StrictConcurrency \
+        -package-name IkigaJSON \
+        -parse-as-library -Osize -wmo \
+        -module-name _JSONCore \
+        -emit-module -c "$@" \
+        -o "$workdir/JSONCore-host.o" \
+        -emit-module-path "$workdir/_JSONCore.swiftmodule"
+    swiftc \
+        -target "$host_target" \
+        -swift-version 6 \
+        -enable-experimental-feature Embedded \
+        -enable-experimental-feature Lifetimes \
+        -enable-experimental-feature StrictConcurrency \
+        -Osize -wmo \
+        -I "$workdir" \
+        "$AXOLOTY_WIRE_SOURCE_DIR"/*.swift "$parser_probe" \
+        "$workdir/JSONCore-host.o" \
+        "$workdir/embedded-host-shims.o" \
+        "$unicode_archive" \
+        -Xlinker -lm \
+        -o "$workdir/embedded-parser-probe"
+    "$workdir/embedded-parser-probe"
+
+    echo "  Parser behavior: valid, missing-data, literal, number, and nesting mappings passed"
+fi
 
 echo "Running the CBOR-only Embedded consumer on the host..."
 swiftc \
@@ -431,4 +452,8 @@ swiftc \
 "$workdir/embedded-cbor-consumer"
 
 echo "  CBOR behavior: axoloty/1 encode and decode passed without _JSONCore"
-echo "EMBEDDED SWIFT CORE OK — five portable modules, StaticIoActor consumer, RISC-V link probe, CBOR-only consumer, and parser probe passed: ${linked_size} bytes"
+if [ -n "$json_core_dir" ]; then
+    echo "EMBEDDED SWIFT CORE OK — five portable modules, StaticIoActor consumer, RISC-V link probe, CBOR-only consumer, and parser probe passed: ${linked_size} bytes"
+else
+    echo "EMBEDDED SWIFT CORE OK — five portable modules, StaticIoActor consumer, and CBOR-only consumer passed without _JSONCore: ${cbor_linked_size} bytes"
+fi

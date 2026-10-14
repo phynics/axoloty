@@ -86,6 +86,24 @@ extension CAxolotyZenohSessionLifecycleTests {
         }
     }
 
+    private func publishUnlabeled(
+        _ publisher: UnsafeMutableRawPointer,
+        key: [UInt8],
+        payload: [UInt8]
+    ) -> Int32 {
+        key.withUnsafeBufferPointer { keyBuffer in
+            payload.withUnsafeBufferPointer { payloadBuffer in
+                axoloty_zenoh_test_publisher_put_unlabeled(
+                    publisher,
+                    keyBuffer.baseAddress,
+                    keyBuffer.count,
+                    payloadBuffer.baseAddress,
+                    payloadBuffer.count
+                )
+            }
+        }
+    }
+
     private func waitForDepth(_ expected: UInt32, on session: OpaquePointer, subscription: OpaquePointer) async throws -> UInt32 {
         for _ in 0..<200 {
             var depth: UInt32 = 0
@@ -493,8 +511,8 @@ extension CAxolotyZenohSessionLifecycleTests {
         axoloty_zenoh_test_publisher_close(publisher)
     }
 
-    @Test("a foreign encoding on a profile route is dropped and counted")
-    func profileRouteForeignEncodingIsCounted() async throws {
+    @Test("a foreign encoding on a profile route is admitted and counted")
+    func profileRouteForeignEncodingIsAdmitted() async throws {
         let receiver = try await openPeer()
         let publisher = try openPublisher()
         let (subscribeResult, openedSubscription) = subscribe(receiver, to: Array("axoloty/1/**".utf8))
@@ -502,21 +520,107 @@ extension CAxolotyZenohSessionLifecycleTests {
         let subscription = try #require(openedSubscription)
         try await Task.sleep(for: .milliseconds(250))
 
-        // The test publisher labels this sample `application/json`. The
-        // `axoloty/1/` prefix is a profile route, so the façade must drop the
-        // sample and increment the unsupported-encoding counter.
+        // The test publisher labels this sample `application/json`. Zenoh
+        // `Encoding` is advisory, so the façade admits the sample, decodes it
+        // by route, and counts the non-CBOR label as a diagnostic.
         let key = Array("axoloty/1/core/ADV/00000000-0000-4000-8000-000000000003".utf8)
         let payload: [UInt8] = [0x00, 0x41, 0x80, 0xFF]
-        var count: UInt32 = 0
+        #expect(publishJSON(publisher, key: key, payload: payload) == 0)
+
+        var admitted = false
         for _ in 0..<200 {
-            #expect(publishJSON(publisher, key: key, payload: payload) == 0)
-            #expect(axoloty_zenoh_unsupported_encoding_count(receiver, subscription, &count)
-                == AXOLOTY_ZENOH_OK)
-            if count >= 1 { break }
-            try await Task.sleep(for: .milliseconds(100))
+            let (result, polledKey, polledPayload) = poll(receiver, subscription: subscription)
+            if result == AXOLOTY_ZENOH_OK {
+                admitted = true
+                #expect(polledKey == key)
+                #expect(polledPayload == payload)
+                break
+            }
+            try await Task.sleep(for: .milliseconds(10))
         }
+        #expect(admitted)
+
+        var count: UInt32 = 0
+        #expect(axoloty_zenoh_unsupported_encoding_count(receiver, subscription, &count)
+            == AXOLOTY_ZENOH_OK)
         #expect(count >= 1)
+        // The advisory hint is reported once after the admitted frame drains.
         #expect(poll(receiver, subscription: subscription).0 == AXOLOTY_ZENOH_UNSUPPORTED_ENCODING)
+        #expect(axoloty_zenoh_close(receiver) == AXOLOTY_ZENOH_OK)
+        axoloty_zenoh_test_publisher_close(publisher)
+    }
+
+    @Test("an unlabeled sample on a profile route is admitted and counted")
+    func profileRouteUnlabeledSampleIsAdmitted() async throws {
+        let receiver = try await openPeer()
+        let publisher = try openPublisher()
+        let (subscribeResult, openedSubscription) = subscribe(receiver, to: Array("axoloty/1/**".utf8))
+        #expect(subscribeResult == AXOLOTY_ZENOH_OK)
+        let subscription = try #require(openedSubscription)
+        try await Task.sleep(for: .milliseconds(250))
+
+        // A peer that sets no encoding publishes with the Zenoh default
+        // (`zenoh/bytes`). The façade must still admit the CBOR-shaped bytes.
+        let key = Array("axoloty/1/core/ADV/00000000-0000-4000-8000-000000000004".utf8)
+        let payload: [UInt8] = [0xA1, 0x61, 0x76, 0x01]
+        #expect(publishUnlabeled(publisher, key: key, payload: payload) == 0)
+
+        var admitted = false
+        for _ in 0..<200 {
+            let (result, polledKey, polledPayload) = poll(receiver, subscription: subscription)
+            if result == AXOLOTY_ZENOH_OK {
+                admitted = true
+                #expect(polledKey == key)
+                #expect(polledPayload == payload)
+                break
+            }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(admitted)
+
+        var count: UInt32 = 0
+        #expect(axoloty_zenoh_unsupported_encoding_count(receiver, subscription, &count)
+            == AXOLOTY_ZENOH_OK)
+        #expect(count >= 1)
+        #expect(axoloty_zenoh_close(receiver) == AXOLOTY_ZENOH_OK)
+        axoloty_zenoh_test_publisher_close(publisher)
+    }
+
+    @Test("a foreign encoding on the fixture external route is admitted")
+    func externalRouteForeignEncodingIsAdmitted() async throws {
+        let contract = try ZenohFacadeContract.load()
+        let route = contract.vectors.multiSubscription.exactExternalRoute
+        let receiver = try await openPeer()
+        let publisher = try openPublisher()
+        let externalKey = Array(route.key.utf8)
+        let (subscribeResult, openedSubscription) = subscribe(receiver, to: externalKey)
+        #expect(subscribeResult == AXOLOTY_ZENOH_OK)
+        let subscription = try #require(openedSubscription)
+        try await Task.sleep(for: .milliseconds(250))
+
+        // The exact external route is inside the `axoloty/1/` prefix, so a raw
+        // prefix test would misclassify it. Admission follows the validated
+        // route: the sample is delivered whatever its advisory label.
+        let payload: [UInt8] = [0x7A, 0x7B, 0x7C]
+        #expect(publishJSON(publisher, key: externalKey, payload: payload) == 0)
+
+        var admitted = false
+        for _ in 0..<200 {
+            let (result, polledKey, polledPayload) = poll(receiver, subscription: subscription)
+            if result == AXOLOTY_ZENOH_OK {
+                admitted = true
+                #expect(polledKey == externalKey)
+                #expect(polledPayload == payload)
+                break
+            }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(admitted)
+
+        var count: UInt32 = 0
+        #expect(axoloty_zenoh_unsupported_encoding_count(receiver, subscription, &count)
+            == AXOLOTY_ZENOH_OK)
+        #expect(count >= 1)
         #expect(axoloty_zenoh_close(receiver) == AXOLOTY_ZENOH_OK)
         axoloty_zenoh_test_publisher_close(publisher)
     }

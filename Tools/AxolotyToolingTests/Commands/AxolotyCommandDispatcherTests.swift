@@ -734,13 +734,14 @@ func wireCaptureRunsEveryNodeThroughSupportedBridge() throws {
     #expect(result.exitCode == 0)
     let manifest = try JSONDecoder().decode(AxolotyCheckManifest.self, from: Data(result.standardOutput.utf8))
     #expect(manifest.results.allSatisfy { $0.status == .passed })
-    // Setup and the trailing project-context nodes (manifest generation and
-    // independent golden verification) run in the project; the capture nodes
-    // in between need the host runtime bridge.
-    #expect(runner.commands.count == 14)
+    // Setup and the trailing project-context manifest generation run in the
+    // project; the capture nodes in between need the host runtime bridge. The
+    // independent golden verification is a required `ci` gate now, so it is no
+    // longer part of the live wire capture.
+    #expect(runner.commands.count == 13)
     #expect(runner.commands.prefix(2).allSatisfy { $0.executionContext == .project })
-    #expect(runner.commands.dropFirst(2).dropLast(2).allSatisfy { $0.executionContext == .host })
-    #expect(runner.commands.suffix(2).allSatisfy { $0.executionContext == .project })
+    #expect(runner.commands.dropFirst(2).dropLast(1).allSatisfy { $0.executionContext == .host })
+    #expect(runner.commands.suffix(1).allSatisfy { $0.executionContext == .project })
     #expect(clock.now - startedAt < .seconds(5))
 }
 
