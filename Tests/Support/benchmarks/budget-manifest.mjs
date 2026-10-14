@@ -42,35 +42,37 @@ function checkHost(host, approved, errors) {
   if (host.dependencyClosure?.AxolotyWireConsumer?.hostDeps?.length) errors.push("host.dependencyClosure.AxolotyWireConsumer.hostDeps must be empty");
 }
 
-function checkDevice(device, approved, errors) {
-  if (!approved && device.implementation == null) errors.push("environments.esp32c6 missing: implementation");
-  if (approved && device.implementation !== "embedded-swift") errors.push("environments.esp32c6.implementation must be 'embedded-swift' when approved");
-  if (approved && (!device.sourceRun || typeof device.sourceRun !== "string")) errors.push("environments.esp32c6.sourceRun must be a non-empty string when approved");
-  requireKeys(device, ["latency", "resources", "sizeLimits"], "environments.esp32c6", errors);
+function checkDevice(device, approved, errors, name = "esp32c6") {
+  if (!approved && device.implementation == null) errors.push(`environments.${name} missing: implementation`);
+  if (approved && device.implementation !== "embedded-swift") errors.push(`environments.${name}.implementation must be 'embedded-swift' when approved`);
+  if (approved && (!device.sourceRun || typeof device.sourceRun !== "string")) errors.push(`environments.${name}.sourceRun must be a non-empty string when approved`);
+  requireKeys(device, ["latency", "resources", "sizeLimits"], `environments.${name}`, errors);
   const allocation = device.hotPathAllocations;
-  if (!allocation && !("allocationBudget" in device)) errors.push("environments.esp32c6 missing: hotPathAllocations (or allocationBudget)");
-  if (allocation && (!integer(allocation.budget) || allocation.budget !== 0)) errors.push("environments.esp32c6.hotPathAllocations.budget must be exactly 0 (exact-zero)");
-  if (approved && allocation && allocation.measured !== 0) errors.push("environments.esp32c6.hotPathAllocations.measured must be exactly 0 when approved");
+  if (!allocation && !("allocationBudget" in device)) errors.push(`environments.${name} missing: hotPathAllocations (or allocationBudget)`);
+  if (allocation && (!integer(allocation.budget) || allocation.budget !== 0)) errors.push(`environments.${name}.hotPathAllocations.budget must be exactly 0 (exact-zero)`);
+  if (approved && allocation && allocation.measured !== 0) errors.push(`environments.${name}.hotPathAllocations.measured must be exactly 0 when approved`);
   for (const [operation, entry] of Object.entries(device.latency ?? {})) {
-    for (const field of ["measuredP50us", "measuredP95us", "budgetP50us", "budgetP95us"]) if (entry[field] != null && !integer(entry[field])) errors.push(`esp32c6.latency.${operation}.${field} must be an integer or null`);
-    for (const percentile of ["50", "95"]) if (entry[`measuredP${percentile}us`] != null && entry[`budgetP${percentile}us`] != null && entry[`budgetP${percentile}us`] <= entry[`measuredP${percentile}us`]) errors.push(`esp32c6.latency.${operation}: budgetP${percentile}us must be > measuredP${percentile}us`);
+    for (const field of ["measuredP50us", "measuredP95us", "budgetP50us", "budgetP95us"]) if (entry[field] != null && !integer(entry[field])) errors.push(`${name}.latency.${operation}.${field} must be an integer or null`);
+    if (approved) for (const field of ["measuredP50us", "measuredP95us", "budgetP50us", "budgetP95us"]) if (entry[field] == null) errors.push(`${name}.latency.${operation}.${field} must be non-null when approved`);
+    for (const percentile of ["50", "95"]) if (entry[`measuredP${percentile}us`] != null && entry[`budgetP${percentile}us`] != null && entry[`budgetP${percentile}us`] <= entry[`measuredP${percentile}us`]) errors.push(`${name}.latency.${operation}: budgetP${percentile}us must be > measuredP${percentile}us`);
   }
   for (const [resource, entry] of Object.entries(device.resources ?? {})) {
-    if (!("measured" in entry)) errors.push(`esp32c6.resources.${resource} missing: measured`);
-    if (entry.measured != null && !integer(entry.measured)) errors.push(`esp32c6.resources.${resource}.measured must be an integer or null`);
-    if (!("budgetMin" in entry) && !("budgetMax" in entry)) errors.push(`esp32c6.resources.${resource} missing: budgetMin or budgetMax`);
-    if (entry.budgetMin != null && !integer(entry.budgetMin)) errors.push(`esp32c6.resources.${resource}.budgetMin must be an integer or null`);
-    if (entry.budgetMax != null && !integer(entry.budgetMax)) errors.push(`esp32c6.resources.${resource}.budgetMax must be an integer or null`);
-    if (entry.budgetMin != null && integer(entry.measured) && entry.budgetMin >= entry.measured) errors.push(`esp32c6.resources.${resource}: budgetMin must be < measured`);
-    if (entry.budgetMax != null && integer(entry.measured) && entry.budgetMax <= entry.measured) errors.push(`esp32c6.resources.${resource}: budgetMax must be > measured`);
+    if (!("measured" in entry)) errors.push(`${name}.resources.${resource} missing: measured`);
+    if (entry.measured != null && !integer(entry.measured)) errors.push(`${name}.resources.${resource}.measured must be an integer or null`);
+    if (!("budgetMin" in entry) && !("budgetMax" in entry)) errors.push(`${name}.resources.${resource} missing: budgetMin or budgetMax`);
+    if (entry.budgetMin != null && !integer(entry.budgetMin)) errors.push(`${name}.resources.${resource}.budgetMin must be an integer or null`);
+    if (entry.budgetMax != null && !integer(entry.budgetMax)) errors.push(`${name}.resources.${resource}.budgetMax must be an integer or null`);
+    if (approved && entry.measured == null) errors.push(`${name}.resources.${resource}.measured must be non-null when approved`);
+    if (entry.budgetMin != null && integer(entry.measured) && entry.budgetMin >= entry.measured) errors.push(`${name}.resources.${resource}: budgetMin must be < measured`);
+    if (entry.budgetMax != null && integer(entry.measured) && entry.budgetMax <= entry.measured) errors.push(`${name}.resources.${resource}: budgetMax must be > measured`);
   }
-  if (approved) for (const resource of requiredResources) if (!(resource in (device.resources ?? {}))) errors.push(`esp32c6.resources missing mandatory metric when approved: ${resource}`);
-  if (approved && device.resources?.sustainedRate?.capacityHeadroomMsgPerS < 125) errors.push("esp32c6.resources.sustainedRate.capacityHeadroomMsgPerS must be >= 125 when approved");
+  if (approved) for (const resource of requiredResources) if (!(resource in (device.resources ?? {}))) errors.push(`${name}.resources missing mandatory metric when approved: ${resource}`);
+  if (approved && device.resources?.sustainedRate?.capacityHeadroomMsgPerS < 125) errors.push(`${name}.resources.sustainedRate.capacityHeadroomMsgPerS must be >= 125 when approved`);
   const flash = device.resources?.flashImage;
-  if (flash?.partitionLimitBytes != null && integer(flash.budgetMax) && integer(flash.partitionLimitBytes) && flash.budgetMax >= flash.partitionLimitBytes) errors.push(`esp32c6.resources.flashImage: budgetMax (${flash.budgetMax}) must be < partitionLimitBytes (${flash.partitionLimitBytes})`);
+  if (flash?.partitionLimitBytes != null && integer(flash.budgetMax) && integer(flash.partitionLimitBytes) && flash.budgetMax >= flash.partitionLimitBytes) errors.push(`${name}.resources.flashImage: budgetMax (${flash.budgetMax}) must be < partitionLimitBytes (${flash.partitionLimitBytes})`);
   for (const [limit, entry] of Object.entries(device.sizeLimits ?? {})) {
-    if (!integer(entry.limit)) errors.push(`esp32c6.sizeLimits.${limit}.limit must be an integer`);
-    if (entry.overLimitRejected !== true) errors.push(`esp32c6.sizeLimits.${limit}: overLimitRejected must be true`);
+    if (!integer(entry.limit)) errors.push(`${name}.sizeLimits.${limit}.limit must be an integer`);
+    if (entry.overLimitRejected !== true) errors.push(`${name}.sizeLimits.${limit}: overLimitRejected must be true`);
   }
 }
 
@@ -90,12 +92,21 @@ export function validateBudget(manifest) {
   if (regression.zeroAllocationHotPaths !== "exact-zero") errors.push("regressionPolicy.zeroAllocationHotPaths must be 'exact-zero'");
   const evidence = manifest.historicalEvidence?.["esp32c6-c-surrogate"];
   if (!evidence) errors.push("historicalEvidence missing: esp32c6-c-surrogate");
-  else { if (evidence.approvalEligible === true) errors.push("historicalEvidence.esp32c6-c-surrogate.approvalEligible must be false (C surrogate is never approval-eligible)"); if (evidence.supersededBy !== "#322") errors.push("historicalEvidence.esp32c6-c-surrogate.supersededBy must be '#322'"); if (!evidence.description) errors.push("historicalEvidence.esp32c6-c-surrogate.description must be non-empty"); }
+  else { if (evidence.approvalEligible === true) errors.push("historicalEvidence.esp32c6-c-surrogate.approvalEligible must be false (C surrogate is never approval-eligible)"); if (typeof evidence.supersededBy !== "string" || !evidence.supersededBy) errors.push("historicalEvidence.esp32c6-c-surrogate.supersededBy must be a non-empty string"); if (!evidence.description) errors.push("historicalEvidence.esp32c6-c-surrogate.description must be non-empty"); }
   for (const [name, entry] of Object.entries(manifest.historicalEvidence ?? {})) if (entry?.approvalEligible === true) errors.push(`historicalEvidence.${name}.approvalEligible must be false`);
   const approved = manifest.approvalStatus === "approved";
-  for (const name of ["host", "esp32c6"]) { const environment = manifest.environments?.[name]; if (!environment) errors.push(`environments missing: ${name}`); else { requireKeys(environment, ["compiler", "optimization"], `environments.${name}`, errors); checkFingerprint(environment, name, approved, errors); } }
-  checkHost(manifest.environments?.host ?? {}, approved, errors);
-  checkDevice(manifest.environments?.esp32c6 ?? {}, approved, errors);
+  const host = manifest.environments?.host;
+  if (!host) errors.push("environments missing: host");
+  else { requireKeys(host, ["compiler", "optimization"], "environments.host", errors); checkFingerprint(host, "host", approved, errors); }
+  checkHost(host ?? {}, approved, errors);
+  const deviceNames = Object.keys(manifest.environments ?? {}).filter(name => name !== "host" && name.startsWith("esp32c6"));
+  if (deviceNames.length === 0) errors.push("environments missing: an esp32c6 device profile");
+  for (const name of deviceNames) {
+    const environment = manifest.environments[name];
+    requireKeys(environment, ["compiler", "optimization"], `environments.${name}`, errors);
+    checkFingerprint(environment, name, approved, errors);
+    checkDevice(environment, approved, errors, name);
+  }
   for (const [name, minimum] of [["phase4EntryEvidenceGates", 5], ["phase4CompletionGates", 4]]) {
     if (!Array.isArray(manifest[name]) || manifest[name].length < minimum) errors.push(`${name} must have at least ${minimum} gates, got ${manifest[name]?.length ?? 0}`);
     for (const gate of manifest[name] ?? []) {

@@ -10,6 +10,11 @@ function writeFixture(name, base, mutate) {
   fs.writeFileSync(`${outputDirectory}/${name}.json`, `${JSON.stringify(fixture)}\n`);
 }
 
+function deviceEnvironments(fixture) {
+  return Object.entries(fixture.environments)
+    .filter(([name]) => name !== "host" && name.startsWith("esp32c6"));
+}
+
 function approvedBase() {
   const fixture = structuredClone(source);
   fixture.approvalStatus = "approved";
@@ -19,20 +24,34 @@ function approvedBase() {
   for (const entry of Object.values(fixture.environments.host.binarySize)) {
     Object.assign(entry, { unstrippedBytes: 100000, strippedBytes: 50000, status: "ok" });
   }
-  for (const environment of ["host", "esp32c6"]) {
-    for (const key of Object.keys(fixture.environments[environment].fingerprint)) {
-      fixture.environments[environment].fingerprint[key] = "test-fingerprint-value";
+  for (const environment of Object.values(fixture.environments)) {
+    for (const key of Object.keys(environment.fingerprint)) {
+      environment.fingerprint[key] = environment.fingerprint[key] || "test-fingerprint-value";
     }
   }
-  const device = fixture.environments.esp32c6;
-  device.sourceRun = "issue-322-embedded-swift-run-1";
-  device.resources.sustainedRate.capacityHeadroomMsgPerS = 130;
-  device.resources.largestFreeBlock = { measured: 200000, budgetMin: 160000, unit: "bytes" };
-  device.resources.fragmentation = { measured: 0, budgetMax: 5, unit: "percent" };
-  device.resources.data = { measured: 10000, budgetMax: 12000, unit: "bytes" };
-  device.resources.bss = { measured: 5000, budgetMax: 6000, unit: "bytes" };
-  device.resources.iram = { measured: 2000, budgetMax: 2500, unit: "bytes" };
-  device.hotPathAllocations.measured = 0;
+  for (const [, device] of deviceEnvironments(fixture)) {
+    device.sourceRun = "embedded-swift-smoke-v2 esp32c6-mqtt test-run-1";
+    for (const entry of Object.values(device.resources)) {
+      if (entry.measured == null) entry.measured = 100000;
+      if ("budgetMin" in entry && entry.budgetMin == null) entry.budgetMin = Math.floor(entry.measured * 0.8);
+      if ("budgetMax" in entry && entry.budgetMax == null) entry.budgetMax = Math.ceil(entry.measured * 1.2);
+    }
+    for (const entry of Object.values(device.latency)) {
+      entry.measuredP50us ??= 100;
+      entry.measuredP95us ??= 100;
+      entry.budgetP50us ??= entry.measuredP50us * 2;
+      entry.budgetP95us ??= entry.measuredP95us * 2;
+    }
+    device.resources.sustainedRate.measured = 100;
+    device.resources.sustainedRate.budgetMin = 90;
+    device.resources.sustainedRate.capacityHeadroomMsgPerS = 130;
+    device.resources.largestFreeBlock = { measured: 200000, budgetMin: 160000, unit: "bytes" };
+    device.resources.fragmentation = { measured: 0, budgetMax: 5, unit: "percent" };
+    device.resources.data = { measured: 10000, budgetMax: 12000, unit: "bytes" };
+    device.resources.bss = { measured: 5000, budgetMax: 6000, unit: "bytes" };
+    device.resources.iram = { measured: 2000, budgetMax: 2500, unit: "bytes" };
+    device.hotPathAllocations.measured = 0;
+  }
   return fixture;
 }
 
@@ -40,18 +59,19 @@ fs.writeFileSync(`${outputDirectory}/approved-base.json`, `${JSON.stringify(appr
 const mutations = {
   "01-missing-moduleApiVersion": (m) => delete m.moduleApiVersion,
   "04-csurrogate-approved": (m) => { m.historicalEvidence["esp32c6-c-surrogate"].approvalEligible = true; },
-  "05-no-p95-headroom": (m) => { m.environments.esp32c6.latency.topicParse.budgetP95us = 2; },
+  "05-no-p95-headroom": (m) => { const entry = m.environments["esp32c6-mqtt"].latency.topicParse; entry.budgetP95us = entry.measuredP95us; },
   "09-missing-entry-gate": (m) => { m.phase4EntryEvidenceGates.pop(); },
-  "10-over-limit-not-rejected": (m) => { m.environments.esp32c6.sizeLimits.maxPayloadSize.overLimitRejected = false; },
+  "10-over-limit-not-rejected": (m) => { m.environments["esp32c6-mqtt"].sizeLimits.maxPayloadSize.overLimitRejected = false; },
   "11-completion-gates-too-few": (m) => { m.phase4CompletionGates.pop(); },
   "12-invalid-approval-status": (m) => { m.approvalStatus = "approved-but-todo"; },
   "13-wire-hostdeps-nonempty": (m) => { m.environments.host.dependencyClosure.AxolotyWireConsumer.hostDeps = ["mqtt-nio"]; },
-  "14-partition-unsafe": (m) => { const flash = m.environments.esp32c6.resources.flashImage; flash.budgetMax = flash.partitionLimitBytes; },
+  "14-partition-unsafe": (m) => { const flash = m.environments["esp32c6-mqtt"].resources.flashImage; flash.budgetMax = flash.partitionLimitBytes; },
+  "15-empty-superseded-by": (m) => { m.historicalEvidence["esp32c6-c-surrogate"].supersededBy = ""; },
   "02-approved-host-latency-pending": (m) => { m.environments.host.latency.topicParse.status = "pending-baseline"; },
   "03-approved-host-binarysize-pending": (m) => { m.environments.host.binarySize.AxolotyWireConsumer.status = "pending-baseline"; },
-  "06-approved-missing-largestfreeblock": (m) => { delete m.environments.esp32c6.resources.largestFreeBlock; },
-  "07-approved-missing-source-run": (m) => { m.environments.esp32c6.sourceRun = null; },
-  "08-approved-no-rate-capacity": (m) => { m.environments.esp32c6.resources.sustainedRate.capacityHeadroomMsgPerS = 100; },
+  "06-approved-missing-largestfreeblock": (m) => { delete m.environments["esp32c6-mqtt"].resources.largestFreeBlock; },
+  "07-approved-missing-source-run": (m) => { m.environments["esp32c6-mqtt"].sourceRun = null; },
+  "08-approved-no-rate-capacity": (m) => { m.environments["esp32c6-mqtt"].resources.sustainedRate.capacityHeadroomMsgPerS = 100; },
 };
 
 for (const [name, mutate] of Object.entries(mutations)) {
