@@ -71,4 +71,39 @@ struct BorrowedMessageTests {
             }
         }
     }
+
+    @Test
+    func borrowedCBORRouteDecodesWithoutJSONEngine() throws {
+        // An `axoloty/1` route decodes CBOR through the same profile-routed
+        // surface as `coaty/3`. The surface must never be `_JSONCore`-gated,
+        // so a CBOR-only build can decode an event (issue #1027).
+        let topic = Array("axoloty/1/ns/IOV/55555555-5555-4555-8555-555555555555".utf8)
+        // CBOR map {"payload": 42}, the minimal IoValue event payload.
+        let payload: [UInt8] = [0xA1, 0x67, 0x70, 0x61, 0x79, 0x6C, 0x6F, 0x61, 0x64, 0x18, 0x2A]
+
+        try topic.withUnsafeBufferPointer { topicBuffer in
+            try payload.withUnsafeBufferPointer { payloadBuffer in
+                let message = try BorrowedMessage.validated(
+                    topicBytes: try #require(topicBuffer.baseAddress),
+                    topicLength: topicBuffer.count,
+                    payloadBytes: try #require(payloadBuffer.baseAddress),
+                    payloadLength: payloadBuffer.count
+                )
+                #expect(message.profile == .axoloty1CBOR)
+                #expect(message.eventType == .ioValue)
+                #expect(message.reader().readInt("payload") == 42)
+
+                var workspace = EmbeddedWireParserWorkspace()
+                #expect(message.reader(workspace: &workspace).readInt("payload") == 42)
+
+                let owned = try message.ownedEvent()
+                #expect(owned.profile == .axoloty1CBOR)
+                if case .ioValue(let value) = owned {
+                    #expect(value.profile == .axoloty1CBOR)
+                } else {
+                    Issue.record("expected an owned ioValue event")
+                }
+            }
+        }
+    }
 }

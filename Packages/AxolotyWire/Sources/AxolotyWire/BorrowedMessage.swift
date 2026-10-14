@@ -129,13 +129,17 @@ public struct BorrowedMessage: ~Sendable {
         ))
     }
 
-    #if canImport(_JSONCore)
     /// Creates a WireReader for the payload, enabling typed field access
     /// without allocating a String or intermediate JSON tree.
     ///
     /// The reader's engine follows the route profile: `coaty/3` reads JSON and
     /// `axoloty/1` reads deterministic CBOR. A raw (non-Coaty) topic keeps the
     /// JSON engine.
+    ///
+    /// - Important: This method is available in every build. In a build
+    ///   without `_JSONCore`, only an `axoloty/1` route can produce a reader;
+    ///   a raw or unrecognized route selects the `coaty/3` JSON engine and
+    ///   traps, matching ``WireCodec/reader(bytes:length:)``.
     public func reader() -> WireReader {
         let codec = WireCodec(profile: profile ?? .coaty3JSON)
         return payload.withBytes { ptr, len in
@@ -152,9 +156,14 @@ public struct BorrowedMessage: ~Sendable {
     /// workspace is used only during construction and is not retained. The
     /// workspace is used for the `coaty/3` JSON engine; an `axoloty/1` route
     /// selects the CBOR engine, which needs no workspace.
+    ///
+    /// - Important: In a build without `_JSONCore`, the `coaty/3` JSON arm is
+    ///   unavailable, so every route is served by ``reader()``; an `axoloty/1`
+    ///   route reads CBOR and any other route traps as above.
     public func reader<Workspace: WireParserWorkspace & ~Copyable>(
         workspace: inout Workspace
     ) -> WireReader {
+        #if canImport(_JSONCore)
         guard profile != .axoloty1CBOR else { return reader() }
         return payload.withBytes { ptr, len in
             WireReader(
@@ -163,8 +172,10 @@ public struct BorrowedMessage: ~Sendable {
                 workspace: &workspace
             )
         }
+        #else
+        return reader()
+        #endif
     }
-    #endif
 
     /// The wire profile selected by the route prefix, or nil for a raw topic.
     public var profile: WireProfile? {
@@ -180,11 +191,14 @@ public struct BorrowedMessage: ~Sendable {
     ///
     /// - Throws: ``WireDecodeError`` if the topic is not a Coaty event or a
     ///   raw field is malformed or not a legal value of the route profile.
-    #if canImport(_JSONCore)
+    ///
+    /// - Important: This method is available in every build. In a build
+    ///   without `_JSONCore`, an `axoloty/1` route owns CBOR fields and a
+    ///   raw or unrecognized route traps when it selects the `coaty/3` JSON
+    ///   engine.
     public func ownedEvent() throws(WireDecodeError) -> OwnedWireEvent {
         try BorrowedWireEvent(message: self).owned(profile: profile ?? .coaty3JSON)
     }
-    #endif
 
     /// Whether this message is a raw (non-Coaty) topic.
     public var isRawTopic: Bool {
