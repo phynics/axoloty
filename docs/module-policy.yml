@@ -491,6 +491,7 @@
       "name": "CAxolotyZenoh",
       "role": "adapter",
       "platformClass": "host",
+      "portableInterface": true,
       "path": "Packages/AxolotyZenoh/Sources/CAxolotyZenoh",
       "allowedImports": [],
       "forbiddenImports": [
@@ -501,7 +502,7 @@
         "MQTTNIO",
         "NIO"
       ],
-      "note": "C façade for the Zenoh carrier. The system-library dependency stays inside the separate adapter package."
+      "note": "C façade for the Zenoh carrier. Its public header is the portable ABI that Embedded-Swift profiles compile against, and only its implementation links the pinned zenoh-c archive and owns the process-global session registry. The portableInterface flag records that split so a portable target may import the façade interface without importing the host implementation."
     },
     {
       "name": "AxolotyZenohCore",
@@ -531,7 +532,7 @@
         "ErrorKit",
         "Combine"
       ],
-      "note": "The Zenoh adapter's Embedded-Swift-compatible core. It compiles for every profile, so its platform class is portable, but its role is adapter because it carries one transport through the C façade, whose session registry is process-global. It cannot import the carrier system library or host runtime/transport modules."
+      "note": "The Zenoh adapter's Embedded-Swift-compatible core. It compiles for every profile, so its platform class is portable, but its role is adapter because it carries one transport through the C façade. The façade is declared portableInterface, so this import is a portable-to-portable edge and never reaches the host implementation or its process-global session registry. It cannot import the carrier system library or host runtime/transport modules."
     },
     {
       "name": "AxolotyZenoh",

@@ -396,6 +396,66 @@ func modulePolicyRejectsContradictoryDeclarations() throws {
     #expect(report.findings.contains { $0.rule == "modules.contradiction" })
 }
 
+/// A portable target that imports a host target contradicts its platform
+/// class, because the imported implementation is host-only. `AxolotyZenohCore`
+/// is the real instance of this edge, and the rule keeps its adapter/portable
+/// classification from drifting to host without a declared interface.
+@Test
+func modulePolicyRejectsPortableTargetImportingHostTarget() throws {
+    let fixture = try makeAuthorityFixture(modulePolicy: """
+    {"schemaVersion":1,"roles":{"portable":"p"},
+     "platformClasses":{"portable":"p","host":"h"},
+     "forbiddenEverywhere":[],
+     "targets":[
+       {"name":"FixtureWire","role":"portable","platformClass":"portable",
+        "path":"Packages/FixtureWire/Sources",
+        "allowedImports":["AllowedModule","FixtureHost"],"forbiddenImports":[]},
+       {"name":"FixtureHost","role":"adapter","platformClass":"host",
+        "path":"Packages/FixtureHost/Sources",
+        "allowedImports":[],"forbiddenImports":[]}]}
+    """, sources: [
+        "Packages/FixtureWire/Sources/Wire.swift": "import AllowedModule\nimport FixtureHost\n",
+        "Packages/FixtureHost/Sources/Host.swift": "struct FixtureHostSource {}\n",
+    ])
+    defer { try? FileManager.default.removeItem(at: fixture) }
+
+    let report = AxolotyRepositoryAuthorityValidator(root: fixture).validate()
+
+    #expect(report.findings.contains {
+        $0.rule == "modules.platform.import"
+            && $0.message.contains("FixtureWire")
+            && $0.message.contains("FixtureHost")
+    })
+}
+
+/// A host target may be imported by a portable target only when it declares
+/// that its public interface is portable. The `CAxolotyZenoh` façade uses this
+/// to keep `AxolotyZenohCore` portable while its implementation stays host.
+@Test
+func modulePolicyAllowsPortableTargetImportingDeclaredPortableInterface() throws {
+    let fixture = try makeAuthorityFixture(modulePolicy: """
+    {"schemaVersion":1,"roles":{"portable":"p"},
+     "platformClasses":{"portable":"p","host":"h"},
+     "forbiddenEverywhere":[],
+     "targets":[
+       {"name":"FixtureWire","role":"portable","platformClass":"portable",
+        "path":"Packages/FixtureWire/Sources",
+        "allowedImports":["AllowedModule","FixtureHost"],"forbiddenImports":[]},
+       {"name":"FixtureHost","role":"adapter","platformClass":"host",
+        "portableInterface":true,
+        "path":"Packages/FixtureHost/Sources",
+        "allowedImports":[],"forbiddenImports":[]}]}
+    """, sources: [
+        "Packages/FixtureWire/Sources/Wire.swift": "import AllowedModule\nimport FixtureHost\n",
+        "Packages/FixtureHost/Sources/Host.swift": "struct FixtureHostSource {}\n",
+    ])
+    defer { try? FileManager.default.removeItem(at: fixture) }
+
+    let report = AxolotyRepositoryAuthorityValidator(root: fixture).validate()
+
+    #expect(!report.findings.contains { $0.rule == "modules.platform.import" })
+}
+
 /// A missing or unreadable policy fails rather than silently skipping.
 @Test
 func modulePolicyMustBePresent() throws {

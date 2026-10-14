@@ -251,6 +251,9 @@ public struct AxolotyRepositoryAuthorityValidator: Sendable {
         let forbiddenEverywhere = Set((object["forbiddenEverywhere"] as? [Any])?.compactMap { nonEmptyString($0) } ?? [])
         var names = Set<String>()
         var policyPaths: [String: String] = [:]
+        var platformClassByName: [String: String] = [:]
+        var allowedImportsByName: [String: Set<String>] = [:]
+        var portableInterfaceNames = Set<String>()
         let exemptions = moduleTargetExemptions(object["targetExemptions"], path: path, findings: &findings)
 
         for (index, rawTarget) in rawTargets.enumerated() {
@@ -272,11 +275,18 @@ public struct AxolotyRepositoryAuthorityValidator: Sendable {
             if let role = nonEmptyString(target["role"]), !roles.isEmpty, !roles.contains(role) {
                 findings.append(.init(rule: "modules.role", path: path, message: name + " declares unknown role " + role))
             }
-            if let platformClass = nonEmptyString(target["platformClass"]), !platformClasses.isEmpty, !platformClasses.contains(platformClass) {
-                findings.append(.init(rule: "modules.platform", path: path, message: name + " declares unknown platform class " + platformClass))
+            if let platformClass = nonEmptyString(target["platformClass"]) {
+                platformClassByName[name] = platformClass
+                if !platformClasses.isEmpty, !platformClasses.contains(platformClass) {
+                    findings.append(.init(rule: "modules.platform", path: path, message: name + " declares unknown platform class " + platformClass))
+                }
+            }
+            if (target["portableInterface"] as? Bool) == true {
+                portableInterfaceNames.insert(name)
             }
 
             let allowed = Set((target["allowedImports"] as? [Any])?.compactMap { nonEmptyString($0) } ?? [])
+            allowedImportsByName[name] = allowed
             let forbidden = Set((target["forbiddenImports"] as? [Any])?.compactMap { nonEmptyString($0) } ?? [])
                 .union(forbiddenEverywhere)
             for overlap in allowed.intersection(forbidden).sorted() {
@@ -308,12 +318,49 @@ public struct AxolotyRepositoryAuthorityValidator: Sendable {
                 findings.append(.init(rule: "modules.unused", path: relativePath, message: name + " allows " + module + " but no source imports it"))
             }
         }
+        validatePortableHostImports(
+            path: path,
+            platformClassByName: platformClassByName,
+            allowedImportsByName: allowedImportsByName,
+            portableInterfaceNames: portableInterfaceNames,
+            findings: &findings
+        )
         validateManifestTargetCoverage(
             policyNames: names,
             policyPaths: policyPaths,
             exemptions: exemptions,
             findings: &findings
         )
+    }
+
+    /// Rejects a portable target that reaches a host-only target through an
+    /// allowed import.
+    ///
+    /// The platform class says a target compiles for host and Embedded Swift.
+    /// A portable target that imports a host target contradicts that claim,
+    /// because the imported implementation is host-only. The one sanctioned
+    /// exception is a host target that declares `portableInterface`: its public
+    /// ABI is portable even though its implementation is host-only. This keeps
+    /// the `AxolotyZenohCore` adapter/portable classification honest instead of
+    /// allowing it to drift silently.
+    private func validatePortableHostImports(
+        path: String,
+        platformClassByName: [String: String],
+        allowedImportsByName: [String: Set<String>],
+        portableInterfaceNames: Set<String>,
+        findings: inout [AxolotyRepositoryAuthorityFinding]
+    ) {
+        for name in platformClassByName.keys.sorted() where platformClassByName[name] == "portable" {
+            for imported in (allowedImportsByName[name] ?? []).sorted() {
+                guard let importedClass = platformClassByName[imported] else { continue }
+                guard importedClass != "portable", !portableInterfaceNames.contains(imported) else { continue }
+                findings.append(.init(
+                    rule: "modules.platform.import",
+                    path: path,
+                    message: name + " is portable but imports " + imported + " (" + importedClass + ") with no portableInterface declaration"
+                ))
+            }
+        }
     }
 
     /// Reads explicit non-module exceptions for targets in the two manifests
