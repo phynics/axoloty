@@ -28,8 +28,10 @@ fork, through CoatySwift 2.4.0, remain documented in the
 - The `axoloty/1`-only lexical kinds — floating point, byte strings, and
   semantic tags — are reachable from the `WireCodec` facade through
   `WireReader.readFloat(_:)`, `WireReader.readByteString(_:)`,
-  `WireReader.readTag(_:)` and the matching `WireWriter` accessors. No
-  first-party DTO field consumes them yet; see
+  `WireReader.readTag(_:)` and the matching `WireWriter` accessors.
+  `IoValueWireData` consumes the readers through its real `payload` field, and
+  `OwnedIoValueWireData(cborFloat:)`, `(cborByteString:)`, and
+  `(cborTag:taggedItem:)` consume the standalone writers; see
   [docs/protocol/axoloty-1.md](docs/protocol/axoloty-1.md).
 - The Zenoh binding carries only the `axoloty/1` CBOR profile. It subscribes to
   `axoloty/1/<namespace>/*/*`, labels every profile payload with the

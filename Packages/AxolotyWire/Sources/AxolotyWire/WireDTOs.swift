@@ -153,9 +153,38 @@ public struct DeadvertiseWireData: WireDecodable, WireEncodable, Equatable {
 
 /// Wire DTO mirroring `IoValueEventData`, carrying the IO value payload as a
 /// raw payload fragment in the active profile's format.
+///
+/// The raw `payload` is authoritative and preserves the peer's exact bytes.
+/// The typed views below expose the `axoloty/1`-only lexical kinds the JSON
+/// profile cannot carry (floating point, byte string, tag) so a first-party
+/// caller can consume them without constructing a `CBORReader`. Every view is
+/// derived from the same `payload` field and is `nil` under `coaty/3` JSON,
+/// which has no such token and leaves the raw bytes untouched.
 public struct IoValueWireData: WireDecodable, WireEncodable, Equatable {
     /// The raw wire bytes of the IO value payload.
     public let payload: ByteSlice
+
+    /// The `payload` widened to `Double` when it is an `axoloty/1` CBOR
+    /// floating-point item.
+    ///
+    /// Floating point is `axoloty/1`-only, so this is `nil` for `coaty/3` JSON
+    /// and for a non-floating-point CBOR payload.
+    public let floatPayload: Double?
+
+    /// The borrowed content of the `payload` when it is an `axoloty/1` CBOR
+    /// byte string, without the encoding head.
+    ///
+    /// Byte strings are `axoloty/1`-only, so this is `nil` for `coaty/3` JSON
+    /// and for a non-byte-string CBOR payload. An empty byte string yields
+    /// ``ByteSlice/empty`` rather than `nil`.
+    public let byteStringPayload: ByteSlice?
+
+    /// The semantic-tag number of a tagged `payload`, when it is an
+    /// `axoloty/1` CBOR tagged item.
+    ///
+    /// This is the tag number, not the tagged item. Tags are `axoloty/1`-only,
+    /// so this is `nil` for `coaty/3` JSON and for a non-tagged CBOR payload.
+    public let tagPayload: UInt64?
 
     /// Decodes an IoValue event from `reader`.
     ///
@@ -167,6 +196,9 @@ public struct IoValueWireData: WireDecodable, WireEncodable, Equatable {
             throw WireDecodeError(.missingField, field: "payload")
         }
         self.payload = p
+        self.floatPayload = reader.readFloat("payload")
+        self.byteStringPayload = reader.readByteString("payload")
+        self.tagPayload = reader.readTag("payload")
     }
 
     /// Encodes this event into `writer` as an object wrapping `payload`.

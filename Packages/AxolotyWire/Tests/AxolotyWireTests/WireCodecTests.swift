@@ -11,6 +11,23 @@ private func decodeIoStateData(_ json: String) throws -> IoStateWireData {
     }
 }
 
+/// Encodes a wire value into a new, exactly sized byte array.
+private func encodeWireValue(
+    profile: WireProfile,
+    _ body: (inout WireWriter) throws(WireEncodeError) -> Void
+) throws(WireEncodeError) -> [UInt8] {
+    var output = [UInt8](repeating: 0, count: WireBufferConfig.maxPayloadSize)
+    let count = try output.withUnsafeMutableBufferPointer {
+        (destination: inout UnsafeMutableBufferPointer<UInt8>) throws(WireEncodeError) -> Int in
+        var writer = WireCodec(profile: profile).writer(
+            buffer: destination.baseAddress!, capacity: destination.count
+        )
+        try body(&writer)
+        return writer.position
+    }
+    return Array(output[0..<count])
+}
+
 /// Tests for the Foundation-free wire codec primitives.
 ///
 /// These tests verify the zero-allocation topic parsing, UUID handling,
@@ -799,5 +816,153 @@ struct WireCodecTests {
                 try writer.writeTagField("time", 1)
             }
         }
+    }
+
+    // MARK: - Standalone axoloty/1 lexical writers
+
+    @Test
+    func wireFacadeStandaloneLexicalWritersRoundTrip() throws {
+        // The standalone writers emit bare items for array positions with no
+        // key, unlike the `...Field` variants.
+        let blob: [UInt8] = [0xDE, 0xAD, 0xBE, 0xEF]
+        let encoded = try blob.withUnsafeBufferPointer { (bytes: UnsafeBufferPointer<UInt8>) throws -> [UInt8] in
+            let slice = ByteSlice(bytes: bytes.baseAddress!, length: bytes.count)
+            return try encodeWireValue(profile: .axoloty1CBOR) { (writer: inout WireWriter) throws(WireEncodeError) in
+                try writer.beginArray()
+                try writer.writeFloat64(1.5)
+                try writer.writeByteString(slice)
+                try writer.writeTag(1)
+                try writer.writeInt(1_700_000_000)
+                try writer.endArray()
+            }
+        }
+        // 1.5 is losslessly single precision, so the float is four bytes; the
+        // tag and its integer form one array element.
+        let expected: [UInt8] = [
+            0x83,
+            0xFA, 0x3F, 0xC0, 0x00, 0x00,
+            0x44, 0xDE, 0xAD, 0xBE, 0xEF,
+            0xC1, 0x1A, 0x65, 0x53, 0xF1, 0x00,
+        ]
+        #expect(encoded == expected)
+
+        encoded.withUnsafeBufferPointer { buffer in
+            var reader = CBORReader(bytes: buffer.baseAddress!, length: encoded.count)
+            #expect((try? reader.readArrayHeader()) == 3)
+            #expect((try? reader.readFloat()) == 1.5)
+            #expect((try? reader.readByteString())?.ownedBytes() == blob)
+            #expect((try? reader.readTag()) == 1)
+            #expect((try? reader.readInteger()) == 1_700_000_000)
+            #expect(reader.isAtEnd)
+        }
+    }
+
+    @Test
+    func wireFacadeStandaloneLexicalWritersRejectJSON() throws {
+        // JSON has no byte-string, float, or tag token, so every standalone
+        // writer rejects the value with `invalidValue`.
+        _ = try encodeWireValue(profile: .coaty3JSON) { (writer: inout WireWriter) throws(WireEncodeError) in
+            try writer.beginArray()
+            #expect(throws: WireEncodeError.invalidValue) {
+                try writer.writeFloat64(1.5)
+            }
+            #expect(throws: WireEncodeError.invalidValue) {
+                try writer.writeByteString(ByteSlice.empty)
+            }
+            #expect(throws: WireEncodeError.invalidValue) {
+                try writer.writeTag(1)
+            }
+        }
+    }
+
+    // MARK: - IoValue typed payloads
+
+    @Test
+    func ioValueWireDataExposesTypedCBORPayloads() throws {
+        // A first-party DTO now consumes the facade's float, byte-string, and
+        // tag readers through its real `payload` field.
+        let blob: [UInt8] = [0xDE, 0xAD, 0xBE, 0xEF]
+
+        let floatBytes = try encodeWireValue(profile: .axoloty1CBOR) { (writer: inout WireWriter) throws(WireEncodeError) in
+            try writer.beginObject()
+            try writer.writeFloatField("payload", 1.5)
+            try writer.endObject()
+        }
+        try floatBytes.withUnsafeBufferPointer { buffer in
+            let reader = WireCodec(profile: .axoloty1CBOR).reader(
+                bytes: buffer.baseAddress!, length: floatBytes.count
+            )
+            let value = try IoValueWireData(from: reader)
+            #expect(value.floatPayload == 1.5)
+            #expect(value.byteStringPayload == nil)
+            #expect(value.tagPayload == nil)
+        }
+
+        let bytesBytes = try blob.withUnsafeBufferPointer { (bytes: UnsafeBufferPointer<UInt8>) throws -> [UInt8] in
+            let slice = ByteSlice(bytes: bytes.baseAddress!, length: bytes.count)
+            return try encodeWireValue(profile: .axoloty1CBOR) { (writer: inout WireWriter) throws(WireEncodeError) in
+                try writer.beginObject()
+                try writer.writeByteStringField("payload", slice)
+                try writer.endObject()
+            }
+        }
+        try bytesBytes.withUnsafeBufferPointer { buffer in
+            let reader = WireCodec(profile: .axoloty1CBOR).reader(
+                bytes: buffer.baseAddress!, length: bytesBytes.count
+            )
+            let value = try IoValueWireData(from: reader)
+            #expect(value.floatPayload == nil)
+            #expect(value.byteStringPayload?.ownedBytes() == blob)
+            #expect(value.tagPayload == nil)
+        }
+
+        let tagBytes = try encodeWireValue(profile: .axoloty1CBOR) { (writer: inout WireWriter) throws(WireEncodeError) in
+            try writer.beginObject()
+            try writer.writeTagField("payload", 1)
+            try writer.writeInt(1_700_000_000)
+            try writer.endObject()
+        }
+        try tagBytes.withUnsafeBufferPointer { buffer in
+            let reader = WireCodec(profile: .axoloty1CBOR).reader(
+                bytes: buffer.baseAddress!, length: tagBytes.count
+            )
+            let value = try IoValueWireData(from: reader)
+            #expect(value.floatPayload == nil)
+            #expect(value.byteStringPayload == nil)
+            #expect(value.tagPayload == 1)
+        }
+    }
+
+    @Test
+    func ioValueWireDataTypedViewsAreNilUnderJSON() throws {
+        let json = Array(#"{"payload":1.5}"#.utf8)
+        try json.withUnsafeBufferPointer { buffer in
+            let reader = WireCodec(profile: .coaty3JSON).reader(
+                bytes: buffer.baseAddress!, length: json.count
+            )
+            let value = try IoValueWireData(from: reader)
+            // JSON has no float, byte-string, or tag token. The raw payload is
+            // retained unchanged and every typed view stays nil.
+            #expect(value.floatPayload == nil)
+            #expect(value.byteStringPayload == nil)
+            #expect(value.tagPayload == nil)
+            #expect(value.payload.ownedBytes() == Array("1.5".utf8))
+        }
+    }
+
+    @Test
+    func ownedIoValueTypedConstructorsEncodeBareCBORItems() throws {
+        // The typed constructors consume the standalone facade writers.
+        let blob: [UInt8] = [0xDE, 0xAD, 0xBE, 0xEF]
+        let floatOwned = try OwnedIoValueWireData(cborFloat: 1.5)
+        let bytesOwned = try OwnedIoValueWireData(cborByteString: blob)
+        let tagOwned = try OwnedIoValueWireData(
+            cborTag: 1, taggedItem: [0x1A, 0x65, 0x53, 0xF1, 0x00]
+        )
+
+        #expect(floatOwned.profile == .axoloty1CBOR)
+        #expect(floatOwned.payload == [0xFA, 0x3F, 0xC0, 0x00, 0x00])
+        #expect(bytesOwned.payload == [0x44, 0xDE, 0xAD, 0xBE, 0xEF])
+        #expect(tagOwned.payload == [0xC1, 0x1A, 0x65, 0x53, 0xF1, 0x00])
     }
 }

@@ -201,7 +201,7 @@ specific reasons are `cborIndefiniteLength`, `cborInvalidAdditionalInfo`,
 | Bounded deterministic CBOR reader and writer | Implemented |
 | `WireDecodable`/`WireEncodable` DTO codec seam (format-neutral, [ADR 0011](../adr/0011-codec-format-seam.md)) | Implemented |
 | Raw/custom CBOR payload retention | Implemented ([wire-value-mapping.md](../wire-value-mapping.md)) |
-| Facade accessors for the CBOR-only float, byte-string, and tag kinds | Implemented (no DTO consumes them yet) |
+| Facade accessors for the CBOR-only float, byte-string, and tag kinds | Implemented (consumed by `IoValueWireData`) |
 | Host-generated envelopes through the profile-aware writer | Implemented ([wire-value-mapping.md](../wire-value-mapping.md)) |
 | Zenoh binding on `axoloty/1` only | Implemented |
 | Golden `coaty/3`/`axoloty/1` corpus with independent CBOR decode | Implemented |
@@ -226,9 +226,14 @@ also reaches the `axoloty/1`-only float, byte-string, and tag kinds through
 `WireReader.readFloat(_:)`, `WireReader.readByteString(_:)`,
 `WireReader.readTag(_:)`, `WireWriter.writeFloat64(_:)`,
 `WireWriter.writeByteString(_:)`, and `WireWriter.writeTag(_:)` plus their
-field variants. No first-party DTO field consumes them yet; wiring such a field
-is a tracked follow-up under
-[#977](https://github.com/phynics/axoloty/issues/977).
+field variants. `IoValueWireData` consumes the readers through its real
+`payload` field: `floatPayload`, `byteStringPayload`, and `tagPayload` expose
+the CBOR-only lexical kinds, and each view is `nil` under `coaty/3` JSON.
+`OwnedIoValueWireData(cborFloat:)`, `OwnedIoValueWireData(cborByteString:)`,
+and `OwnedIoValueWireData(cborTag:taggedItem:)` consume the standalone writers
+to build one bare `axoloty/1` payload item. The raw `payload` remains
+authoritative, so `coaty/3` bytes and field presence are unchanged and a peer's
+exact `axoloty/1` float width is preserved on re-encode.
 
 ## CBOR-only consumers
 
