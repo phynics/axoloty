@@ -38,8 +38,8 @@ test and a row here:
 | Change | Regression test | `coaty/3` effect |
 |---|---|---|
 | Bounded deterministic CBOR codec, route support, DTO seam | `WireGoldenCorpusTests`, RFC 8949 Appendix A conformance vectors, `OwnedRawCBORBoundaryTests`, `WireCodecParityTests` | None; the seam is format-neutral and `coaty/3` bytes are unchanged. |
-| Frozen golden corpus with independent `cbor-x` decode | `npm run verify:golden --prefix Tests/Support/WireCompatibility/tool`, `g2-wire-golden-corpus` | None; the golden `coaty/3` JSON files are fixtures, not a new shape. |
-| Host/static trace parity | `WireCBORTraceParityTests` (`wire-cbor` tier) | None; the host `coaty/3` leg and the static `axoloty/1` leg reach the same operations, state, and structured rejections. |
+| Frozen golden corpus with independent `cbor-x` decode and re-encode | `npm run verify:golden --prefix Tests/Support/WireCompatibility/tool` (`wire-golden-independent`, a required `ci` gate); `g2-wire-golden-corpus` | None; the golden `coaty/3` JSON files are fixtures, not a new shape. |
+| Host/static trace parity | `WireCBORTraceParityTests` (`wire-cbor` tier) with a per-step action oracle | None; the host `coaty/3` leg and the static `axoloty/1` leg reach the same operations, state, and structured rejections. |
 | Zenoh carries only `axoloty/1` | `ZenohBindingTests`, `ProtocolTraceParityTests`, the `zenoh-offline`/`zenoh-live` tiers | None; MQTT keeps the sealed `coaty/3` JSON profile. |
 | CBOR inspection tooling | `InspectorCBORCodecTests`, `InspectorDecodeTests`, `AxolotyMCPDecodeTests` | None; the inspector and MCP decode CBOR payloads read-only and change no wire bytes. |
 | Host-generated envelopes through the profile-aware writer | `RuntimeWirePayloadTests` | None; the `coaty/3` Identity Advertise, Deadvertise, and conformance bytes are unchanged, and the previous JSON-to-CBOR transcode is removed. The IO endpoint metadata re-encoder rejects an unknown field, a fractional number, and an integer that does not fit `Int` exactly with `ProtocolError.malformedPayload`. |

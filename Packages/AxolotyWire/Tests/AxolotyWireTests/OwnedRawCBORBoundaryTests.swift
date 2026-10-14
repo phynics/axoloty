@@ -147,6 +147,22 @@ struct OwnedRawCBORBoundaryTests {
         #expect(encoded == cborMap([(cborText("objectIds"), ids)]))
     }
 
+    @Test("raw CBOR keeps a peer's map key order; sorting is a writer rule")
+    func retainsOutOfOrderMapKeys() throws {
+        // The profile writer sorts map keys, but the reader does not require
+        // ascending encoded-key order. A retained raw field therefore keeps a
+        // non-conforming peer's key order unchanged instead of rejecting or
+        // rewriting it. This locks the reader tolerance that
+        // `docs/wire-value-mapping.md` records.
+        let outOfOrder = cborMap([
+            (cborText("b"), cborInt(2)),
+            (cborText("a"), cborInt(1)),
+        ])
+        let fields = try OwnedUpdateWireData(profile: .axoloty1CBOR, object: outOfOrder)
+        #expect(fields.object == outOfOrder)
+        #expect(try encodeCBOR(.update(fields)) == cborMap([(cborText("object"), outOfOrder)]))
+    }
+
     @Test("malformed or non-deterministic CBOR is rejected")
     func rejectsMalformedCBOR() {
         let malformed: [[UInt8]] = [

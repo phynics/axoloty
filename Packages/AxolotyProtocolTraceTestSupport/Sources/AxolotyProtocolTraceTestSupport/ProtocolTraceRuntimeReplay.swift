@@ -905,7 +905,11 @@ fileprivate struct SharedProtocolTraceReplay<let capacity: Int>: ~Copyable {
         case .retrieve: return (.query, Self.seedBytes("{}", cbor: [0xA0], profile: profile))
         case .complete: return (.update, Self.seedBytes(
             "{\"object\":{\"id\":\"x\"}}",
-            cbor: [0xA1, 0x66, 0x6F, 0x62, 0x6A, 0x65, 0x63, 0x74, 0xA0],
+            cbor: [
+                0xA1,
+                0x66, 0x6F, 0x62, 0x6A, 0x65, 0x63, 0x74,
+                0xA1, 0x62, 0x69, 0x64, 0x61, 0x78
+            ],
             profile: profile
         ))
         case .return: return (.call, Self.seedBytes(
@@ -1215,7 +1219,11 @@ fileprivate struct StaticTraceVerifier<let traceCapacity: Int>: ~Copyable {
         case .retrieve: return (.query, Self.seedBytes("{}", cbor: [0xA0], profile: profile))
         case .complete: return (.update, Self.seedBytes(
             "{\"object\":{\"id\":\"x\"}}",
-            cbor: [0xA1, 0x66, 0x6F, 0x62, 0x6A, 0x65, 0x63, 0x74, 0xA0],
+            cbor: [
+                0xA1,
+                0x66, 0x6F, 0x62, 0x6A, 0x65, 0x63, 0x74,
+                0xA1, 0x62, 0x69, 0x64, 0x61, 0x78
+            ],
             profile: profile
         ))
         case .return: return (.call, Self.seedBytes(

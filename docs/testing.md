@@ -180,7 +180,7 @@ self-test is run by some node of the category that owns it.
 
 | Category | Purpose | Dependencies | Default timeout | Required cadence |
 |---|---|---|---:|---|
-| `ci` | Build, unit, module, offline wire, boundary, and harness self-test coverage | Container only | 60 min | Every PR |
+| `ci` | Build, unit, module, offline wire, independent golden-corpus decode, boundary, and harness self-test coverage | Container only | 60 min | Every PR |
 | `wire` | Representative Axoloty/CoatyJS interoperability plus CoatyJS reference-wire protocol coverage | Containers, broker, CoatyJS image | 60 min | Protocol-facing PRs (enforced by the `Live CoatyJS compatibility gate`); full run before merge |
 | `wire-cbor` | `axoloty/1` CBOR golden-corpus round trips and host/static trace parity | Container only | 30 min | Every PR |
 | `embedded` | Core Embedded Swift compatibility on the pinned Linux container | Container only | 60 min | Every PR |

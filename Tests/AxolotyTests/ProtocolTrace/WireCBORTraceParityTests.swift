@@ -124,11 +124,18 @@ struct WireCBORTraceParityTests {
 
     /// One replay fixture: a JSON-authored trace plus the CBOR bytes that
     /// replace each step's payload for the static leg.
+    ///
+    /// `rejections` is the corpus oracle. Every step named there must reject
+    /// with the given code and emit no action; every other step must accept,
+    /// emit no rejection, and emit at least one action of the step's family.
+    /// A silent no-op therefore fails the comparison instead of passing as an
+    /// empty-versus-empty match.
     private struct ParityCase {
         let id: String
         let families: [TraceEventFamily]
         let trace: ProtocolTrace
         let cborBySequence: [Int: [UInt8]]
+        var rejections: [Int: TraceRejectionCode] = [:]
     }
 
     private static func buildCases() throws -> [ParityCase] {
@@ -182,7 +189,14 @@ struct WireCBORTraceParityTests {
             cborBySequence: [1: channel.cbor]
         ))
 
-        let associate = try loadGolden(manifest, id: "associate-minimal")
+        // The full associate fixture carries `associatingRoute` and
+        // `isExternalRoute: true`. The replay binds it to the profile route,
+        // which the host transport and the static classifier both classify as
+        // non-external, so both legs must reject the external flag as a
+        // structured `externalRouteMismatch`. This exercises the associate
+        // family without a silent no-op (the minimal fixture omits the route
+        // and is ignored by design).
+        let associate = try loadGolden(manifest, id: "associate-full")
         cases.append(ParityCase(
             id: "asc",
             families: [.associate],
@@ -200,7 +214,8 @@ struct WireCBORTraceParityTests {
                     )
                 ]
             ),
-            cborBySequence: [1: associate.cbor]
+            cborBySequence: [1: associate.cbor],
+            rejections: [1: .externalRouteMismatch]
         ))
 
         let ioValue = try loadGolden(manifest, id: "iovalue-array")
@@ -238,7 +253,8 @@ struct WireCBORTraceParityTests {
                     )
                 ]
             ),
-            cborBySequence: [1: orphanResolve.cbor]
+            cborBySequence: [1: orphanResolve.cbor],
+            rejections: [1: .correlationMismatch]
         ))
 
         // Request and response families are separate one-step cases. A
@@ -383,7 +399,30 @@ struct WireCBORTraceParityTests {
     }
 
     private static func replayHostJSON(_ trace: ProtocolTrace) async throws -> TraceRun {
+        // The corpus `expected` observations in these ad-hoc traces carry no
+        // payload bytes, and the two legs legitimately differ in payload
+        // bytes, so the engine's exact `assertExpected` stays off. The
+        // profile-independent oracle below is the assertion that matters here.
         try await HostTraceReplayAdapter(assertExpected: false).replay(trace)
+    }
+
+    /// Applies the corpus oracle to one normalized replay run.
+    private static func assertOracle(_ run: TraceRun, item: ParityCase, leg: String) {
+        for (index, step) in item.trace.steps.enumerated() {
+            let observation = run.observations[index]
+            if let code = item.rejections[step.sequence] {
+                #expect(observation.rejection?.code == code, "case \(item.id) \(leg) step \(step.sequence) rejection")
+                #expect(observation.actions.isEmpty, "case \(item.id) \(leg) step \(step.sequence) rejected but emitted actions")
+                continue
+            }
+            let kind = step.localOperation == .publishOutbound ? "publish" : "deliver"
+            #expect(observation.rejection == nil, "case \(item.id) \(leg) step \(step.sequence) unexpectedly rejected")
+            #expect(!observation.actions.isEmpty, "case \(item.id) \(leg) step \(step.sequence) produced no action and no rejection")
+            #expect(
+                observation.actions.allSatisfy { $0.kind == kind && $0.family == step.input.family },
+                "case \(item.id) \(leg) step \(step.sequence) action shape"
+            )
+        }
     }
 
     private static func replayStaticCBOR(_ item: ParityCase) async throws -> TraceRun {
@@ -414,6 +453,8 @@ struct WireCBORTraceParityTests {
             let cborRun = try await Self.replayStaticCBOR(item)
             #expect(Self.normalize(jsonRun) == Self.normalize(cborRun), "case \(item.id)")
             #expect(jsonRun.observations.count == item.trace.steps.count, "case \(item.id)")
+            Self.assertOracle(jsonRun, item: item, leg: "JSON")
+            Self.assertOracle(cborRun, item: item, leg: "CBOR")
             for observation in cborRun.observations {
                 if observation.rejection == nil { accepted += 1 } else { rejected += 1 }
             }
@@ -466,11 +507,14 @@ struct WireCBORTraceParityTests {
             id: "sat",
             families: [.advertise],
             trace: trace,
-            cborBySequence: [1: advertise.cbor, 2: advertise.cbor]
+            cborBySequence: [1: advertise.cbor, 2: advertise.cbor],
+            rejections: [2: .duplicate]
         )
         let jsonRun = try await Self.replayHostJSON(item.trace)
         let cborRun = try await Self.replayStaticCBOR(item)
         #expect(Self.normalize(jsonRun) == Self.normalize(cborRun))
+        Self.assertOracle(jsonRun, item: item, leg: "JSON")
+        Self.assertOracle(cborRun, item: item, leg: "CBOR")
         // The second advertise is the duplicate; both profiles must reject it
         // with the same structured code and preserve the table.
         #expect(cborRun.observations[1].rejection != nil)

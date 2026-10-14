@@ -270,8 +270,9 @@ test-axoloty-semver-consumer: image
 
 # Harness self-tests run as the canonical support tier in the pinned
 # container. The literal test-tier call stays visible for the tier
-# validator's static scan. The wire-tool npm suite stays host-side: it
-# needs registry access and owns its own workflow contract.
+# validator's static scan. The standalone `wire-tool` target below stays
+# host-side for a quick local npm loop; the canonical ci tier runs the
+# independent golden verifier (`wire-golden-independent`) in the container.
 
 wire-tool:
 	cd Tests/Support/WireCompatibility/tool && npm ci && npm test

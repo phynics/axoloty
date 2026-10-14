@@ -102,11 +102,13 @@ choose an application-specific representation.
 
 - `coaty/3`: the field must be a complete JSON value of the required shape, or
   encoded JSON string content for a text field.
-- `axoloty/1`: the field must be exactly one complete deterministic CBOR item
-  of the required shape, or valid UTF-8 content for a text field. Tags outside
-  the allow-list, indefinite lengths, non-minimal heads, trailing bytes,
-  duplicate map keys, and excessive nesting are rejected with the structured
-  `WireDecodeError` reason.
+- `axoloty/1`: the field must be exactly one complete CBOR item of the
+  required shape, or valid UTF-8 content for a text field. The reader rejects
+  tags outside the allow-list, indefinite lengths, non-minimal heads, trailing
+  bytes, duplicate map keys, and excessive nesting, and reports each with the
+  structured `WireDecodeError` reason. Ascending map-key order is a writer
+  rule, not a reader rule: a retained raw field keeps a peer's key order
+  unchanged, and `OwnedRawCBORBoundaryTests` locks that tolerance.
 
 An owned value records its profile. `OwnedWireEvent.encodedBytes()` selects the
 writer from that profile, and `OwnedWireEvent.encode(to:)` rejects a writer
