@@ -477,6 +477,44 @@ struct WireCBORTraceParityTests {
         }
     }
 
+    @Test("CBOR seed path advertises the pre-seeded object in the bound profile")
+    func seededObjectParityAcrossProfiles() async throws {
+        // The trace starts with an already-active object, so the replay seeds
+        // it through the production Advertise path before the first step. The
+        // seed payload is built with the bound profile's wire writer, so the
+        // `axoloty/1` leg must hand a native CBOR object to its CBOR decoder
+        // rather than the `coaty/3` JSON text. A channel step preserves the
+        // seeded table, so both legs must observe the object.
+        let manifest = try Self.loadManifest()
+        let channel = try Self.loadGolden(manifest, id: "channel-full")
+        let trace = ProtocolTrace(
+            id: "wire-cbor-seeded",
+            description: "Pre-seeded object survives a channel step",
+            initialState: Self.afterAdvertise,
+            steps: [
+                Self.step(
+                    sequence: 1,
+                    family: .channel,
+                    direction: .inbound,
+                    payload: channel.json,
+                    priorState: Self.afterAdvertise
+                )
+            ]
+        )
+        let item = ParityCase(
+            id: "seed",
+            families: [.channel],
+            trace: trace,
+            cborBySequence: [1: channel.cbor]
+        )
+        let jsonRun = try await Self.replayHostJSON(item.trace)
+        let cborRun = try await Self.replayStaticCBOR(item)
+        #expect(Self.normalize(jsonRun) == Self.normalize(cborRun))
+        Self.assertOracle(jsonRun, item: item, leg: "JSON")
+        Self.assertOracle(cborRun, item: item, leg: "CBOR")
+        #expect(cborRun.observations[0].nextState.activeObjectIDs == [Self.advertisedObjectID])
+    }
+
     @Test("Duplicate advertise is rejected identically")
     func rejectionShapeAgrees() async throws {
         let manifest = try Self.loadManifest()
