@@ -261,7 +261,7 @@ func wireSemanticKeysEqual(bytes: UnsafeBufferPointer<UInt8>, lhs: Range<Int>, r
 public struct WireReader: ~Sendable {
     @usableFromInline let bytes: UnsafeRawPointer
     public let length: Int
-    @usableFromInline let index: WireFieldIndex
+    @usableFromInline var index: WireFieldIndex
     @usableFromInline let isCBOR: Bool
 
     /// Creates a reader over a borrowed JSON byte buffer.
@@ -281,11 +281,10 @@ public struct WireReader: ~Sendable {
     public init(bytes: UnsafePointer<UInt8>, length: Int) {
         self.bytes = UnsafeRawPointer(bytes); self.length = max(0, length)
         self.isCBOR = false
+        self.index = WireFieldIndex()
         let buffer = UnsafeBufferPointer(start: bytes, count: max(0, length))
-        var index = WireFieldIndex()
         guard buffer.count <= WireBufferConfig.maxPayloadSize else {
-            index.failure = WireDecodeError(.payloadExceedsLimit, byteOffset: buffer.count)
-            self.index = index
+            self.index.failure = WireDecodeError(.payloadExceedsLimit, byteOffset: buffer.count)
             return
         }
         let source = unsafe RawSpan(
@@ -295,10 +294,11 @@ public struct WireReader: ~Sendable {
             for offset in 0..<buffer.count { padded.append(source[offset]) }
             for _ in 0..<8 { padded.append(0x7D) }
             padded.span.withUnsafeBufferPointer { paddedBuffer in
-                index = Self.tokenize(buffer: buffer, padded: paddedBuffer)
+                withUnsafeMutablePointer(to: &self.index) { indexPointer in
+                    Self.tokenize(buffer: buffer, padded: paddedBuffer, into: indexPointer)
+                }
             }
         }
-        self.index = index
     }
     #endif
 
@@ -321,17 +321,15 @@ public struct WireReader: ~Sendable {
     ) {
         self.bytes = UnsafeRawPointer(bytes); self.length = max(0, length)
         self.isCBOR = false
+        self.index = WireFieldIndex()
         let buffer = UnsafeBufferPointer(start: bytes, count: max(0, length))
-        var index = WireFieldIndex()
         guard buffer.count <= WireBufferConfig.maxPayloadSize else {
-            index.failure = WireDecodeError(.payloadExceedsLimit, byteOffset: buffer.count)
-            self.index = index
+            self.index.failure = WireDecodeError(.payloadExceedsLimit, byteOffset: buffer.count)
             return
         }
         let requiredCapacity = WireBufferConfig.maxPayloadSize + 8
         guard workspace.capacity >= requiredCapacity else {
-            index.failure = WireDecodeError(.workspaceExceedsLimit, byteOffset: workspace.capacity)
-            self.index = index
+            self.index.failure = WireDecodeError(.workspaceExceedsLimit, byteOffset: workspace.capacity)
             return
         }
         workspace.withStorage { padded in
@@ -339,9 +337,10 @@ public struct WireReader: ~Sendable {
                 padded.baseAddress!.initialize(from: buffer.baseAddress!, count: buffer.count)
             }
             for offset in buffer.count..<(buffer.count + 8) { padded[offset] = 0x7D }
-            index = Self.tokenize(buffer: buffer, padded: UnsafeBufferPointer(padded))
+            withUnsafeMutablePointer(to: &self.index) { indexPointer in
+                Self.tokenize(buffer: buffer, padded: UnsafeBufferPointer(padded), into: indexPointer)
+            }
         }
-        self.index = index
     }
     #endif
 
@@ -360,8 +359,11 @@ public struct WireReader: ~Sendable {
         let clamped = max(0, length)
         self.bytes = UnsafeRawPointer(cborBytes)
         self.length = clamped
-        self.index = Self.cborIndex(bytes: UnsafeRawPointer(cborBytes), length: clamped)
         self.isCBOR = true
+        self.index = WireFieldIndex()
+        withUnsafeMutablePointer(to: &self.index) { indexPointer in
+            Self.fillCBORIndex(indexPointer, bytes: UnsafeRawPointer(cborBytes), length: clamped)
+        }
     }
 
     /// Builds the borrowed field index for one CBOR map payload.
@@ -369,11 +371,14 @@ public struct WireReader: ~Sendable {
     /// The walk mirrors the JSON tokenizer: the top-level map is indexed once
     /// into bounded slots, text keys are compared bytewise, duplicate keys are
     /// rejected, and trailing bytes after the map are a decode failure.
-    private static func cborIndex(bytes: UnsafeRawPointer, length: Int) -> WireFieldIndex {
-        var index = WireFieldIndex()
+    private static func fillCBORIndex(
+        _ index: UnsafeMutablePointer<WireFieldIndex>,
+        bytes: UnsafeRawPointer,
+        length: Int
+    ) {
         guard length <= WireBufferConfig.maxPayloadSize else {
-            index.failure = WireDecodeError(.payloadExceedsLimit, byteOffset: length)
-            return index
+            index.pointee.failure = WireDecodeError(.payloadExceedsLimit, byteOffset: length)
+            return
         }
         let buffer = UnsafeBufferPointer(
             start: bytes.assumingMemoryBound(to: UInt8.self), count: length
@@ -384,11 +389,11 @@ public struct WireReader: ~Sendable {
         )
         do throws(WireDecodeError) {
             let pairCount = try reader.readMapHeader()
-            index.rootObject = true
+            index.pointee.rootObject = true
             for _ in 0..<pairCount {
                 let keyRange = try reader.readTextKeyRange()
                 let item = try reader.readIndexedItem()
-                index.append(
+                index.pointee.append(
                     WireFieldSlot(key: keyRange, value: item.value, content: item.content, kind: item.kind),
                     bytes: buffer
                 )
@@ -400,9 +405,8 @@ public struct WireReader: ~Sendable {
                 )
             }
         } catch {
-            if index.failure == nil { index.failure = error }
+            if index.pointee.failure == nil { index.pointee.failure = error }
         }
-        return index
     }
 
     /// Validates that the complete input is one object of the active profile's format.
@@ -462,29 +466,26 @@ public struct WireReader: ~Sendable {
 
     private static func tokenize(
         buffer: UnsafeBufferPointer<UInt8>,
-        padded: UnsafeBufferPointer<UInt8>
-    ) -> WireFieldIndex {
-        var index = WireFieldIndex()
-        withUnsafeMutablePointer(to: &index) { indexPointer in
-            let destination = WireFieldDestination(bytes: buffer, index: indexPointer)
-            var tokenizer = JSONTokenizer(bytes: padded, destination: destination)
-            if let parserError = tokenizer.scanValueResult() {
-                let missingData: Bool
-                if case .missingData = parserError { missingData = true } else { missingData = false }
-                indexPointer.pointee.failure = Self.parserFailure(
-                    buffer,
-                    offset: tokenizer.currentOffset,
-                    destination: tokenizer.destination,
-                    parserErrorIsMissingData: missingData
-                )
-            }
-            Self.finalizeIndex(
-                indexPointer,
-                bytes: buffer,
-                currentOffset: tokenizer.currentOffset
+        padded: UnsafeBufferPointer<UInt8>,
+        into index: UnsafeMutablePointer<WireFieldIndex>
+    ) {
+        let destination = WireFieldDestination(bytes: buffer, index: index)
+        var tokenizer = JSONTokenizer(bytes: padded, destination: destination)
+        if let parserError = tokenizer.scanValueResult() {
+            let missingData: Bool
+            if case .missingData = parserError { missingData = true } else { missingData = false }
+            index.pointee.failure = Self.parserFailure(
+                buffer,
+                offset: tokenizer.currentOffset,
+                destination: tokenizer.destination,
+                parserErrorIsMissingData: missingData
             )
         }
-        return index
+        Self.finalizeIndex(
+            index,
+            bytes: buffer,
+            currentOffset: tokenizer.currentOffset
+        )
     }
     #endif
 
