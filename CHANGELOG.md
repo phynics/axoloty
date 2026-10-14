@@ -80,6 +80,15 @@ fork, through CoatySwift 2.4.0, remain documented in the
   as an experimental Zenoh row, and the README links the Zenoh encoding
   decision (ADR 0009) instead of only the earlier ADR 0008 note.
 
+### Fixed
+
+- The module policy rejects a portable target that imports a host target
+  without a `portableInterface` declaration. `AxolotyZenohCore` keeps its
+  adapter/portable classification because its only C dependency,
+  `CAxolotyZenoh`, declares its public ABI portable while its implementation
+  stays host. The process-global session registry therefore cannot leak into
+  the portable classification (#1002).
+
 ## [0.9.0] - 2026-10-08
 
 Axoloty 0.9.0 requires Swift 6.4, completes the embedded firmware split, and
