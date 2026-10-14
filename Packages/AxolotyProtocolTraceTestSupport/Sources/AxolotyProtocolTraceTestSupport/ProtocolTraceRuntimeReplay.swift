@@ -127,6 +127,66 @@ fileprivate struct TraceWireInputs {
     func payload(forJSON json: String) -> [UInt8] {
         profile == .axoloty1CBOR ? TracePayloadCBOR.encode(json) : Array(json.utf8)
     }
+
+    /// Builds the Advertise seed payload for one active trace object.
+    ///
+    /// The seed advertises a bounded `trace.Object` so a later step can
+    /// observe it. The profile's wire writer emits the sealed `coaty/3` JSON
+    /// bytes unchanged and a native `axoloty/1` CBOR map otherwise, so a
+    /// CBOR-bound replay never hands JSON to its CBOR decoder.
+    ///
+    /// - Parameters:
+    ///   - objectID: The formatted object identity the replay seeds.
+    ///   - name: The trace-local object name.
+    /// - Returns: The Advertise payload bytes in ``profile``'s encoding.
+    /// - Throws: ``WireEncodeError`` if a fixed buffer cannot hold the encoding.
+    func seedPayload(objectID: String, name: String) throws(WireEncodeError) -> [UInt8] {
+        let objectBytes = try Self.encodeSeedObject(objectID: objectID, name: name, profile: profile)
+        var output = [UInt8](repeating: 0, count: 256)
+        let length = try output.withUnsafeMutableBufferPointer { buffer throws(WireEncodeError) -> Int in
+            guard let baseAddress = buffer.baseAddress else { throw WireEncodeError.bufferOverflow }
+            var writer = WireCodec(profile: profile).writer(buffer: baseAddress, capacity: buffer.count)
+            try writer.beginObject()
+            try objectBytes.withUnsafeBufferPointer { objectBuffer throws(WireEncodeError) in
+                guard let objectAddress = objectBuffer.baseAddress else { throw WireEncodeError.invalidValue }
+                try writer.writeRawField("object", ByteSlice(bytes: objectAddress, length: objectBuffer.count))
+            }
+            try writer.endObject()
+            return writer.position
+        }
+        output.removeSubrange(length..<output.count)
+        return output
+    }
+
+    /// Encodes the advertised object map for ``seedPayload(objectID:name:)``.
+    private static func encodeSeedObject(objectID: String, name: String, profile: WireProfile) throws(WireEncodeError) -> [UInt8] {
+        var output = [UInt8](repeating: 0, count: 256)
+        let length = try output.withUnsafeMutableBufferPointer { buffer throws(WireEncodeError) -> Int in
+            guard let baseAddress = buffer.baseAddress else { throw WireEncodeError.bufferOverflow }
+            var writer = WireCodec(profile: profile).writer(buffer: baseAddress, capacity: buffer.count)
+            try writer.beginObject()
+            try Self.writeSeedStringField(&writer, "objectId", objectID)
+            try writer.writeComma()
+            try Self.writeSeedStringField(&writer, "coreType", "CoatyObject")
+            try writer.writeComma()
+            try Self.writeSeedStringField(&writer, "objectType", "trace.Object")
+            try writer.writeComma()
+            try Self.writeSeedStringField(&writer, "name", name)
+            try writer.endObject()
+            return writer.position
+        }
+        output.removeSubrange(length..<output.count)
+        return output
+    }
+
+    /// Writes one string-valued seed field from a Swift string.
+    private static func writeSeedStringField(_ writer: inout WireWriter, _ key: StaticString, _ value: String) throws(WireEncodeError) {
+        let bytes = Array(value.utf8)
+        try bytes.withUnsafeBufferPointer { buffer throws(WireEncodeError) in
+            guard let baseAddress = buffer.baseAddress else { throw WireEncodeError.invalidValue }
+            try writer.writeStringField(key, ByteSlice(bytes: baseAddress, length: buffer.count))
+        }
+    }
 }
 
 struct StaticTraceReplayAdapter: TraceReplayAdapter {
@@ -393,8 +453,8 @@ private struct HostRuntimeTraceReplay: RuntimeTraceDriver {
         for objectID in state.activeObjectIDs {
             let object = Self.identity(objectID)
             let topic = "\(wireInputs.routePrefix)/trace/ADV/\(Self.uuidText(object))"
-            let payload = "{\"object\":{\"objectId\":\"\(Self.uuidText(object))\",\"coreType\":\"CoatyObject\",\"objectType\":\"trace.Object\",\"name\":\"\(objectID)\"}}"
-            _ = try await injectAndAwaitReceipt(.profile(route: topic, payload: wireInputs.payload(forJSON: payload), nowMS: UInt32(time)))
+            let payload = try wireInputs.seedPayload(objectID: Self.uuidText(object), name: objectID)
+            _ = try await injectAndAwaitReceipt(.profile(route: topic, payload: payload, nowMS: UInt32(time)))
         }
         if let correlationID = state.pendingCorrelationIDs.first {
             let correlation = Self.identity(correlationID)
@@ -653,7 +713,7 @@ fileprivate struct SharedProtocolTraceReplay<let capacity: Int>: ~Copyable {
         if let seedStep {
             labels.learn(state: state)
             for objectID in state.activeObjectIDs {
-                try Self.seedObject(objectID, routePrefix: wireInputs.routePrefix, processor: &processor, sink: &sink, time: seedStep.timeMilliseconds)
+                try Self.seedObject(objectID, wireInputs: wireInputs, processor: &processor, sink: &sink, time: seedStep.timeMilliseconds)
                 sink.removeAll()
             }
             if let correlationID = state.pendingCorrelationIDs.first {
@@ -706,7 +766,7 @@ fileprivate struct SharedProtocolTraceReplay<let capacity: Int>: ~Copyable {
                 // Materialize initial state once through the production
                 // Interface; later steps exercise the same processor state.
                 for objectID in state.activeObjectIDs {
-                    try Self.seedObject(objectID, routePrefix: wireInputs.routePrefix, processor: &processor, sink: &sink, time: step.timeMilliseconds)
+                    try Self.seedObject(objectID, wireInputs: wireInputs, processor: &processor, sink: &sink, time: step.timeMilliseconds)
                     sink.removeAll()
                 }
                 if let correlationID = state.pendingCorrelationIDs.first {
@@ -750,14 +810,13 @@ fileprivate struct SharedProtocolTraceReplay<let capacity: Int>: ~Copyable {
         return TraceRun(traceID: trace.id, observations: observations)
     }
 
-    fileprivate static func seedObject<S: ~Copyable & ProtocolActionSink>(_ name: String, routePrefix: String, processor: inout ProtocolProcessor<capacity>, sink: inout S, time: UInt64) throws {
+    fileprivate static func seedObject<S: ~Copyable & ProtocolActionSink>(_ name: String, wireInputs: TraceWireInputs, processor: inout ProtocolProcessor<capacity>, sink: inout S, time: UInt64) throws {
         let object = Self.identity(name)
-        let topic = "\(routePrefix)/trace/ADV/\(Self.uuidText(object))"
+        let topic = "\(wireInputs.routePrefix)/trace/ADV/\(Self.uuidText(object))"
         // Seed through the same validated Advertise path as the trace step.
-        // An empty object is syntactically JSON but is not an accepted
-        // AdvertiseWireData value, which would leave a following Deadvertise
-        // trace without the object it claims to remove.
-        let payload = "{\"object\":{\"objectId\":\"\(Self.uuidText(object))\",\"coreType\":\"CoatyObject\",\"objectType\":\"trace.Object\",\"name\":\"\(name)\"}}"
+        // The profile's wire writer keeps the sealed `coaty/3` JSON bytes and
+        // gives the `axoloty/1` leg a native CBOR object rather than JSON.
+        let payload = try wireInputs.seedPayload(objectID: Self.uuidText(object), name: name)
         try Self.withBorrowed(topic: topic, payload: payload) { frame in
             _ = processor.processInbound(.profile(frame), nowMS: UInt32(time), sink: &sink)
         }
@@ -1015,7 +1074,7 @@ fileprivate struct StaticTraceVerifier<let traceCapacity: Int>: ~Copyable {
 
     mutating func seed(state: TraceState, time: UInt64) throws {
         for objectID in state.activeObjectIDs {
-            try seedObject(objectID, routePrefix: wireInputs.routePrefix, time: time)
+            try seedObject(objectID, time: time)
         }
         if let correlationID = state.pendingCorrelationIDs.first {
             let request = Self.requestSeed(for: firstFamily, profile: wireInputs.profile)
@@ -1101,10 +1160,10 @@ fileprivate struct StaticTraceVerifier<let traceCapacity: Int>: ~Copyable {
         }
     }
 
-    private mutating func seedObject(_ name: String, routePrefix: String, time: UInt64) throws {
+    private mutating func seedObject(_ name: String, time: UInt64) throws {
         let object = Self.identity(name)
-        let topic = "\(routePrefix)/trace/ADV/\(Self.uuidText(object))"
-        let payload = "{\"object\":{\"objectId\":\"\(Self.uuidText(object))\",\"coreType\":\"CoatyObject\",\"objectType\":\"trace.Object\",\"name\":\"\(name)\"}}"
+        let topic = "\(wireInputs.routePrefix)/trace/ADV/\(Self.uuidText(object))"
+        let payload = try wireInputs.seedPayload(objectID: Self.uuidText(object), name: name)
         _ = try Self.withBorrowed(topic: topic, payload: payload) { frame in
             runtime.receive(frame, nowMS: UInt32(time))
         }
