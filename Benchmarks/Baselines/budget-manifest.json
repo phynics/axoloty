@@ -3,7 +3,7 @@
   "corpusVersion": 1,
   "moduleApiVersion": "AxolotyWire-1.0",
   "approvalStatus": "provisional",
-  "$comment": "Provisional performance and resource budgets. Host latency and binary-size baselines are pending until the required clean benchmark and release-build evidence is collected on the NixOS host. Device measurements are provisional: the esp32c6 values retained here originate from the C surrogate benchmark (issue #302), which did not execute production AxolotyWire Swift interfaces; production Embedded Swift device evidence is tracked in issue #322. The manifest may only move to approvalStatus=approved once host baselines are populated and Embedded Swift device evidence satisfies every approval gate enforced by Tests/Support/checks/check-budget-manifest.sh. Do not edit manually — update via PR with evidence.",
+  "$comment": "Provisional performance and resource budgets. Host latency and binary-size baselines are measured but their budgets are still pending a second clean run. Device measurements are per profile: esp32c6-mqtt carries production Embedded Swift JSON measurements (embedded-swift-smoke-v2, 2026-10-10) and esp32c6-zenoh is pending the CBOR codec decision. The C surrogate from issue #302 is retained only as historical evidence and is never approval-eligible. Production Embedded Swift device evidence and final budget re-derivation are tracked in issue #987 and phynics/axoloty-embedded#63. The manifest may only move to approvalStatus=approved once host budgets are populated and every device profile satisfies each approval gate enforced by Tests/Support/checks/check-budget-manifest.sh. Do not edit manually — update via PR with evidence.",
   "noisePolicy": {
     "relativeMAD": 0.05,
     "allocationVariance": "exact-zero",
@@ -20,8 +20,23 @@
   "historicalEvidence": {
     "esp32c6-c-surrogate": {
       "approvalEligible": false,
-      "supersededBy": "#322",
-      "description": "C surrogate benchmark from issue #302. Did not execute production AxolotyWire Swift interfaces. Retained as historical engineering data only."
+      "supersededBy": "#987",
+      "description": "C surrogate benchmark from issue #302. Did not execute production AxolotyWire Swift interfaces. Superseded by the production Embedded Swift esp32c6-mqtt profile and retained as historical engineering data only.",
+      "measurementMethod": "C surrogate device benchmark; not a production Embedded Swift run.",
+      "deviceLatencyUs": {
+        "topicParse": { "p50": 2, "p95": 2 },
+        "dtoDecodeAdvertise": { "p50": 6, "p95": 6 },
+        "dtoDecodeIoValue": { "p50": 3, "p95": 3 },
+        "dtoDecodeAssociate": { "p50": 5, "p95": 5 },
+        "combinedParseDecode": { "p50": 7, "p95": 8 }
+      },
+      "deviceResources": {
+        "freeHeapBytes": 458684,
+        "minFreeHeapBytes": 458684,
+        "stackHighWaterBytes": 6580,
+        "flashImageBytes": 163000,
+        "sustainedRateMsgPerS": 100
+      }
     }
   },
   "environments": {
@@ -144,99 +159,229 @@
         "AxolotyConsumer": { "hostDeps": ["mqtt-nio", "swift-nio", "NIOSSL", "NIOTransportServices", "swift-log", "ErrorKit", "IkigaJSON"], "status": "expected" }
       }
     },
-    "esp32c6": {
+    "esp32c6-mqtt": {
       "board": "ESP32-C6 (QFN40) rev v0.0",
       "implementation": "embedded-swift",
-      "sourceRun": null,
+      "profile": "esp32c6-mqtt",
+      "transport": "mqtt",
+      "codec": "json",
+      "sourceRun": "embedded-swift-smoke-v2 esp32c6-mqtt 2026-10-10; board 40:4c:ca:4d:8c:e8; Core 68e46c7; axoloty-embedded 49fdf44; image 01a9145a…570b (661936 B); 1000 warm-up passes, calibrated batch, 30 samples, no serial I/O in the timed window",
       "compiler": "RISC-V GCC 14.2.0",
       "toolchain": "ESP-IDF v5.4, RISC-V GCC 14.2.0",
       "optimization": "release",
       "fingerprint": {
-        "boardModel": "",
-        "boardRevision": "",
-        "cpuFrequencyMhz": "",
-        "swiftCompilerVersion": "",
+        "boardModel": "ESP32-C6 (QFN40)",
+        "boardRevision": "v0.0",
+        "cpuFrequencyMhz": "160",
+        "swiftCompilerVersion": "6.4",
         "idfSwiftVersion": "",
-        "espIdfVersion": "",
-        "gccBinutilsVersion": "",
-        "optimizationMode": "",
-        "compilerFlags": "",
+        "espIdfVersion": "v5.4",
+        "gccBinutilsVersion": "14.2.0",
+        "optimizationMode": "-Osize -wmo",
+        "compilerFlags": "-Osize -wmo",
         "containerImageDigest": "",
-        "corpusVersion": "",
+        "corpusVersion": "1",
         "corpusHash": "",
-        "moduleApiVersion": "",
-        "gitCommit": "",
-        "gitClean": "",
-        "benchmarkHarnessVersion": "",
+        "moduleApiVersion": "AxolotyWire-1.0",
+        "gitCommit": "68e46c7",
+        "gitClean": "true",
+        "benchmarkHarnessVersion": "embedded-swift-smoke-v2",
         "freeRtosTickRate": "",
-        "taskStackSizes": ""
+        "taskStackSizes": "main=131072"
       },
       "latency": {
         "topicParse": {
-          "measuredP50us": 2,
-          "measuredP95us": 2,
-          "budgetP50us": 4,
-          "budgetP95us": 4,
+          "measuredP50ns": 9698,
+          "measuredP95ns": 9698,
+          "measuredP50us": 10,
+          "measuredP95us": 10,
+          "budgetP50us": 20,
+          "budgetP95us": 20,
           "budgetFormula": "ceil(max(power-cycle run 1, run 2) × 2)"
         },
-        "dtoDecodeAdvertise": {
-          "measuredP50us": 6,
-          "measuredP95us": 6,
-          "budgetP50us": 12,
-          "budgetP95us": 12,
+        "dtoDecode": {
+          "measuredP50ns": 203786,
+          "measuredP95ns": 203789,
+          "measuredP50us": 204,
+          "measuredP95us": 204,
+          "budgetP50us": 408,
+          "budgetP95us": 408,
           "budgetFormula": "ceil(max(power-cycle run 1, run 2) × 2)"
         },
-        "dtoDecodeIoValue": {
-          "measuredP50us": 3,
-          "measuredP95us": 3,
-          "budgetP50us": 6,
-          "budgetP95us": 6,
+        "dtoEncode": {
+          "measuredP50ns": 249521,
+          "measuredP95ns": 249551,
+          "measuredP50us": 250,
+          "measuredP95us": 250,
+          "budgetP50us": 500,
+          "budgetP95us": 500,
           "budgetFormula": "ceil(max(power-cycle run 1, run 2) × 2)"
         },
-        "dtoDecodeAssociate": {
-          "measuredP50us": 5,
-          "measuredP95us": 5,
-          "budgetP50us": 10,
-          "budgetP95us": 10,
+        "borrowedValidation": {
+          "measuredP50ns": 10308,
+          "measuredP95ns": 10308,
+          "measuredP50us": 11,
+          "measuredP95us": 11,
+          "budgetP50us": 21,
+          "budgetP95us": 21,
           "budgetFormula": "ceil(max(power-cycle run 1, run 2) × 2)"
         },
         "combinedParseDecode": {
-          "measuredP50us": 7,
-          "measuredP95us": 8,
-          "budgetP50us": 14,
-          "budgetP95us": 16,
+          "measuredP50ns": 235810,
+          "measuredP95ns": 235841,
+          "measuredP50us": 236,
+          "measuredP95us": 236,
+          "budgetP50us": 472,
+          "budgetP95us": 472,
           "budgetFormula": "ceil(max(power-cycle run 1, run 2) × 2)"
         }
       },
       "resources": {
         "freeHeap": {
-          "measured": 458684,
-          "budgetMin": 400000,
+          "measured": 228332,
+          "budgetMin": 182665,
           "unit": "bytes",
           "budgetFormula": "floor(worst observed minimum × 0.8)"
         },
         "minFreeHeap": {
-          "measured": 458684,
-          "budgetMin": 400000,
+          "measured": 226276,
+          "budgetMin": 181020,
           "unit": "bytes",
           "budgetFormula": "floor(worst observed minimum × 0.8)"
         },
         "stackHighWater": {
-          "measured": 6580,
-          "budgetMin": 4000,
+          "measured": 2648,
+          "budgetMin": 2118,
           "unit": "bytes",
           "budgetFormula": "floor(worst observed minimum × 0.8)"
         },
         "sustainedRate": {
-          "measured": 100,
+          "measured": null,
           "budgetMin": 90,
           "capacityHeadroomMsgPerS": null,
           "unit": "msg/s",
-          "budgetFormula": "100 msg/s for 10 min; approved only at >=125 msg/s measured clean capacity"
+          "budgetFormula": "100 msg/s for 10 min; approved only at >=125 msg/s measured clean capacity",
+          "status": "pending-baseline"
         },
         "flashImage": {
-          "measured": 163000,
-          "budgetMax": 1048576,
+          "measured": 661936,
+          "budgetMax": 794324,
+          "partitionLimitBytes": 2097152,
+          "unit": "bytes",
+          "budgetFormula": "ceil(worst observed size × 1.2)"
+        }
+      },
+      "hotPathAllocations": {
+        "budget": 0,
+        "measured": 0,
+        "status": "measured"
+      },
+      "sizeLimits": {
+        "maxPayloadSize": { "limit": 2048, "overLimitRejected": true },
+        "maxTopicLength": { "limit": 256, "overLimitRejected": true },
+        "maxSubscribers": { "limit": 8, "overLimitRejected": true },
+        "maxFamilyEntries": { "limit": 16, "overLimitRejected": true },
+        "maxFamilySubscribers": { "limit": 4, "overLimitRejected": true }
+      }
+    },
+    "esp32c6-zenoh": {
+      "board": "ESP32-C6 (QFN40) rev v0.0",
+      "implementation": "embedded-swift",
+      "profile": "esp32c6-zenoh",
+      "transport": "zenoh",
+      "codec": "cbor",
+      "status": "pending-baseline",
+      "sourceRun": null,
+      "compiler": "RISC-V GCC 14.2.0",
+      "toolchain": "ESP-IDF v5.4, RISC-V GCC 14.2.0",
+      "optimization": "release",
+      "fingerprint": {
+        "boardModel": "ESP32-C6 (QFN40)",
+        "boardRevision": "v0.0",
+        "cpuFrequencyMhz": "160",
+        "swiftCompilerVersion": "6.4",
+        "idfSwiftVersion": "",
+        "espIdfVersion": "v5.4",
+        "gccBinutilsVersion": "14.2.0",
+        "optimizationMode": "-Osize -wmo",
+        "compilerFlags": "-Osize -wmo",
+        "containerImageDigest": "",
+        "corpusVersion": "1",
+        "corpusHash": "",
+        "moduleApiVersion": "AxolotyWire-1.0",
+        "gitCommit": "",
+        "gitClean": "",
+        "benchmarkHarnessVersion": "embedded-swift-smoke-v2",
+        "freeRtosTickRate": "",
+        "taskStackSizes": "main=131072"
+      },
+      "latency": {
+        "topicParse": {
+          "measuredP50us": null,
+          "measuredP95us": null,
+          "budgetP50us": null,
+          "budgetP95us": null,
+          "budgetFormula": "ceil(max(power-cycle run 1, run 2) × 2)"
+        },
+        "dtoDecode": {
+          "measuredP50us": null,
+          "measuredP95us": null,
+          "budgetP50us": null,
+          "budgetP95us": null,
+          "budgetFormula": "ceil(max(power-cycle run 1, run 2) × 2)"
+        },
+        "dtoEncode": {
+          "measuredP50us": null,
+          "measuredP95us": null,
+          "budgetP50us": null,
+          "budgetP95us": null,
+          "budgetFormula": "ceil(max(power-cycle run 1, run 2) × 2)"
+        },
+        "borrowedValidation": {
+          "measuredP50us": null,
+          "measuredP95us": null,
+          "budgetP50us": null,
+          "budgetP95us": null,
+          "budgetFormula": "ceil(max(power-cycle run 1, run 2) × 2)"
+        },
+        "combinedParseDecode": {
+          "measuredP50us": null,
+          "measuredP95us": null,
+          "budgetP50us": null,
+          "budgetP95us": null,
+          "budgetFormula": "ceil(max(power-cycle run 1, run 2) × 2)"
+        }
+      },
+      "resources": {
+        "freeHeap": {
+          "measured": null,
+          "budgetMin": null,
+          "unit": "bytes",
+          "budgetFormula": "floor(worst observed minimum × 0.8)"
+        },
+        "minFreeHeap": {
+          "measured": null,
+          "budgetMin": null,
+          "unit": "bytes",
+          "budgetFormula": "floor(worst observed minimum × 0.8)"
+        },
+        "stackHighWater": {
+          "measured": null,
+          "budgetMin": null,
+          "unit": "bytes",
+          "budgetFormula": "floor(worst observed minimum × 0.8)"
+        },
+        "sustainedRate": {
+          "measured": null,
+          "budgetMin": null,
+          "capacityHeadroomMsgPerS": null,
+          "unit": "msg/s",
+          "budgetFormula": "100 msg/s for 10 min; approved only at >=125 msg/s measured clean capacity",
+          "status": "pending-baseline"
+        },
+        "flashImage": {
+          "measured": null,
+          "budgetMax": null,
           "partitionLimitBytes": 2097152,
           "unit": "bytes",
           "budgetFormula": "ceil(worst observed size × 1.2)"
@@ -277,8 +422,8 @@
     },
     {
       "id": "min-heap-stack-headroom",
-      "description": "Free heap >= 400000 bytes; stack high-water >= 4000 bytes",
-      "threshold": "heap>=400000, stack>=4000",
+      "description": "Production esp32c6-mqtt Embedded Swift free heap >= 181020 bytes; stack high-water >= 2118 bytes",
+      "threshold": "heap>=181020, stack>=2118",
       "thresholdType": "numeric"
     },
     {

@@ -64,6 +64,13 @@ fork, through CoatySwift 2.4.0, remain documented in the
   JSON ([ADR 0009](docs/adr/0009-zenoh-carries-only-axoloty-1.md)). The
   experimental 0.9 Zenoh encoding does not interoperate with 1.0 Zenoh peers.
   See `docs/transports/zenoh.md`.
+- Device performance budgets are per profile. The manifest records
+  `esp32c6-mqtt` from production Embedded Swift measurements
+  (`embedded-swift-smoke-v2`, 2026-10-10), retains the C surrogate from #302
+  only as historical evidence, and marks `esp32c6-zenoh` `pending-baseline`
+  until the CBOR decision (#977). The Phase 4 `min-heap-stack-headroom` gate
+  is re-derived from the production `esp32c6-mqtt` heap and stack floors
+  (#987). See [docs/performance-budgets.md](docs/performance-budgets.md).
 
 ### Migration
 

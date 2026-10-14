@@ -7,13 +7,15 @@ scope, issue #277).
 
 > **Provisional state.** The checked-in manifest is currently
 > `approvalStatus: "provisional"`. Host latency and binary-size baselines
-> are still pending (`#303`) and the ESP32-C6 device measurements
-> originate from a C surrogate (`#302`) that did not exercise production
-> AxolotyWire Swift interfaces. Issue `#322` is closed; production Embedded
-> Swift device evidence and budget re-derivation are tracked in `#987`
-> and phynics/axoloty-embedded#63. The manifest may only move to `approved` once
-> host baselines are populated and Embedded Swift device evidence
-> satisfies every approval gate enforced by
+> are measured but their budgets still await a second clean run (`#303`).
+> The C surrogate (`#302`) that did not exercise production AxolotyWire
+> Swift interfaces is now recorded only as historical evidence. Production
+> Embedded Swift measurements for the `esp32c6-mqtt` profile (JSON) are
+> recorded in the manifest; the `esp32c6-zenoh` profile is pending the CBOR
+> codec decision. Issue `#322` is closed; final per-profile budget
+> re-derivation is tracked in `#987` and phynics/axoloty-embedded#63.
+> The manifest may only move to `approved` once host budgets are populated
+> and every device profile satisfies each approval gate enforced by
 > `Tests/Support/checks/check-budget-manifest.sh`. No host/device numbers were
 > fabricated for this provisional snapshot.
 
@@ -21,7 +23,8 @@ scope, issue #277).
 
 The machine-readable budget manifest lives at
 `Benchmarks/Baselines/budget-manifest.json`. It is keyed by environment
-(host, esp32c6), toolchain, compiler, optimization mode, corpus version,
+(host, esp32c6-mqtt, esp32c6-zenoh; each device profile is its own
+environment), toolchain, compiler, optimization mode, corpus version,
 and module API version. `Tests/Support/checks/check-budget-manifest.sh` validates
 its structure and approval state; `Tests/Support/selftests/test-check-budget-manifest.sh`
 is the negative self-test suite.
@@ -51,13 +54,16 @@ The `historicalEvidence` section records non-approval-eligible prior
 runs. The `esp32c6-c-surrogate` entry marks the issue #302 C surrogate
 benchmark as `approvalEligible: false`, superseded by production Embedded
 Swift evidence tracked in `#987`, and
-retained only as historical engineering data. The validator rejects any
-manifest where a historical-evidence entry claims `approvalEligible:
-true`, regardless of `approvalStatus`.
+retained only as historical engineering data. It preserves the C-surrogate
+latency and resource readings so the prior numbers remain available for
+comparison; no environment uses them as a budget source. The validator
+rejects any manifest where a historical-evidence entry claims
+`approvalEligible: true`, regardless of `approvalStatus`.
 
 ### Required fingerprint fields
 
-Every environment (`host`, `esp32c6`) carries a `fingerprint` object
+Every environment (`host`, `esp32c6-mqtt`, `esp32c6-zenoh`) carries a
+`fingerprint` object
 with these keys, all of which must be non-empty strings when
 `approvalStatus` is `approved` (empty strings are permitted while
 `provisional`):
@@ -91,7 +97,8 @@ against; baseline comparisons are matching-fingerprint only.
   borrowed decode/routing steady-state window must record zero
   allocations (`hotPathAllocations.budget == 0`; `measured == 0` when
   approved). Any non-zero count is a failure, not drift. This is verified on
-  ESP32-C6 by the device `axoloty_heap_trace_*` gate (`make benchmark-wire-device`)
+  ESP32-C6 by the device `axoloty_heap_trace_*` gate owned by
+  `phynics/axoloty-embedded`
   and on the host by `make benchmark-wire-allocation`, which profiles a warmed
   decode + static-route pass under `heaptrack` and asserts that total allocation
   calls do not grow with the iteration count (zero per-message allocation).
@@ -101,13 +108,13 @@ against; baseline comparisons are matching-fingerprint only.
 Measured by `make benchmark-wire` (5 runs, 30 samples per operation,
 calibrated batches ≥ 250ms). p50/p95 in nanoseconds.
 
-| Operation | Budget p50 | Budget p95 | Status |
-|-----------|-----------|-----------|--------|
-| topicParse | pending | pending | pending-baseline |
-| dtoDecode | pending | pending | pending-baseline |
-| dtoEncode | pending | pending | pending-baseline |
-| borrowedValidation | pending | pending | pending-baseline |
-| combinedParseDecode | pending | pending | pending-baseline |
+| Operation | Measured p50 | Measured p95 | Budget p50 | Budget p95 | Status |
+|-----------|-------------|-------------|-----------|-----------|--------|
+| topicParse | 120ns | 157ns | pending | pending | measured |
+| dtoDecode | 2,040ns | 2,367ns | pending | pending | measured |
+| dtoEncode | 2,316ns | 2,866ns | pending | pending | measured |
+| borrowedValidation | 133ns | 191ns | pending | pending | measured |
+| combinedParseDecode | 2,189ns | 2,274ns | pending | pending | measured |
 
 **Host latency budget formula:** `ceil(max(clean run 1, clean run 2) × 1.5)`
 for both p50 and p95 (50% headroom over the worst clean run). Populate by
@@ -116,47 +123,56 @@ running `make benchmark-wire` on the NixOS host.
 ## ESP32-C6 device budgets
 
 Measured on the physical ESP32-C6 (QFN40, rev v0.0, 160MHz, 4MB flash) by the
-device benchmark now owned by `phynics/axoloty-embedded`. The `esp32c6`
-environment declares
-`implementation: "embedded-swift"`; an approved manifest must identify
-this implementation (the C surrogate is never approval-eligible). The
-provisional values below originate from the C surrogate (#302) and are
-retained pending Embedded Swift evidence (#987). p50/p95 in microseconds.
+device benchmark now owned by `phynics/axoloty-embedded`. Each device profile
+is its own manifest environment (`esp32c6-mqtt`, `esp32c6-zenoh`) and
+declares `implementation: "embedded-swift"`; an approved manifest must
+identify this implementation (the C surrogate is never approval-eligible).
+p50/p95 in microseconds.
 
-> **Note: the rows below are C-surrogate data, not production measurements.**
-> They come from the C surrogate (#302), which did not exercise the shipping
-> Embedded Swift code. First production Embedded Swift smoke measurements
-> (2026-10-08, `esp32c6-mqtt` profile, Core `68e46c7`, upper bounds from the
-> smoke harness, not a benchmark) miss several of these budgets: free heap
-> about 228 KB (budget ≥ 400,000 B), stack headroom 2,648 B (budget ≥ 4,000 B),
-> dtoDecode p50 about 204 µs (budget 6 µs), and combined parse+decode p50 about
-> 236 µs (budget 14 µs). Flash is about 750 KB (MQTT). Do not treat the
-> provisional budgets as approved; re-derivation is tracked in `#987`.
+### Production Embedded Swift measurements
 
-### Latency
+The `esp32c6-mqtt` (JSON, MQTT over Wi-Fi) profile carries production
+Embedded Swift measurements from `embedded-swift-smoke-v2` (2026-10-10,
+Core `68e46c7`, `axoloty-embedded` `49fdf44`, image `01a9145a…570b`,
+661,936 B). The harness does 1,000 warm-up passes, sizes each batch to at
+least 250 ms, subtracts loop overhead, and takes 30 samples over the 39-case
+corpus with no serial I/O in the timed window; p50 and p95 differ by 3 ns and
+repeat exactly across runs. These are measurements, not upper bounds.
+
+The `esp32c6-zenoh` (CBOR, Zenoh) profile is `pending-baseline`: the CBOR
+codec decision (#977) has not yet produced device numbers. Per the
+2026-10-11 decision, the Zenoh budgets are re-derived from CBOR
+measurements, while the JSON numbers below remain the `esp32c6-mqtt`
+baseline.
+
+#### `esp32c6-mqtt` latency
 
 | Operation | Measured p50 | Measured p95 | Budget p50 | Budget p95 |
 |-----------|-------------|-------------|-----------|-----------|
-| topicParse | 2µs | 2µs | 4µs | 4µs |
-| dtoDecode (advertise) | 6µs | 6µs | 12µs | 12µs |
-| dtoDecode (ioValue) | 3µs | 3µs | 6µs | 6µs |
-| dtoDecode (associate) | 5µs | 5µs | 10µs | 10µs |
-| combinedParseDecode | 7µs | 8µs | 14µs | 16µs |
+| topicParse | 9.698µs | 9.698µs | 20µs | 20µs |
+| dtoDecode | 203.786µs | 203.789µs | 408µs | 408µs |
+| dtoEncode | 249.521µs | 249.551µs | 500µs | 500µs |
+| borrowedValidation | 10.308µs | 10.308µs | 21µs | 21µs |
+| combinedParseDecode | 235.810µs | 235.841µs | 472µs | 472µs |
 
 **Device latency budget formula:** `ceil(max(power-cycle run 1, run 2) × 2)`
 (100% headroom) to account for temperature variation, flash access
-patterns, and watchdog interference. The validator enforces
+patterns, and watchdog interference. The `esp32c6-mqtt` budgets are
+derived from the production smoke measurements. The JSON decode cost is
+about 34× the retired C-surrogate figure and that gap is tracked in
+phynics/axoloty-embedded#66; the budget records the current production
+cost so it fails on further regression. The validator enforces
 `budgetP50us > measuredP50us` and `budgetP95us > measuredP95us`.
 
-### Resources
+#### `esp32c6-mqtt` resources
 
 | Resource | Measured | Budget | Formula |
 |----------|---------|--------|---------|
-| Free heap | 458,684 bytes | ≥ 400,000 bytes | `floor(worst observed minimum × 0.8)` |
-| Min free heap | 458,684 bytes | ≥ 400,000 bytes | `floor(worst observed minimum × 0.8)` |
-| Stack high-water | 6,580 bytes | ≥ 4,000 bytes | `floor(worst observed minimum × 0.8)` |
-| Sustained rate | 100 msg/s | ≥ 90 msg/s | 100 msg/s for 10 min; approved only at ≥ 125 msg/s measured clean capacity |
-| Flash image | 163 KB | ≤ 1,048,576 bytes (< 2,097,152 partition) | `ceil(worst observed size × 1.2)` |
+| Free heap | 228,332 bytes | ≥ 182,665 bytes | `floor(worst observed minimum × 0.8)` |
+| Min free heap | 226,276 bytes | ≥ 181,020 bytes | `floor(worst observed minimum × 0.8)` |
+| Stack high-water | 2,648 bytes | ≥ 2,118 bytes | `floor(worst observed minimum × 0.8)` |
+| Sustained rate | pending | ≥ 90 msg/s | 100 msg/s for 10 min; approved only at ≥ 125 msg/s measured clean capacity |
+| Flash image | 661,936 bytes | ≤ 794,324 bytes (< 2,097,152 partition) | `ceil(worst observed size × 1.2)` |
 
 **Device resource minimum budget formula:** `floor(worst observed minimum ×
 0.8)` (20% headroom below the worst observed minimum). **Device size-max
@@ -169,7 +185,8 @@ Mandatory device metrics when `approved`: `freeHeap`, `minFreeHeap`,
 `largestFreeBlock`, `fragmentation`, `stackHighWater`, `data`, `bss`,
 `iram`, `flashImage`. The `hotPathAllocations` metric must always be
 present with `budget: 0` (exact-zero); when approved, `measured` must
-also equal `0`.
+also equal `0`. The production `esp32c6-mqtt` hot path measured `0`
+allocations.
 
 ### Size limits
 
@@ -214,8 +231,9 @@ At least 5 gates, each with `id`, `description`, `threshold`, and
 3. **`no-reset-watchdog-race-exhaustion`** — the device benchmark
    completes without watchdog reset, heap exhaustion, or stack overflow
    (pass-fail).
-4. **`min-heap-stack-headroom`** — free heap ≥ 400,000 bytes; stack
-   high-water ≥ 4,000 bytes (numeric).
+4. **`min-heap-stack-headroom`** — the production `esp32c6-mqtt`
+   Embedded Swift free heap ≥ 181,020 bytes; stack high-water ≥ 2,118 bytes
+   (numeric).
 5. **`sustained-rate-pass`** — 100 msg/s for 10s with zero missed
    messages and zero allocation (numeric).
 
@@ -246,7 +264,6 @@ make verify
 make benchmark-wire
 make benchmark-wire-allocation
 make benchmark-wire-bounds
-make benchmark-wire-device
 make test-tier TIER=ci && make test-tier TIER=wire
 sh Tests/Support/checks/check-budget-manifest.sh
 sh Tests/Support/selftests/test-check-budget-manifest.sh

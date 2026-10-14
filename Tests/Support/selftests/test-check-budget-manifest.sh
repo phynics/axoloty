@@ -49,6 +49,7 @@ neg "phase4CompletionGates < 4 fails" "$TMP/11-completion-gates-too-few.json"
 neg "approvalStatus invalid value fails" "$TMP/12-invalid-approval-status.json"
 neg "AxolotyWireConsumer.hostDeps non-empty fails" "$TMP/13-wire-hostdeps-nonempty.json"
 neg "flashImage budgetMax >= partitionLimitBytes fails" "$TMP/14-partition-unsafe.json"
+neg "empty historicalEvidence supersededBy fails" "$TMP/15-empty-superseded-by.json"
 
 echo "  -- negative cases (approved-base mutations) --"
 neg "approved + host latency pending-baseline fails" "$TMP/02-approved-host-latency-pending.json"
