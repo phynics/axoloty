@@ -184,6 +184,98 @@ public struct OwnedIoValueWireData: Sendable, Equatable {
     }
 }
 
+// MARK: - Typed axoloty/1 payload construction
+
+extension OwnedIoValueWireData {
+    /// Creates owned `axoloty/1` IoValue payload fields carrying one
+    /// floating-point item.
+    ///
+    /// Floating point is an `axoloty/1`-only lexical kind and the native
+    /// carrier for a fractional IO value. The payload is one bare CBOR item, so
+    /// it round trips through ``IoValueWireData/floatPayload``.
+    ///
+    /// - Parameter value: The value to encode.
+    /// - Throws: ``WireEncodeError/bufferOverflow`` if the item exceeds
+    ///   ``WireBufferConfig/maxPayloadSize``.
+    public init(cborFloat value: Double) throws(WireEncodeError) {
+        self.init(
+            unchecked: try Self.encodeCBORItem { (writer: inout WireWriter) throws(WireEncodeError) in
+                try writer.writeFloat64(value)
+            },
+            profile: .axoloty1CBOR
+        )
+    }
+
+    /// Creates owned `axoloty/1` IoValue payload fields carrying one byte
+    /// string item.
+    ///
+    /// A byte string is the `axoloty/1` carrier for an opaque binary IO value.
+    /// The payload is one bare CBOR item, so it round trips through
+    /// ``IoValueWireData/byteStringPayload``.
+    ///
+    /// - Parameter bytes: The byte-string content, without an encoding head.
+    /// - Throws: ``WireEncodeError/bufferOverflow`` if the item exceeds
+    ///   ``WireBufferConfig/maxPayloadSize``.
+    public init(cborByteString bytes: [UInt8]) throws(WireEncodeError) {
+        let encoded = try bytes.withUnsafeBufferPointer { buffer throws(WireEncodeError) -> [UInt8] in
+            let slice = buffer.baseAddress.map { ByteSlice(bytes: $0, length: buffer.count) } ?? .empty
+            return try Self.encodeCBORItem { (writer: inout WireWriter) throws(WireEncodeError) in
+                try writer.writeByteString(slice)
+            }
+        }
+        self.init(unchecked: encoded, profile: .axoloty1CBOR)
+    }
+
+    /// Creates owned `axoloty/1` IoValue payload fields carrying one tagged
+    /// item.
+    ///
+    /// A tag labels the item that follows it, such as epoch time (tag 1) or a
+    /// UUID (tag 37). The payload is one bare CBOR item, so it round trips
+    /// through ``IoValueWireData/tagPayload``.
+    ///
+    /// - Parameters:
+    ///   - tag: The semantic-tag number.
+    ///   - taggedItem: One complete encoded `axoloty/1` CBOR item for the tag
+    ///     to label.
+    /// - Throws: ``WireEncodeError/bufferOverflow`` if the item exceeds
+    ///   ``WireBufferConfig/maxPayloadSize`` or ``WireEncodeError/invalidValue``
+    ///   if `taggedItem` is not one complete CBOR item.
+    public init(cborTag tag: UInt64, taggedItem: [UInt8]) throws(WireEncodeError) {
+        let encoded = try taggedItem.withUnsafeBufferPointer { buffer throws(WireEncodeError) -> [UInt8] in
+            let slice = buffer.baseAddress.map { ByteSlice(bytes: $0, length: buffer.count) } ?? .empty
+            return try Self.encodeCBORItem { (writer: inout WireWriter) throws(WireEncodeError) in
+                try writer.writeTag(tag)
+                try writer.writeRawValue(slice)
+            }
+        }
+        self.init(unchecked: encoded, profile: .axoloty1CBOR)
+    }
+
+    /// Encodes one bare `axoloty/1` CBOR item into a new, exactly sized byte
+    /// array through the shared wire facade.
+    private static func encodeCBORItem(
+        _ body: (inout WireWriter) throws(WireEncodeError) -> Void
+    ) throws(WireEncodeError) -> [UInt8] {
+        var output = [UInt8](repeating: 0, count: WireBufferConfig.maxPayloadSize)
+        var result: Result<Int, WireEncodeError> = .failure(.bufferOverflow)
+        output.withUnsafeMutableBufferPointer { buffer in
+            guard let baseAddress = buffer.baseAddress else { return }
+            var writer = WireCodec(profile: .axoloty1CBOR).writer(
+                buffer: baseAddress, capacity: buffer.count
+            )
+            do throws(WireEncodeError) {
+                try body(&writer)
+                result = .success(writer.position)
+            } catch {
+                result = .failure(error)
+            }
+        }
+        let length = try result.get()
+        output.removeSubrange(length..<output.count)
+        return output
+    }
+}
+
 /// Owned Discover payload fields.
 public struct OwnedDiscoverWireData: Sendable, Equatable {
     /// Optional encoded string content for the external identifier.

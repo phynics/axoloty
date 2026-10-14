@@ -96,6 +96,14 @@ RFC 8949 §6.2 reaches the same limits from the CBOR side: byte strings, tags,
 and non-finite floats have no direct JSON form, and a generic converter must
 choose an application-specific representation.
 
+An `axoloty/1` IO value payload is one CBOR item. `IoValueWireData` exposes the
+byte-string, floating-point, and tag kinds through `byteStringPayload`,
+`floatPayload`, and `tagPayload`; each view is `nil` under `coaty/3`, which
+keeps the raw payload unchanged. `OwnedIoValueWireData(cborFloat:)`,
+`OwnedIoValueWireData(cborByteString:)`, and
+`OwnedIoValueWireData(cborTag:taggedItem:)` build one bare `axoloty/1` item for
+a producer that does not write CBOR directly.
+
 ## Rejection and retention rules
 
 `OwnedWireDataValidation` enforces one rule per profile:
