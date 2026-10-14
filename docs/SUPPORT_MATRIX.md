@@ -32,7 +32,7 @@ The route prefix selects exactly one profile. MQTT carries the sealed
 | Zenoh (host, client and peer) | `axoloty/1` CBOR | Experimental | `wire-cbor` golden corpus and host/static trace parity, plus the `zenoh-offline` and `zenoh-live` tiers. From 1.0, Zenoh carries only `axoloty/1` CBOR ([ADR 0009](./adr/0009-zenoh-carries-only-axoloty-1.md)); 0.9.x Zenoh peers do not interoperate with 1.0 Zenoh peers. |
 | ESP32-C6 (Embedded Swift) | `coaty/3` JSON | Validated at 0.8 scope | Advertise/Deadvertise and Discover/Resolve only. Device qualification lives in `phynics/axoloty-embedded`. |
 
-CBOR-only consumers have three known limitations; see
+CBOR-only consumers have two known limitations; see
 [protocol/axoloty-1.md](./protocol/axoloty-1.md#cbor-only-consumers).
 
 ## Communication events

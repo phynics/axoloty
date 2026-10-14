@@ -45,7 +45,7 @@ struct CAxolotyZenohSessionLifecycleTests {
 
     private func contractVectors() throws(ZenohFacadeContract.FixtureError) -> ZenohFacadeContract.Vectors {
         let document = try ZenohFacadeContract.load()
-        #expect(document.contractVersion == "2.1.0")
+        #expect(document.contractVersion == "2.2.0")
         return document.vectors
     }
 

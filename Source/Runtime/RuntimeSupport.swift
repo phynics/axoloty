@@ -67,7 +67,7 @@ extension OwnedWireEvent {
     /// encoder without this becoming public API.
     ///
     /// - Parameter capacity: The largest encoding accepted, in bytes.
-    /// - Returns: The encoded JSON payload.
+    /// - Returns: The encoded payload for this event's wire profile.
     /// - Throws: ``WireEncodeError/bufferOverflow`` if the encoding exceeds `capacity`.
     package func encodedBytes(
         capacity: Int = WireBufferConfig.maxPayloadSize

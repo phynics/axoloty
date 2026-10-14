@@ -552,6 +552,64 @@ public struct WireReader: ~Sendable {
         if slot.kind == .trueValue { return true }; if slot.kind == .falseValue { return false }; return nil
     }
 
+    /// Reads a floating-point value, widening every CBOR width to `Double`.
+    ///
+    /// Floating point is a `axoloty/1`-only lexical kind. The CBOR engine
+    /// accepts half-, single-, and double-precision items and rejects an
+    /// integer item. The JSON engine has no floating-point token distinct from
+    /// a number, so it returns `nil`.
+    ///
+    /// - Parameter key: The field to read.
+    /// - Returns: The decoded value, or `nil` when the field is absent, is not
+    ///   a CBOR floating-point item, or the reader indexes JSON.
+    public func readFloat(_ key: StaticString) -> Double? {
+        guard isCBOR, index.failure == nil,
+              let slot = index.find(bytes: bytes, key: key), slot.kind == .number,
+              let value = slice(slot.value) else { return nil }
+        return value.withBytes { pointer, count -> Double? in
+            var reader = CBORReader(bytes: pointer.assumingMemoryBound(to: UInt8.self), length: count)
+            guard let decoded = try? reader.readFloat() else { return nil }
+            return reader.isAtEnd ? decoded : nil
+        }
+    }
+
+    /// Reads a byte-string value (the CBOR major type 2 payload).
+    ///
+    /// Byte strings are a `axoloty/1`-only lexical kind. The returned bytes
+    /// borrow the caller's buffer and carry no encoding header. The JSON engine
+    /// has no byte-string token, so it returns `nil`.
+    ///
+    /// - Parameter key: The field to read.
+    /// - Returns: The borrowed payload, or `nil` when the field is absent, is
+    ///   not a CBOR byte string, or the reader indexes JSON. An empty byte
+    ///   string yields ``ByteSlice/empty`` rather than `nil`.
+    public func readByteString(_ key: StaticString) -> ByteSlice? {
+        guard isCBOR, index.failure == nil,
+              let slot = index.find(bytes: bytes, key: key), slot.kind == .byteString else { return nil }
+        return slice(slot.content)
+    }
+
+    /// Reads the semantic-tag number of a tagged item.
+    ///
+    /// Tags are a `axoloty/1`-only lexical kind, and the CBOR engine admits
+    /// only the tags its ``CBORTagPolicy`` allows. The returned value is the tag
+    /// number, not the tagged item; read the item by its own accessor or use
+    /// ``readUUID(_:)`` for a tag-37 UUID. The JSON engine has no tag token, so
+    /// it returns `nil`.
+    ///
+    /// - Parameter key: The field to read.
+    /// - Returns: The tag number, or `nil` when the field is absent, is not a
+    ///   tagged CBOR item, or the reader indexes JSON.
+    public func readTag(_ key: StaticString) -> UInt64? {
+        guard isCBOR, index.failure == nil,
+              let slot = index.find(bytes: bytes, key: key), slot.kind == .tag,
+              let value = slice(slot.value) else { return nil }
+        return value.withBytes { pointer, count -> UInt64? in
+            var reader = CBORReader(bytes: pointer.assumingMemoryBound(to: UInt8.self), length: count)
+            return try? reader.readTag()
+        }
+    }
+
     /// Visits every UUID element of an array field.
     ///
     /// The JSON engine reads an array of canonical hyphenated UUID strings.

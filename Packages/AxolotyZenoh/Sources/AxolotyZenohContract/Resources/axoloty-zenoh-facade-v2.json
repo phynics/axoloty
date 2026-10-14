@@ -1,5 +1,5 @@
 {
-  "contractVersion": "2.1.0",
+  "contractVersion": "2.2.0",
   "vectors": {
     "roundTrip": {
       "key": "axoloty/contract/round-trip",
