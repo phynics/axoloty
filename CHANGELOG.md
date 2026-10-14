@@ -25,17 +25,24 @@ fork, through CoatySwift 2.4.0, remain documented in the
   produced them and are tagged with that profile. A cross-profile re-encode is
   rejected as `WireEncodeError.profileMismatch` instead of transcoded. See
   [docs/wire-value-mapping.md](docs/wire-value-mapping.md).
+- The `axoloty/1`-only lexical kinds — floating point, byte strings, and
+  semantic tags — are reachable from the `WireCodec` facade through
+  `WireReader.readFloat(_:)`, `WireReader.readByteString(_:)`,
+  `WireReader.readTag(_:)` and the matching `WireWriter` accessors. No
+  first-party DTO field consumes them yet; see
+  [docs/protocol/axoloty-1.md](docs/protocol/axoloty-1.md).
 - The Zenoh binding carries only the `axoloty/1` CBOR profile. It subscribes to
   `axoloty/1/<namespace>/*/*`, labels every profile payload with the
-  `application/cbor` Zenoh encoding, and drops and counts a profile sample
-  labelled with any other encoding
+  `application/cbor` Zenoh encoding, and admits every sample by its validated
+  route: a non-CBOR label is reported once as an advisory diagnostic that never
+  gates delivery
   ([ADR 0009](docs/adr/0009-zenoh-carries-only-axoloty-1.md)). MQTT keeps the
   sealed `coaty/3` JSON profile.
 - A CBOR-only consumer path. `AxolotyWire` builds without `_JSONCore` with
   `--disable-default-traits`, and
   [docs/embedded-consumer-contract.json](docs/embedded-consumer-contract.json)
   declares `axoloty1CBOR` as a mandatory profile that does not require
-  `_JSONCore`. Three limitations remain; see
+  `_JSONCore`. Two limitations remain; see
   [docs/protocol/axoloty-1.md](docs/protocol/axoloty-1.md#cbor-only-consumers).
 - The `wire-cbor` tier replays the same canonical protocol traces through the
   host `coaty/3` JSON path and the static `axoloty/1` CBOR path, then compares

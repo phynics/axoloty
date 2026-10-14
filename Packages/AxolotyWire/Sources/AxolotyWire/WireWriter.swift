@@ -40,6 +40,12 @@ public struct WireWriter {
     @usableFromInline var cborChunkStarts = InlineArray<24, Int>(repeating: 0)
     /// Whether the open CBOR map awaits its value emission.
     @usableFromInline var cborExpectingValue = false
+    /// Whether a tag head was just written and its tagged item is still to come.
+    ///
+    /// A tag and its tagged item form one CBOR data item, so the value write
+    /// that follows ``writeTag(_:)`` or ``writeTagField(_:_:)`` must not open a
+    /// second array chunk or re-satisfy a map key.
+    @usableFromInline var cborTagPending = false
 
     /// The CBOR container kinds the facade can build.
     @usableFromInline enum CBORContainer: UInt8 {
@@ -629,6 +635,7 @@ extension WireWriter {
         cborContainer = kind
         cborChunkCount = 0
         cborExpectingValue = false
+        cborTagPending = false
     }
 
     /// Closes the open CBOR container and patches its head.
@@ -664,6 +671,7 @@ extension WireWriter {
         cborReservedHead = 0
         cborChunkCount = 0
         cborExpectingValue = false
+        cborTagPending = false
     }
 
     /// Writes one CBOR map key and records its chunk offset.
@@ -689,7 +697,11 @@ extension WireWriter {
     ///
     /// Inside a map the emission must follow a key; inside an array every
     /// value emission is one item and starts a new chunk.
-    private mutating func cborBeginValueEmission() throws(WireEncodeError) {
+    mutating func cborBeginValueEmission() throws(WireEncodeError) {
+        if cborTagPending {
+            cborTagPending = false
+            return
+        }
         guard cborContainer != .none else { return }
         if cborContainer == .map {
             guard cborExpectingValue else { throw .invalidValue }
@@ -702,9 +714,29 @@ extension WireWriter {
     }
 
     /// Writes one field key and opens its value emission.
-    private mutating func cborBeginField(_ key: StaticString) throws(WireEncodeError) {
+    mutating func cborBeginField(_ key: StaticString) throws(WireEncodeError) {
         try cborWriteKey(key)
         try cborBeginValueEmission()
+    }
+
+    /// Runs one CBOR primitive write on a delegated engine over the same
+    /// buffer, then advances this writer past the emitted bytes.
+    ///
+    /// The delegated body is untyped-throws because Swift cannot infer a typed
+    /// throw from a closure that calls a typed-throws writer; a failure that is
+    /// not a ``WireEncodeError`` is reported as ``WireEncodeError/invalidValue``.
+    mutating func cborEmit(
+        _ body: (inout CBORWriter) throws -> Void
+    ) throws(WireEncodeError) {
+        var writer = CBORWriter(buffer: buffer.advanced(by: position), capacity: remaining)
+        do {
+            try body(&writer)
+        } catch let error as WireEncodeError {
+            throw error
+        } catch {
+            throw .invalidValue
+        }
+        position += writer.position
     }
 
     /// Writes a CBOR head with its shortest-form argument.

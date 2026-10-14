@@ -201,6 +201,7 @@ specific reasons are `cborIndefiniteLength`, `cborInvalidAdditionalInfo`,
 | Bounded deterministic CBOR reader and writer | Implemented |
 | `WireDecodable`/`WireEncodable` DTO codec seam (format-neutral, [ADR 0011](../adr/0011-codec-format-seam.md)) | Implemented |
 | Raw/custom CBOR payload retention | Implemented ([wire-value-mapping.md](../wire-value-mapping.md)) |
+| Facade accessors for the CBOR-only float, byte-string, and tag kinds | Implemented (no DTO consumes them yet) |
 | Host-generated envelopes through the profile-aware writer | Implemented ([wire-value-mapping.md](../wire-value-mapping.md)) |
 | Zenoh binding on `axoloty/1` only | Implemented |
 | Golden `coaty/3`/`axoloty/1` corpus with independent CBOR decode | Implemented |
@@ -220,12 +221,19 @@ corpus under
 DTO field-presence variant, and the wire tool independently decodes every CBOR
 golden with `cbor-x`. The `wire-cbor` tier runs the golden corpus and the
 host/static trace-parity replay on every pull request; `coaty/3` JSON bytes are
-unchanged. See [../testing.md](../testing.md) for the tier contract.
+unchanged. See [../testing.md](../testing.md) for the tier contract. The facade
+also reaches the `axoloty/1`-only float, byte-string, and tag kinds through
+`WireReader.readFloat(_:)`, `WireReader.readByteString(_:)`,
+`WireReader.readTag(_:)`, `WireWriter.writeFloat64(_:)`,
+`WireWriter.writeByteString(_:)`, and `WireWriter.writeTag(_:)` plus their
+field variants. No first-party DTO field consumes them yet; wiring such a field
+is a tracked follow-up under
+[#977](https://github.com/phynics/axoloty/issues/977).
 
 ## CBOR-only consumers
 
 A CBOR-only `AxolotyWire` build, produced with `--disable-default-traits`, does
-not link `_JSONCore`. Three known limitations apply today. They are recorded
+not link `_JSONCore`. Two known limitations apply today. They are recorded
 here and are not fixed in the profile code:
 
 1. `BorrowedMessage.ownedEvent()` and `BorrowedMessage.reader()` are gated by
@@ -234,12 +242,7 @@ here and are not fixed in the profile code:
    `BorrowedWireEvent.init(eventType:from:)` instead. See
    [../embedded-consumer-contract.md](../embedded-consumer-contract.md) for the
    supported build shape.
-2. `axoloty-tool embedded consumer prepare` still resolves and requires
-   `_JSONCore`, even for a CBOR-only contract. The contract validator accepts a
-   CBOR-only contract, but the preparation command does not. A CBOR-only
-   preparation path is a tracked follow-up under
-   [#977](https://github.com/phynics/axoloty/issues/977).
-3. `ProtocolTraceRuntimeReplay.seedObject` in
+2. `ProtocolTraceRuntimeReplay.seedObject` in
    `AxolotyProtocolTraceTestSupport` hardcodes a JSON Advertise payload, so the
    trace-parity replay seed path is JSON-only today. This is test support, not
    production code: no shipping path switches on the active profile. If a

@@ -133,10 +133,12 @@ private func validateOwnedJSON(
 }
 #endif
 
-/// Validates one owned raw field encoded as deterministic `axoloty/1` CBOR.
+/// Validates one owned raw field encoded as `axoloty/1` CBOR.
 ///
 /// A `textContent` field carries plain UTF-8 string content; every other shape
-/// carries exactly one complete deterministic CBOR item.
+/// carries exactly one complete CBOR item accepted by the `axoloty/1` reader.
+/// Ascending map-key order is a writer rule, not a reader rule, so a retained
+/// raw field keeps a peer's key order unchanged.
 private func validateOwnedCBOR(
     _ bytes: [UInt8],
     field: StaticString,

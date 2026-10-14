@@ -17,7 +17,12 @@ vectors or clarify requirements without weakening existing assertions. Major
 releases may change ABI and requirements. Version 2 changes subscribe to return
 an opaque handle and scopes unsubscribe, polling, queue depth, and overflow
 counters to that handle. Version 2.1 adds the synchronous connected-router count
-query and its router-presence vectors without changing prior requirements. A
+query and its router-presence vectors without changing prior requirements.
+Version 2.2 makes admission route-authoritative: the façade admits every
+inbound sample and treats the Zenoh `Encoding` label as an advisory diagnostic
+that never gates delivery. It adds the foreign-label, unlabeled-sample, and
+external-route vectors. The prior drop-on-non-CBOR-label test encoded a defect,
+so this is a clarification, not a weakening of a conforming assertion. A
 conformance report MUST identify both this contract version and the exact
 Axoloty Git revision that supplied it.
 
@@ -37,8 +42,8 @@ path so the embedded conformance runner can compile the same source against its
 local harness modules. The tradeoff is that the embedded conformance runner
 must explicitly refresh its revision pin when the contract changes; it must not
 copy and maintain a second contract. **`phynics/axoloty-embedded#8` must re-pin
-the Axoloty revision that contains contract 2.1.0 and the connected-router query;
-pico must implement the same query and vectors, or record a divergence with
+the Axoloty revision that contains contract 2.2.0 and the advisory encoding
+rule; pico must implement the same rule and vectors, or record a divergence with
 capture or test evidence.** The `axoloty-zenoh-facade-v2.json` filename remains
 because the major ABI generation is still version 2; the additive minor version
 is identified by `contractVersion`.
@@ -111,7 +116,7 @@ shared contract suite. In particular:
 
 The suite documents no backend-specific tolerances. Divergence status:
 
-> Existing vectors remain to be qualified by phynics/axoloty-embedded#8. Contract 2.1.0 requires its pico implementation to provide the same connected-router query and vectors; if it cannot, record the divergence with evidence (no pico-backend comparison was performed here).
+> Existing vectors remain to be qualified by phynics/axoloty-embedded#8. Contract 2.2.0 requires its pico implementation to apply the same advisory encoding rule and provide the connected-router query and vectors; if it cannot, record the divergence with evidence (no pico-backend comparison was performed here).
 
 ## MQTT and Zenoh protocol trace parity (#811)
 

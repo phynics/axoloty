@@ -735,4 +735,69 @@ struct WireCodecTests {
             #expect(copied[index] == byte)
         }
     }
+
+    @Test
+    func wireFacadeExposesCBOROnlyLexicalKinds() throws {
+        // The facade reaches the axoloty/1-only float, byte-string, and tag
+        // kinds without a caller constructing a CBORReader or CBORWriter.
+        let blob: [UInt8] = [0xDE, 0xAD, 0xBE, 0xEF]
+        var output = [UInt8](repeating: 0, count: 128)
+        let count = try output.withUnsafeMutableBufferPointer { destination in
+            var writer = WireCodec(profile: .axoloty1CBOR).writer(
+                buffer: destination.baseAddress!, capacity: destination.count
+            )
+            try writer.beginObject()
+            try blob.withUnsafeBufferPointer { bytes in
+                try writer.writeByteStringField(
+                    "blob", ByteSlice(bytes: bytes.baseAddress!, length: bytes.count)
+                )
+            }
+            try writer.writeFloatField("ratio", 1.5)
+            // A tag and its tagged item form one CBOR data item.
+            try writer.writeTagField("time", 1)
+            try writer.writeInt(1_700_000_000)
+            try writer.endObject()
+            return writer.position
+        }
+        try output.withUnsafeBufferPointer { buffer in
+            let reader = WireCodec(profile: .axoloty1CBOR).reader(
+                bytes: buffer.baseAddress!, length: count
+            )
+            #expect(reader.readByteString("blob")?.ownedBytes() == blob)
+            #expect(reader.readFloat("ratio") == 1.5)
+            #expect(reader.readTag("time") == 1)
+            try reader.validate()
+        }
+    }
+
+    @Test
+    func wireFacadeCBOROnlyLexicalKindsRejectJSON() throws {
+        // JSON has no byte-string, float, or tag token, so the accessors
+        // return nil and the writers reject the value.
+        let json = Array(#"{"blob":"x","ratio":1.5,"time":1}"#.utf8)
+        json.withUnsafeBufferPointer { buffer in
+            let reader = WireCodec(profile: .coaty3JSON).reader(
+                bytes: buffer.baseAddress!, length: buffer.count
+            )
+            #expect(reader.readByteString("blob") == nil)
+            #expect(reader.readFloat("ratio") == nil)
+            #expect(reader.readTag("time") == nil)
+        }
+        var output = [UInt8](repeating: 0, count: 64)
+        try output.withUnsafeMutableBufferPointer { destination in
+            var writer = WireCodec(profile: .coaty3JSON).writer(
+                buffer: destination.baseAddress!, capacity: destination.count
+            )
+            try writer.beginObject()
+            #expect(throws: WireEncodeError.invalidValue) {
+                try writer.writeByteStringField("blob", ByteSlice.empty)
+            }
+            #expect(throws: WireEncodeError.invalidValue) {
+                try writer.writeFloatField("ratio", 1.5)
+            }
+            #expect(throws: WireEncodeError.invalidValue) {
+                try writer.writeTagField("time", 1)
+            }
+        }
+    }
 }

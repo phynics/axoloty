@@ -46,8 +46,7 @@ The 1.0 API freeze covers the following:
   [ADR 0009](./adr/0009-zenoh-carries-only-axoloty-1.md) makes it the only
   Zenoh encoding, and `coaty/3` JSON stays sealed on MQTT for CoatyJS
   compatibility. [Epic #977](https://github.com/phynics/axoloty/issues/977)
-  tracks the remaining pre-release work, including the CBOR-only preparation
-  path noted in
+  tracks the remaining pre-release work noted in
   [protocol/axoloty-1.md](./protocol/axoloty-1.md#cbor-only-consumers). The
   `wire-cbor` tier runs the corpus and trace parity on every pull request.
 - **Not frozen:** a JSON Zenoh encoding, or any JSON-only codec surface that the
