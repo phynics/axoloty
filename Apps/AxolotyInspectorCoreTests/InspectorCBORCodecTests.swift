@@ -47,6 +47,26 @@ struct InspectorCBORCodecTests {
     }
 
     @Test
+    func autoDetectionResolvesAmbiguousBytesToJSON() {
+        // `0x30` is the JSON number `0` and the CBOR negative integer `-17`.
+        #expect(codec.format(of: Self.bytes("30")) == .json)
+        #expect(codec.format(of: Self.bytes("30"), encoding: .auto) == .json)
+    }
+
+    @Test
+    func explicitEncodingOverridesAmbiguousBytes() {
+        #expect(codec.format(of: Self.bytes("30"), encoding: .json) == .json)
+        #expect(codec.format(of: Self.bytes("30"), encoding: .cbor) == .cbor)
+    }
+
+    @Test
+    func explicitEncodingRejectsAMismatch() {
+        // A CBOR map is not valid JSON, and a JSON object is not a complete CBOR item.
+        #expect(codec.format(of: Self.bytes("a1616101"), encoding: .json) == .unknown)
+        #expect(codec.format(of: Array(#"{"a":1}"#.utf8), encoding: .cbor) == .unknown)
+    }
+
+    @Test
     func decodesAndRendersDiagnosticNotation() throws {
         let notation = try codec.diagnosticNotation(of: Self.bytes("a26161016162820203"))
         #expect(notation == "{\"a\": 1, \"b\": [2, 3]}")

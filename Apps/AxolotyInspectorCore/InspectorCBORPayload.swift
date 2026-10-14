@@ -16,6 +16,22 @@ public enum InspectorPayloadFormat: String, Codable, Sendable, Equatable {
     case unknown
 }
 
+/// Caller-declared payload encoding for a local decode.
+///
+/// Auto detection is a convenience, not an authority. A short byte string can
+/// be valid JSON and valid CBOR at the same time: `0x30` is the JSON number
+/// `0` and the CBOR negative integer `-17`, and `0x31` is the JSON number `1`
+/// and the CBOR negative integer `-18`. A caller that knows the source profile
+/// declares it and skips detection.
+public enum InspectorPayloadEncoding: String, Codable, Sendable, Equatable, CaseIterable {
+    /// Detect JSON first, then CBOR.
+    case auto
+    /// Treat the payload as `coaty/3` JSON.
+    case json
+    /// Treat the payload as `axoloty/1` CBOR.
+    case cbor
+}
+
 /// Reads and writes CBOR payloads for inspector output.
 ///
 /// The codec composes the bounded ``CBORDecoder`` with the diagnostic-notation
@@ -27,22 +43,32 @@ public struct InspectorCBORCodec: Sendable {
 
     /// Classifies a payload as JSON, CBOR, or unknown.
     ///
-    /// JSON is tested first with `JSONSerialization`. A well-formed JSON text
-    /// and a CBOR item cannot share a byte string in practice, so the ordering
-    /// is unambiguous for profile payloads.
+    /// Detection is inherently ambiguous for short inputs. `0x30` is the JSON
+    /// number `0` and the CBOR negative integer `-17`; `0x31` is the JSON
+    /// number `1` and the CBOR negative integer `-18`. Auto mode resolves that
+    /// ambiguity by testing JSON first, which matches the `coaty/3` profile.
+    /// The ordering is a deterministic tie-break, not a proof. Declare
+    /// `encoding` when the source profile is known.
     ///
-    /// - Parameter bytes: The payload bytes.
+    /// - Parameters:
+    ///   - bytes: The payload bytes.
+    ///   - encoding: The declared encoding, or `.auto` to detect.
     /// - Returns: The detected payload format.
-    public func format(of bytes: [UInt8]) -> InspectorPayloadFormat {
+    public func format(
+        of bytes: [UInt8],
+        encoding: InspectorPayloadEncoding = .auto
+    ) -> InspectorPayloadFormat {
         guard !bytes.isEmpty else { return .unknown }
-        if Self.looksLikeJSON(bytes), (try? JSONSerialization.jsonObject(with: Data(bytes), options: [.fragmentsAllowed])) != nil {
-            return .json
+        switch encoding {
+        case .json:
+            return Self.isJSON(bytes) ? .json : .unknown
+        case .cbor:
+            return Self.isCBOR(bytes) ? .cbor : .unknown
+        case .auto:
+            if Self.isJSON(bytes) { return .json }
+            if Self.isCBOR(bytes) { return .cbor }
+            return .unknown
         }
-        var decoder = CBORDecoder(bytes)
-        if (try? decoder.decode()) != nil {
-            return .cbor
-        }
-        return .unknown
     }
 
     /// Decodes a single CBOR item.
@@ -162,6 +188,16 @@ public struct InspectorCBORCodec: Sendable {
 
     private func base64(_ bytes: [UInt8]) -> String {
         Data(bytes).base64EncodedString()
+    }
+
+    private static func isJSON(_ bytes: [UInt8]) -> Bool {
+        guard looksLikeJSON(bytes) else { return false }
+        return (try? JSONSerialization.jsonObject(with: Data(bytes), options: [.fragmentsAllowed])) != nil
+    }
+
+    private static func isCBOR(_ bytes: [UInt8]) -> Bool {
+        var decoder = CBORDecoder(bytes)
+        return (try? decoder.decode()) != nil
     }
 
     private static func looksLikeJSON(_ bytes: [UInt8]) -> Bool {

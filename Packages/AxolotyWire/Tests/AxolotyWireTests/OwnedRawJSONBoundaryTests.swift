@@ -29,6 +29,22 @@ struct OwnedRawJSONBoundaryTests {
         }
     }
 
+    @Test("a raw JSON field larger than the payload budget is rejected before encoding")
+    func rejectsRawFieldBeyondPayloadBudget() {
+        let padding = String(repeating: "a", count: WireBufferConfig.maxPayloadSize)
+        let payload = Array(#"{"value":"\#(padding)"}"#.utf8)
+        #expect(payload.count > WireBufferConfig.maxPayloadSize)
+        do {
+            _ = try OwnedIoValueWireData(payload: payload)
+            Issue.record("an oversized JSON field was accepted")
+        } catch {
+            guard case .payloadExceedsLimit = error.reason else {
+                Issue.record("unexpected error reason: \(error.reason)")
+                return
+            }
+        }
+    }
+
     @Test("owned constructors copy their input bytes")
     func ownsInputBytes() throws {
         var source = Array(#"{"value":1}"#.utf8)

@@ -107,6 +107,7 @@ public final class AxolotyMCPServer {
                 "properties": .object([
                     "payload": makeMCPPropertySchema(type: "string", description: "Payload bytes as hexadecimal or base64"),
                     "encoding": makeMCPPropertySchema(type: "string", description: "Payload byte encoding: hex or base64 (default: hex)"),
+                    "payloadEncoding": makeMCPPropertySchema(type: "string", description: "Payload content encoding: auto, json, or cbor (default: auto)"),
                     "format": makeMCPPropertySchema(type: "string", description: "Output format: diagnostic or json (default: diagnostic)"),
                 ]),
                 "required": .array([.string("payload")])
@@ -568,8 +569,24 @@ public final class AxolotyMCPServer {
         case let format:
             return .init(content: [.text("Invalid format: \(format) (must be diagnostic or json)")], isError: true)
         }
+        let payloadEncoding: InspectorPayloadEncoding
+        switch args?["payloadEncoding"]?.stringValue ?? "auto" {
+        case "auto":
+            payloadEncoding = .auto
+        case "json":
+            payloadEncoding = .json
+        case "cbor":
+            payloadEncoding = .cbor
+        case let encoding:
+            return .init(
+                content: [.text("Invalid payloadEncoding: \(encoding) (must be auto, json, or cbor)")],
+                isError: true
+            )
+        }
         do {
-            let text = try InspectorDecodeRunner.render(DecodeCommand(source: source, render: render))
+            let text = try InspectorDecodeRunner.render(
+                DecodeCommand(source: source, render: render, encoding: payloadEncoding)
+            )
             return .init(content: [.text(text)], isError: false)
         } catch {
             return .init(content: [.text(error.userFriendlyMessage)], isError: true)

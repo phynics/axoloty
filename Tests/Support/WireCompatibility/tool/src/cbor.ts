@@ -610,7 +610,7 @@ class Parser {
   }
 
   parse(): CborValue {
-    const value = this.parseItem();
+    const value = this.parseItem(0);
     this.skipWhitespace();
     if (this.index !== this.text.length) {
       throw new DiagnosticParseError(`unexpected trailing characters at offset ${this.index}`);
@@ -618,18 +618,19 @@ class Parser {
     return value;
   }
 
-  private parseItem(): CborValue {
+  private parseItem(depth: number): CborValue {
+    if (depth > MAX_DEPTH) throw new DiagnosticParseError("nesting too deep");
     this.skipWhitespace();
     const character = this.current;
     if (character === undefined) throw new DiagnosticParseError("unexpected end of input");
-    if (character === "[") return this.parseArray();
-    if (character === "{") return this.parseMap();
-    if (character === "(") return this.parseChunked();
+    if (character === "[") return this.parseArray(depth);
+    if (character === "{") return this.parseMap(depth);
+    if (character === "(") return this.parseChunked(depth);
     if (character === "h" && this.text[this.index + 1] === "'") return this.parseBytes();
     if (character === '"') return this.parseText();
     if (character === "-" || (character >= "0" && character <= "9")) {
       const number = this.parseNumber();
-      if (number.kind === "tag") return this.parseTag(number.tag);
+      if (number.kind === "tag") return this.parseTag(number.tag, depth);
       return number.value;
     }
     if (this.matchKeyword("true")) return { type: "boolean", value: true };
@@ -642,14 +643,14 @@ class Parser {
     throw new DiagnosticParseError(`unexpected character ${JSON.stringify(character)} at offset ${this.index}`);
   }
 
-  private parseArray(): CborValue {
+  private parseArray(depth: number): CborValue {
     this.expect("[");
     const indefinite = this.match("_");
     const items: CborValue[] = [];
     this.skipWhitespace();
     if (this.current !== "]") {
       for (;;) {
-        items.push(this.parseItem());
+        items.push(this.parseItem(depth + 1));
         this.skipWhitespace();
         if (!this.match(",")) break;
       }
@@ -658,16 +659,16 @@ class Parser {
     return { type: "array", value: items, indefinite };
   }
 
-  private parseMap(): CborValue {
+  private parseMap(depth: number): CborValue {
     this.expect("{");
     const indefinite = this.match("_");
     const entries: [CborValue, CborValue][] = [];
     this.skipWhitespace();
     if (this.current !== "}") {
       for (;;) {
-        const key = this.parseItem();
+        const key = this.parseItem(depth + 1);
         this.expect(":");
-        const value = this.parseItem();
+        const value = this.parseItem(depth + 1);
         entries.push([key, value]);
         this.skipWhitespace();
         if (!this.match(",")) break;
@@ -677,14 +678,14 @@ class Parser {
     return { type: "map", value: entries, indefinite };
   }
 
-  private parseChunked(): CborValue {
+  private parseChunked(depth: number): CborValue {
     this.expect("(");
     this.expect("_");
     const chunks: CborValue[] = [];
     this.skipWhitespace();
     if (this.current !== ")") {
       for (;;) {
-        chunks.push(this.parseItem());
+        chunks.push(this.parseItem(depth + 1));
         this.skipWhitespace();
         if (!this.match(",")) break;
       }
@@ -778,9 +779,9 @@ class Parser {
     return { type: "simple", value: Number(value) };
   }
 
-  private parseTag(tag: bigint): CborValue {
+  private parseTag(tag: bigint, depth: number): CborValue {
     this.expect("(");
-    const value = this.parseItem();
+    const value = this.parseItem(depth + 1);
     this.expect(")");
     return { type: "tag", tag, value };
   }

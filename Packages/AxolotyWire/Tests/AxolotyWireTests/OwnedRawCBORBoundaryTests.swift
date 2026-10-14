@@ -163,6 +163,36 @@ struct OwnedRawCBORBoundaryTests {
         #expect(try encodeCBOR(.update(fields)) == cborMap([(cborText("object"), outOfOrder)]))
     }
 
+    @Test("a raw CBOR field larger than the payload budget is rejected before encoding")
+    func rejectsRawFieldBeyondPayloadBudget() {
+        let content = [UInt8](repeating: 0xAB, count: WireBufferConfig.maxPayloadSize)
+        var field: [UInt8] = [0x59, UInt8((content.count >> 8) & 0xFF), UInt8(content.count & 0xFF)]
+        field.append(contentsOf: content)
+        #expect(field.count == WireBufferConfig.maxPayloadSize + 3)
+        do {
+            _ = try OwnedIoValueWireData(profile: .axoloty1CBOR, payload: field)
+            Issue.record("an oversized CBOR field was accepted")
+        } catch {
+            guard case .payloadExceedsLimit = error.reason else {
+                Issue.record("unexpected error reason: \(error.reason)")
+                return
+            }
+        }
+    }
+
+    @Test("an accepted raw field that does not fit its writer is rejected at encode time")
+    func rejectsAcceptedFieldThatOverflowsWriter() throws {
+        // The field is within the materialization bound, but the enclosing map
+        // and key push the event past the production payload budget.
+        let content = [UInt8](repeating: 0xAB, count: 2_040)
+        var field: [UInt8] = [0x59, UInt8((content.count >> 8) & 0xFF), UInt8(content.count & 0xFF)]
+        field.append(contentsOf: content)
+        let fields = try OwnedIoValueWireData(profile: .axoloty1CBOR, payload: field)
+        #expect(throws: WireEncodeError.bufferOverflow) {
+            _ = try encodeCBOR(.ioValue(fields), capacity: WireBufferConfig.maxPayloadSize)
+        }
+    }
+
     @Test("malformed or non-deterministic CBOR is rejected")
     func rejectsMalformedCBOR() {
         let malformed: [[UInt8]] = [

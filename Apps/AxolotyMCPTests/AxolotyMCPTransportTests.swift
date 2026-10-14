@@ -44,6 +44,7 @@ func objectInputSchemaCatalogueContract() throws {
         "axoloty_decode_payload": [
             "payload": "string",
             "encoding": "string",
+            "payloadEncoding": "string",
             "format": "string",
         ],
         "axoloty_server_status": [:],

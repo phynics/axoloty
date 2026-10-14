@@ -172,3 +172,11 @@ test("rejects malformed diagnostic notation", () => {
   assert.throws(() => parseDiagnostic("{1: }"));
   assert.throws(() => parseDiagnostic("nope"));
 });
+
+test("rejects diagnostic notation nested beyond the profile depth", () => {
+  const tooDeep = "[".repeat(33) + "0" + "]".repeat(33);
+  assert.throws(() => parseDiagnostic(tooDeep), /nesting too deep/);
+
+  const boundary = "[".repeat(32) + "0" + "]".repeat(32);
+  assert.doesNotThrow(() => parseDiagnostic(boundary));
+});
