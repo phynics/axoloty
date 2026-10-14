@@ -21,15 +21,18 @@ public enum BorrowedWireEvent {
     case call(CallWireData)
     case returnEvent(ReturnWireData)
 
-    #if canImport(_JSONCore)
     /// Decodes and selects an event directly from a validated borrowed message.
+    ///
+    /// The reader's engine follows the message's route profile, so this is
+    /// available in every build. In a build without `_JSONCore`, only an
+    /// `axoloty/1` route can decode; a raw or unrecognized route traps when it
+    /// selects the `coaty/3` JSON engine.
     public init(message: BorrowedMessage) throws(WireDecodeError) {
         guard let eventType = message.eventType else {
             throw WireDecodeError(.malformedTopic)
         }
         self = try Self(eventType: eventType, from: message.reader())
     }
-    #endif
 
     /// Encodes the selected event through the centralized wire dispatch.
     public func encode(to writer: inout WireWriter) throws(WireEncodeError) {

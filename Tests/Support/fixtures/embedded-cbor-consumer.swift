@@ -45,5 +45,50 @@ struct EmbeddedCBORConsumerProbe {
         precondition(reader.readString("name")?.equals("sensor") == true, "name mismatch")
         precondition(reader.readInt("count") == 7, "count mismatch")
         precondition(reader.readBool("active") == true, "active mismatch")
+
+        // Decode one `axoloty/1` event through the borrowed-message surface.
+        // Issue #1027: `reader()`, `reader(workspace:)`, and `ownedEvent()`
+        // must compile and run without `_JSONCore`, so a CBOR-only consumer
+        // can decode an event and not only drive `WireCodec` directly.
+        let topic: StaticString = "axoloty/1/ns/IOV/55555555-5555-4555-8555-555555555555"
+        let eventCapacity = 64
+        let eventStorage = UnsafeMutablePointer<UInt8>.allocate(capacity: eventCapacity)
+        defer { eventStorage.deallocate() }
+        var eventWriter = codec.writer(buffer: eventStorage, capacity: eventCapacity)
+        do throws(WireEncodeError) {
+            try eventWriter.beginObject()
+            try eventWriter.writeIntField("payload", 42)
+            try eventWriter.endObject()
+        } catch {
+            fatalError("CBOR-only event encode failed")
+        }
+
+        let message = BorrowedMessage(
+            topicBytes: topic.utf8Start,
+            topicLength: topic.utf8CodeUnitCount,
+            payloadBytes: eventStorage,
+            payloadLength: eventWriter.position
+        )
+        precondition(message.profile == .axoloty1CBOR, "route profile mismatch")
+        precondition(message.eventType == .ioValue, "event type mismatch")
+
+        let routeReader = message.reader()
+        precondition(routeReader.readInt("payload") == 42, "borrowed payload mismatch")
+
+        var workspace = EmbeddedWireParserWorkspace()
+        let workspaceReader = message.reader(workspace: &workspace)
+        precondition(workspaceReader.readInt("payload") == 42, "workspace payload mismatch")
+
+        do throws(WireDecodeError) {
+            let owned = try message.ownedEvent()
+            precondition(owned.profile == WireProfile.axoloty1CBOR, "owned profile mismatch")
+            if case .ioValue(let value) = owned {
+                precondition(value.profile == WireProfile.axoloty1CBOR, "owned field profile mismatch")
+            } else {
+                fatalError("owned event is not ioValue")
+            }
+        } catch {
+            fatalError("CBOR-only ownedEvent failed")
+        }
     }
 }
