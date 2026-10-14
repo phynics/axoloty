@@ -278,7 +278,6 @@
         "AxolotyMQTT",
         "AxolotyIoRouting",
         "AxolotySensorThings",
-        "AxolotyInspectorCore",
         "AxolotyTooling"
       ]
     },
@@ -302,7 +301,6 @@
       "forbiddenImports": [
         "AxolotyIoRouting",
         "AxolotySensorThings",
-        "AxolotyInspectorCore",
         "AxolotyTooling",
         "MCP",
         "Logging",
@@ -391,70 +389,6 @@
         "AxolotyIoRouting"
       ],
       "note": "Reaches the runtime through package-scoped extension declarations rather than an SPI, so the surface is compiler-enforced first-party rather than opt-in."
-    },
-    {
-      "name": "AxolotyInspectorCore",
-      "role": "tooling",
-      "platformClass": "tooling",
-      "path": "Apps/AxolotyInspectorCore",
-      "allowedImports": [
-        "AxolotyVersion",
-        "Foundation"
-      ],
-      "forbiddenImports": [
-        "Axoloty",
-        "MQTTNIO",
-        "NIO",
-        "MCP"
-      ]
-    },
-    {
-      "name": "AxolotyInspectorRuntime",
-      "role": "tooling",
-      "platformClass": "tooling",
-      "path": "Apps/AxolotyInspectorRuntime",
-      "allowedImports": [
-        "Axoloty",
-        "AxolotyInspectorCore",
-        "AxolotyWire",
-        "Foundation"
-      ],
-      "forbiddenImports": [
-        "MCP",
-        "Logging",
-        "MQTTNIO",
-        "NIO",
-        "NIOCore",
-        "NIOPosix",
-        "NIOSSL",
-        "NIOTransportServices",
-        "Network"
-      ],
-      "note": "Composes protocol behavior and names no transport. The executable supplies AxolotyInspectorSession.TransportFactory, so a second carrier is a composition-root change."
-    },
-    {
-      "name": "AxolotyMCP",
-      "role": "tooling",
-      "platformClass": "tooling",
-      "path": "Apps/AxolotyMCP",
-      "allowedImports": [
-        "Axoloty",
-        "AxolotyInspectorCore",
-        "AxolotyInspectorRuntime",
-        "ErrorKit",
-        "Foundation",
-        "FoundationNetworking",
-        "Logging",
-        "MCP",
-        "NIOCore",
-        "NIOPosix",
-        "NIOHTTP1"
-      ],
-      "forbiddenImports": [
-        "MQTTNIO",
-        "AxolotyTooling"
-      ],
-      "note": "Runs an HTTP server directly on NIO, and declares NIOCore, NIOPosix, and NIOHTTP1 on the target rather than inheriting them from Axoloty. It selects no runtime transport; the executable supplies one."
     },
     {
       "name": "AxolotyTooling",

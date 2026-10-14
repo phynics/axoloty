@@ -143,10 +143,6 @@ function validateManifest(packageRoot, packageLabel) {
 
 export function validate(root) {
   const errors = [...validateManifest(root, "root")];
-  const appsRoot = path.join(root, "Apps");
-  if (fs.existsSync(path.join(appsRoot, "Package.swift"))) {
-    errors.push(...validateManifest(appsRoot, "Apps"));
-  }
   return { errors };
 }
 

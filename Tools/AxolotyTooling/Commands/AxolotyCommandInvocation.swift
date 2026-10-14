@@ -9,7 +9,6 @@ enum AxolotyCommandInvocation: Equatable, Sendable {
     case help
     case version
     case unsupported
-    case serve(arguments: [String])
     case repositoryValidation(arguments: [String])
     case testOne(filter: String, repetition: AxolotyTestRepetition?)
     case testTier(name: String, ci: Bool)
@@ -32,9 +31,6 @@ struct AxolotyCommandParser: Sendable {
     let environment: [String: String]
 
     func parse(_ arguments: [String]) -> AxolotyCommandInvocation {
-        if arguments.first == "serve" {
-            return .serve(arguments: Array(arguments.dropFirst()))
-        }
         if arguments == ["zenoh", "live"] {
             return .zenohLive
         }

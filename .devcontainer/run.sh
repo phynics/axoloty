@@ -769,6 +769,22 @@ common_git_mount=""
 if [ -n "$common_git_dir" ]; then
     common_git_mount="$common_git_dir:$common_git_dir$mount_suffix"
 fi
+# The AxolotyDebug package is a path dependency of the Tools package and lives
+# as a sibling of this checkout. Mount it at the path the relative dependency
+# resolves to so the mounted worktree can build it.
+sibling_debug_mount=""
+sibling_debug_dir="$(cd -- "$root_dir/.." 2>/dev/null && pwd)/axoloty-debug"
+if [ -d "$sibling_debug_dir" ]; then
+    if [ "${AXOLOTY_HOST_RUNTIME_BRIDGE:-0}" = 1 ]; then
+        sibling_debug_target="$sibling_debug_dir"
+    else
+        sibling_debug_target="/axoloty-debug"
+    fi
+    sibling_debug_mount="$sibling_debug_dir:$sibling_debug_target$mount_suffix"
+fi
+# The AxolotyDebug package depends on this checkout as a sibling library. Mount
+# it at the path that dependency resolves to so the debug package can build.
+core_library_mount="$root_dir:/axoloty$mount_suffix"
 if [ "${AXOLOTY_HOST_RUNTIME_BRIDGE:-0}" = 1 ]; then
     ccache_container_dir=$ccache_dir
     tooling_build_dir="$build_dir/tooling"
@@ -1080,6 +1096,8 @@ create_container() {
                 ${external_core_mount_spec:+-v "$external_core_mount_spec"} \
                 ${external_core_git_mount_spec:+-v "$external_core_git_mount_spec"} \
                 ${external_project_mount_spec:+-v "$external_project_mount_spec"} \
+                ${sibling_debug_mount:+-v "$sibling_debug_mount"} \
+                ${core_library_mount:+-v "$core_library_mount"} \
                 -v "$device_lease_mount" \
                 -e "$device_lease_env" \
                 -v "$root_dir:$bridge_workdir$mount_suffix" \
@@ -1118,6 +1136,8 @@ create_container() {
                 ${external_core_mount_spec:+-v "$external_core_mount_spec"} \
                 ${external_core_git_mount_spec:+-v "$external_core_git_mount_spec"} \
                 ${external_project_mount_spec:+-v "$external_project_mount_spec"} \
+                ${sibling_debug_mount:+-v "$sibling_debug_mount"} \
+                ${core_library_mount:+-v "$core_library_mount"} \
                 -v "$root_dir:$bridge_workdir$mount_suffix" \
                 -w "$bridge_workdir" \
                 --name "$container_name" \
@@ -1147,6 +1167,8 @@ create_container() {
             ${external_core_mount_spec:+-v "$external_core_mount_spec"} \
             ${external_core_git_mount_spec:+-v "$external_core_git_mount_spec"} \
             ${external_project_mount_spec:+-v "$external_project_mount_spec"} \
+            ${sibling_debug_mount:+-v "$sibling_debug_mount"} \
+            ${core_library_mount:+-v "$core_library_mount"} \
             -w "$bridge_workdir" \
             --name "$container_name" \
             --cidfile "$container_cidfile" \
@@ -1172,6 +1194,8 @@ create_container() {
             ${external_core_mount_spec:+-v "$external_core_mount_spec"} \
             ${external_core_git_mount_spec:+-v "$external_core_git_mount_spec"} \
             ${external_project_mount_spec:+-v "$external_project_mount_spec"} \
+            ${sibling_debug_mount:+-v "$sibling_debug_mount"} \
+            ${core_library_mount:+-v "$core_library_mount"} \
             -w "$bridge_workdir" \
             --name "$container_name" \
             --cidfile "$container_cidfile" \

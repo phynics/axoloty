@@ -219,14 +219,9 @@ func checkPlanPrintsStableJSON() throws {
         "--scratch-path", ".build/tooling", "--cache-path", ".swiftpm-cache",
         "--disable-automatic-resolution", "--no-parallel",
     ])
-    // The application tests are a separate node against the Apps package, so
-    // neither run resolves the other's dependency graph.
-    #expect(plan?.nodes.first(where: { $0.name == "test-apps" })?.command.arguments == [
-        "test", "-Xswiftc", "-warnings-as-errors", "--package-path", "Apps",
-        "--scratch-path", ".build/apps", "--cache-path", ".swiftpm-cache",
-        "--disable-automatic-resolution", "--filter",
-        "AxolotyInspectorCoreTests|AxolotyInspectorRuntimeTests|AxolotyMCPTests",
-    ])
+    // The runtime/debug application tests moved to the sibling axoloty-debug
+    // package, so this plan no longer carries a test-apps node.
+    #expect(plan?.nodes.contains { $0.name == "test-apps" } == false)
     #expect(plan?.nodes.allSatisfy { timeout in
         guard let seconds = timeout.command.timeoutSeconds else { return false }
         return seconds.isFinite && seconds > 0
@@ -887,8 +882,8 @@ func testToolingUsesOnlyItsCheckPlanDependencyClosure() throws {
 
     #expect(result.exitCode == 0)
     #expect(manifest.results.map(\.name) == ["resolve", "build", "test-tooling"])
-    // The harness tests live in the Tools package now, and the inspector and
-    // MCP tests moved to the Apps package as node `test-apps`.
+    // The harness tests live in the Tools package; the inspector and MCP tests
+    // moved to the sibling axoloty-debug package.
     #expect(runner.commands.last?.arguments == [
         "test", "-Xswiftc", "-warnings-as-errors", "--package-path", "Tools",
         "--scratch-path", ".build/tooling", "--cache-path", ".swiftpm-cache",

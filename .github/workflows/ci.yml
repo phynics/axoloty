@@ -128,20 +128,6 @@ jobs:
             .build/ci/packages/*/out/PCH
             .build/ci/packages/*/out/SDKExplicitPrecompiledModules
             .build/ci/packages/*/out/v5
-            .build/ci/apps/.buildSystem_debug
-            .build/ci/apps/artifacts
-            .build/ci/apps/checkouts
-            .build/ci/apps/manifest.pif
-            .build/ci/apps/plugins
-            .build/ci/apps/prebuilts
-            .build/ci/apps/repositories
-            .build/ci/apps/workspace-state.json
-            .build/ci/apps/out/CompilationCache.noindex
-            .build/ci/apps/out/Intermediates.noindex
-            .build/ci/apps/out/ModuleCache.noindex
-            .build/ci/apps/out/PCH
-            .build/ci/apps/out/SDKExplicitPrecompiledModules
-            .build/ci/apps/out/v5
           key: ${{ env.SWIFT_BUILD_CACHE_KEY }}
           restore-keys: |
             ${{ env.SWIFT_BUILD_CACHE_PREFIX }}
@@ -286,20 +272,6 @@ jobs:
             .build/ci/packages/*/out/PCH
             .build/ci/packages/*/out/SDKExplicitPrecompiledModules
             .build/ci/packages/*/out/v5
-            .build/ci/apps/.buildSystem_debug
-            .build/ci/apps/artifacts
-            .build/ci/apps/checkouts
-            .build/ci/apps/manifest.pif
-            .build/ci/apps/plugins
-            .build/ci/apps/prebuilts
-            .build/ci/apps/repositories
-            .build/ci/apps/workspace-state.json
-            .build/ci/apps/out/CompilationCache.noindex
-            .build/ci/apps/out/Intermediates.noindex
-            .build/ci/apps/out/ModuleCache.noindex
-            .build/ci/apps/out/PCH
-            .build/ci/apps/out/SDKExplicitPrecompiledModules
-            .build/ci/apps/out/v5
           key: ${{ env.SWIFT_BUILD_CACHE_KEY }}
 
       - name: Upload verification run diagnostics

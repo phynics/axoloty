@@ -77,9 +77,9 @@ test("the orchestration harness is declared once, by the Tools package", () => {
 });
 
 test("the root package declares no executable products", () => {
-  // Executables belong to the Tools harness and the Apps applications. Keeping
-  // them out of the root manifest is what keeps their dependencies out of a
-  // library consumer's resolution graph.
+  // Executables belong to the Tools harness and the sibling axoloty-debug
+  // package. Keeping them out of the root manifest is what keeps their
+  // dependencies out of a library consumer's resolution graph.
   assert.doesNotMatch(manifest, /\.executable\(/);
 });
 

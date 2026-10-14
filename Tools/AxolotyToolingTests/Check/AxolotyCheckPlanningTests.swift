@@ -161,10 +161,7 @@ func testOneCommandsPreferTheOwningPackageAndKeepEveryPackageReachable() throws 
         }
     }
 
-    // A manifest-declared filter is routed straight to its owning package. The
-    // retired `test-tooling-check` node no longer declares `AxolotyCheckTests`,
-    // so an Apps filter now proves the owning-package preference.
-    #expect(try packages(for: "AxolotyMCPTests").first == "Apps")
+    // A manifest-declared filter is routed straight to its owning package.
     #expect(try packages(for: "WireDTOBoundaryTests").first == ".")
     // An unlisted filter still reaches Tools, after the root package.
     let unlisted = try packages(for: "signalMultiplexerRestoresPreviousSignalDispositionsAndFansOutConcurrentLeases")

@@ -38,8 +38,8 @@ The 1.0 API freeze covers the following:
 - **Frozen core products:** `Axoloty`, `AxolotyWire`, `AxolotyProtocol`,
   `AxolotyObjectModel`, `AxolotyStaticRuntime`, and `AxolotyMQTT`.
 - **Everything else is experimental** for 1.0, including the Zenoh transport,
-  the optional SensorThings and IO-routing products, and the first-party tools
-  under `Apps/` and `Tools/`.
+  the optional SensorThings and IO-routing products, the `Tools/` harness, and
+  the runtime/debug products in the sibling `phynics/axoloty-debug` package.
 - **`axoloty/1` CBOR is in 1.0 scope and implemented on `main`.** The bounded
   codec, `axoloty/1` routes, frozen golden corpus, host/static trace parity,
   Zenoh-only profile, and embedded consumer contract surface are in the tree.

@@ -41,9 +41,10 @@ The [1.0 scope](./ROADMAP.md) freezes exactly these products:
 | `AxolotyMQTT` | The MQTT transport adapter binding. |
 
 Everything else is experimental for 1.0: `AxolotyZenoh`, `AxolotyZenohCore`,
-`AxolotyCoatyModels`, `AxolotyIoRouting`, `AxolotySensorThings*`, and the
-first-party `Apps/` and `Tools/` products. The deprecation policy below applies
-only to the frozen products.
+`AxolotyCoatyModels`, `AxolotyIoRouting`, `AxolotySensorThings*`, the `Tools/`
+harness, and the applications and debug products in the sibling
+[`phynics/axoloty-debug`](https://github.com/phynics/axoloty-debug) package.
+The deprecation policy below applies only to the frozen products.
 
 ## Deprecation policy
 

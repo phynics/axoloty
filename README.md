@@ -227,21 +227,23 @@ make serve-dev
 swift run --package-path Tools axoloty-tool check
 ```
 
-See [docs/services.md](./docs/services.md) for MQTT/MCP installation and
-transport details.
+See the [axoloty-debug services reference](https://github.com/phynics/axoloty-debug/blob/main/docs/services.md)
+for MQTT/MCP installation and transport details.
 
 ### MQTT object inspector
 
 `axoloty-inspect` connects to a live MQTT broker and inspects Coaty objects
 without writing a custom agent — passive catalogue (`catalog`) or active
-discovery (`discover`):
+discovery (`discover`). It is a product of the sibling
+[`phynics/axoloty-debug`](https://github.com/phynics/axoloty-debug) package:
 
 ```sh
-swift run --package-path Apps axoloty-inspect catalog --duration 10s
-swift run --package-path Apps axoloty-inspect discover --core-type Identity
+swift run --package-path ../axoloty-debug axoloty-inspect catalog --duration 10s
+swift run --package-path ../axoloty-debug axoloty-inspect discover --core-type Identity
 ```
 
-See [docs/inspector.md](./docs/inspector.md) for the full reference.
+See the [axoloty-debug inspector reference](https://github.com/phynics/axoloty-debug/blob/main/docs/inspector.md)
+for the full reference.
 
 For the current release's changes, see
 [0.9.0 release notes](./docs/releases/0.9.0.md). The `axoloty/1` CBOR profile

@@ -23,7 +23,7 @@ const EXPECTED = Object.freeze({
     "AxolotyTestBroker",
   ],
   // The root package is a library package. Executables are products of the
-  // Tools harness package and the Apps application package.
+  // Tools harness package and the sibling axoloty-debug package, not here.
   executables: [],
 });
 
