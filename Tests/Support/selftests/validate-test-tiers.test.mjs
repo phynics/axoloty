@@ -48,7 +48,7 @@ test("CI preserves the firmware-independent Embedded Core contract", () => {
   assert.equal(consumer.hardware, "forbidden");
   assert.equal(consumer.network, "none");
   assert.equal(consumer.broker, "none");
-  assert.deepEqual(consumer.resources, ["source-tree"]);
+  assert.deepEqual(consumer.resources, ["source-tree", "swiftpm-build"]);
   assert.equal(consumer.resources.includes("embedded-build"), false);
   assert.equal(ci.nodes.includes(consumer.id), true);
   assert.equal(document.requiredGates.includes(consumer.id), true);
@@ -60,6 +60,29 @@ test("CI preserves the firmware-independent Embedded Core contract", () => {
     assert.equal(ci.nodes.includes(required), true, required);
     assert.equal(document.requiredGates.includes(required), true, required);
   }
+});
+
+test("graph concurrency is opt-in and shared resources are declared", () => {
+  const document = JSON.parse(fs.readFileSync(path.join(root, "Tests/Support/test-tiers.json"), "utf8"));
+  const lint = document.nodes.find(node => node.id === "lint");
+  const packageTests = document.nodes.find(node => node.id === "g3-object-model-tests");
+
+  assert.equal(lint.concurrency, "parallel");
+  assert.deepEqual(lint.sharedResources, ["source-tree"]);
+  assert.equal(packageTests.concurrency, undefined, "new nodes must remain serial unless explicitly audited");
+
+  const options = {
+    makeTargets: parseMakeTargets(path.join(root, "Makefile")),
+    discoveredSelfTests: [],
+    exists: () => true,
+  };
+  const badIsolation = JSON.parse(JSON.stringify(document));
+  badIsolation.nodes.find(node => node.id === "build").concurrency = "parallel";
+  assert.ok(validate(badIsolation, options).includes("build: graph concurrency requires parallel process isolation"));
+
+  const badResource = JSON.parse(JSON.stringify(document));
+  badResource.nodes.find(node => node.id === "lint").sharedResources = ["not-declared"];
+  assert.ok(validate(badResource, options).includes('lint: shared resource "not-declared" must also be declared in resources'));
 });
 
 test("package CI checks use stable isolated scratch paths", () => {

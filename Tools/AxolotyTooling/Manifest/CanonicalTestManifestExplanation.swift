@@ -24,10 +24,14 @@ public struct AxolotyCanonicalTestNodeExplanation: Codable, Equatable, Sendable 
     public let hardware: AxolotyTestHardwarePolicy
     /// Resource ownership names.
     public let resources: [String]
+    /// Resources read without modification.
+    public let sharedResources: [String]
     /// Isolation mode.
     public let isolation: AxolotyTestIsolation
     /// Scheduling lane.
     public let lane: String?
+    /// Explicit graph-level scheduling permission.
+    public let concurrency: AxolotyTestConcurrencyPolicy
     /// Artifact names.
     public let artifacts: [String]
 
@@ -43,8 +47,10 @@ public struct AxolotyCanonicalTestNodeExplanation: Codable, Equatable, Sendable 
         broker: AxolotyTestBrokerPolicy,
         hardware: AxolotyTestHardwarePolicy,
         resources: [String],
+        sharedResources: [String] = [],
         isolation: AxolotyTestIsolation,
         lane: String?,
+        concurrency: AxolotyTestConcurrencyPolicy = .serial,
         artifacts: [String]
     ) {
         self.id = id
@@ -57,8 +63,10 @@ public struct AxolotyCanonicalTestNodeExplanation: Codable, Equatable, Sendable 
         self.broker = broker
         self.hardware = hardware
         self.resources = resources
+        self.sharedResources = sharedResources
         self.isolation = isolation
         self.lane = lane
+        self.concurrency = concurrency
         self.artifacts = artifacts
     }
 }
@@ -73,6 +81,12 @@ public struct AxolotyCanonicalTestExplanation: Codable, Equatable, Sendable {
     public let ci: Bool
     /// The absolute wall-clock budget for this plan, in seconds.
     public let timeoutSeconds: TimeInterval?
+    /// Longest dependency chain by declared expected node duration.
+    public let criticalPathNodes: [String]
+    /// Sum of expected durations along the critical path.
+    public let criticalPathSeconds: TimeInterval
+    /// Effective concurrency limit from the current CPU and memory budget.
+    public let maxConcurrentNodes: Int
     /// Ordered nodes in the command graph.
     public let nodes: [AxolotyCanonicalTestNodeExplanation]
 
@@ -82,12 +96,18 @@ public struct AxolotyCanonicalTestExplanation: Codable, Equatable, Sendable {
         name: String,
         ci: Bool,
         timeoutSeconds: TimeInterval? = nil,
-        nodes: [AxolotyCanonicalTestNodeExplanation]
+        nodes: [AxolotyCanonicalTestNodeExplanation],
+        criticalPathNodes: [String] = [],
+        criticalPathSeconds: TimeInterval = 0,
+        maxConcurrentNodes: Int = 1
     ) {
         self.schemaVersion = schemaVersion
         self.name = name
         self.ci = ci
         self.timeoutSeconds = timeoutSeconds
         self.nodes = nodes
+        self.criticalPathNodes = criticalPathNodes
+        self.criticalPathSeconds = criticalPathSeconds
+        self.maxConcurrentNodes = maxConcurrentNodes
     }
 }

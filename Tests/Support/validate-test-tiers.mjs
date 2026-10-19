@@ -12,6 +12,7 @@ const networkModes = new Set(["none", "isolated", "isolated-broker", "isolated-c
 const brokerModes = new Set(["none", "local", "isolated"]);
 const hardwareModes = new Set(["forbidden", "optional", "required"]);
 const isolationModes = new Set(["parallel", "separate-process", "exclusive"]);
+const concurrencyModes = new Set(["serial", "parallel"]);
 const retiredCanonicalNodes = new Set(["integration-tests", "logging-global", "test-tooling-check"]);
 const retiredCanonicalFilters = new Set(["MQTTNIOClientTests", "DecentralizedLoggingTest", "LogManagerTests"]);
 
@@ -427,6 +428,20 @@ export function validate(document, { makeTargets, discoveredSelfTests, invokedSe
     if (!brokerModes.has(node.broker)) errors.push(`${node.id}: unknown broker mode ${JSON.stringify(node.broker)}`);
     if (!hardwareModes.has(node.hardware)) errors.push(`${node.id}: unknown hardware mode ${JSON.stringify(node.hardware)}`);
     if (!isolationModes.has(node.isolation)) errors.push(`${node.id}: unknown isolation mode ${JSON.stringify(node.isolation)}`);
+    if (node.concurrency !== undefined && !concurrencyModes.has(node.concurrency)) {
+      errors.push(`${node.id}: unknown graph concurrency policy ${JSON.stringify(node.concurrency)}`);
+    }
+    if (node.concurrency === "parallel" && node.isolation !== "parallel") {
+      errors.push(`${node.id}: graph concurrency requires parallel process isolation`);
+    }
+    if (node.sharedResources !== undefined && !Array.isArray(node.sharedResources)) {
+      errors.push(`${node.id}: sharedResources must be an array`);
+    }
+    for (const resource of node.sharedResources ?? []) {
+      if (typeof resource !== "string" || !(node.resources ?? []).includes(resource)) {
+        errors.push(`${node.id}: shared resource ${JSON.stringify(resource)} must also be declared in resources`);
+      }
+    }
     if (node.hardware !== "forbidden" && !node.resources?.includes("embedded-device")) errors.push(`${node.id}: hardware nodes must own embedded-device`);
     if (["signal-disposition", "logging-global", "environment", "fixed-port-1883"].some(resource => (node.resources ?? []).includes(resource)) && node.isolation === "parallel") errors.push(`${node.id}: process-global or fixed-port resources cannot use parallel isolation`);
   }

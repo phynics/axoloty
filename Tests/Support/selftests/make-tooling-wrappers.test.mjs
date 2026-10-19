@@ -130,7 +130,7 @@ test("direct test wrappers preserve the invocation resource namespace", () => {
   const makefile = fs.readFileSync("Makefile", "utf8");
   assert.match(
     makefile,
-    /AXOLOTY_RUN_CONTAINER_ENV_VARS := AXOLOTY_RUN_ID AXOLOTY_RUNS_DIR WIRE_OUTPUT_DIR AXOLOTY_RESOURCE_LEASE_ROOT/,
+    /AXOLOTY_RUN_CONTAINER_ENV_VARS := AXOLOTY_RUN_ID AXOLOTY_RUNS_DIR WIRE_OUTPUT_DIR AXOLOTY_RESOURCE_LEASE_ROOT AXOLOTY_CHECK_CONCURRENCY/,
   );
   assert.match(
     recipe(makefile, "test-one"),
@@ -144,6 +144,11 @@ test("direct test wrappers preserve the invocation resource namespace", () => {
     recipe(makefile, "axoloty-tool"),
     /CONTAINER_ENV_VARS="[^"]*\$\(AXOLOTY_RUN_CONTAINER_ENV_VARS\)"/,
     "axoloty-tool must forward run-scoped values into the project container",
+  );
+  assert.match(
+    recipe(makefile, "explain"),
+    /CONTAINER_ENV_VARS="AXOLOTY_OUTPUT AXOLOTY_CHECK_CONCURRENCY"/,
+    "explain must use the same scheduler override as tier execution",
   );
 });
 

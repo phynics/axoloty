@@ -23,7 +23,8 @@ enum AxolotyCommandHelp {
       verify [--ci]        Run the canonical ordinary or CI verification plan.
       test-one --filter F [--maximum-repetitions N] [--repeat-until pass|fail]
                            Run one bounded Swift test filter, optionally repeated.
-      test-tier TIER       Run one canonical test tier.
+      test-tier TIER [--node NODE]
+                           Run a canonical tier or one node with its prerequisites.
       explain TIER          Print its command graph and execution policies.
       build                Build the host package and its prerequisites.
       test tooling         Run offline developer-tool tests and prerequisites.

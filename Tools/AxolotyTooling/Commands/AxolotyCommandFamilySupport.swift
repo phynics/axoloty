@@ -20,31 +20,42 @@ enum AxolotyCommandFamilySupport {
     static func manifestResult(
         _ manifest: AxolotyCheckManifest,
         outputMode: AxolotyCommandOutputMode,
-        exitCode: Int32
+        exitCode: Int32,
+        rerunTier: String? = nil
     ) -> AxolotyCommandResult {
         guard outputMode != .json else {
             return (try? jsonResult(manifest, exitCode: exitCode))
                 ?? AxolotyCommandResult(exitCode: 70)
         }
         return AxolotyCommandResult(
-            standardOutput: humanSummary(manifest.results),
+            standardOutput: humanSummary(manifest.results, rerunTier: rerunTier),
             exitCode: exitCode
         )
     }
 
-    static func humanSummary(_ results: [AxolotyCheckResult]) -> String {
-        results.map { "\($0.status.rawValue.uppercased()) \($0.name)" }.joined(separator: "\n") + "\n"
+    static func humanSummary(_ results: [AxolotyCheckResult], rerunTier: String? = nil) -> String {
+        var lines = results.map { "\($0.status.rawValue.uppercased()) \($0.name)" }
+        if let rerunTier {
+            lines += results.compactMap { result in
+                guard result.status == .failed || result.status == .expired else { return nil }
+                return "RERUN make test-tier TIER=\(rerunTier) NODE=\(result.name)"
+            }
+        }
+        return lines.joined(separator: "\n") + "\n"
     }
 
     static func humanExplanation(_ explanation: AxolotyCanonicalTestExplanation) -> String {
         let deadline = explanation.timeoutSeconds.map { String($0) } ?? "none"
         var lines = [
             "PLAN \(explanation.name) schema=\(explanation.schemaVersion) ci=\(explanation.ci) deadline=\(deadline)",
+            "scheduler max-concurrency=\(explanation.maxConcurrentNodes)",
+            "dependency-critical-path expected=\(explanation.criticalPathSeconds)s nodes=\(explanation.criticalPathNodes.isEmpty ? "-" : explanation.criticalPathNodes.joined(separator: ","))",
         ]
         lines += explanation.nodes.map { node in
             let dependencies = node.dependencies.isEmpty ? "-" : node.dependencies.joined(separator: ",")
             let lane = node.lane ?? "-"
             let resources = node.resources.isEmpty ? "-" : node.resources.joined(separator: ",")
+            let sharedResources = node.sharedResources.isEmpty ? "-" : node.sharedResources.joined(separator: ",")
             let artifacts = node.artifacts.isEmpty ? "-" : node.artifacts.joined(separator: ",")
             let arguments = ([node.executable] + node.arguments).map { argument in
                 argument.contains(" ") ? "\"\(argument)\"" : argument
@@ -54,7 +65,8 @@ enum AxolotyCommandFamilySupport {
                 + "deadline=\(node.timeoutSeconds)s\n"
                 + "  policy network=\(node.network.rawValue) broker=\(node.broker.rawValue) "
                 + "hardware=\(node.hardware.rawValue) isolation=\(node.isolation.rawValue) "
-                + "lane=\(lane) resources=\(resources) artifacts=\(artifacts)"
+                + "concurrency=\(node.concurrency.rawValue) lane=\(lane) "
+                + "resources=\(resources) shared-resources=\(sharedResources) artifacts=\(artifacts)"
         }
         return lines.joined(separator: "\n") + "\n"
     }

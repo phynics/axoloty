@@ -201,6 +201,10 @@ public struct AxolotyCommandObservation: Codable, Equatable, Sendable {
     /// issue, across the whole run. Empty when the command ran no Swift
     /// Testing suite or none failed.
     public let failedTestNames: Set<String>
+    /// Sum of reported SwiftPM compilation durations, when the output contains them.
+    public let compilationSeconds: TimeInterval?
+    /// Sum of reported Swift Testing case durations, when the output contains them.
+    public let testSeconds: TimeInterval?
 
     /// Creates a successful-lifecycle command observation.
     public init(
@@ -208,13 +212,17 @@ public struct AxolotyCommandObservation: Codable, Equatable, Sendable {
         lastTest: String?,
         outputBytes: Int,
         artifactPath: String,
-        failedTestNames: Set<String> = []
+        failedTestNames: Set<String> = [],
+        compilationSeconds: TimeInterval? = nil,
+        testSeconds: TimeInterval? = nil
     ) {
         self.elapsedSeconds = elapsedSeconds
         self.lastTest = lastTest
         self.outputBytes = outputBytes
         self.artifactPath = artifactPath
         self.failedTestNames = failedTestNames
+        self.compilationSeconds = compilationSeconds
+        self.testSeconds = testSeconds
     }
 }
 
@@ -226,6 +234,10 @@ public struct AxolotyCheckNode: Codable, Equatable, Sendable {
         case command
         case status
         case resources
+        case sharedResources
+        case parallelSafe
+        case lane
+        case isolation
         case expectedDurationSeconds
     }
 
@@ -237,8 +249,16 @@ public struct AxolotyCheckNode: Codable, Equatable, Sendable {
     public let command: AxolotyCommandPlan
     /// The node's current status.
     public let status: AxolotyCheckStatus
-    /// Named external resources that must be held while this node runs.
+    /// Named exclusive resources that must be held while this node runs.
     public let resources: [String]
+    /// Named resources this node reads without modifying.
+    public let sharedResources: [String]
+    /// Whether the manifest explicitly permits graph-level overlap.
+    public let parallelSafe: Bool
+    /// Optional scheduling lane. Nodes in one lane do not overlap.
+    public let lane: String?
+    /// The node's declared process and resource isolation mode.
+    public let isolation: AxolotyTestIsolation
     /// Wall-clock duration after which the executor emits an overrun warning.
     public let expectedDurationSeconds: TimeInterval?
 
@@ -249,6 +269,10 @@ public struct AxolotyCheckNode: Codable, Equatable, Sendable {
         command: AxolotyCommandPlan,
         status: AxolotyCheckStatus = .planned,
         resources: [String] = [],
+        sharedResources: [String] = [],
+        parallelSafe: Bool = false,
+        lane: String? = nil,
+        isolation: AxolotyTestIsolation = .exclusive,
         expectedDurationSeconds: TimeInterval? = nil
     ) {
         self.name = name
@@ -256,6 +280,10 @@ public struct AxolotyCheckNode: Codable, Equatable, Sendable {
         self.command = command
         self.status = status
         self.resources = resources
+        self.sharedResources = sharedResources
+        self.parallelSafe = parallelSafe
+        self.lane = lane
+        self.isolation = isolation
         self.expectedDurationSeconds = expectedDurationSeconds
     }
 
@@ -268,6 +296,10 @@ public struct AxolotyCheckNode: Codable, Equatable, Sendable {
         command = try container.decode(AxolotyCommandPlan.self, forKey: .command)
         status = try container.decode(AxolotyCheckStatus.self, forKey: .status)
         resources = try container.decodeIfPresent([String].self, forKey: .resources) ?? []
+        sharedResources = try container.decodeIfPresent([String].self, forKey: .sharedResources) ?? []
+        parallelSafe = try container.decodeIfPresent(Bool.self, forKey: .parallelSafe) ?? false
+        lane = try container.decodeIfPresent(String.self, forKey: .lane)
+        isolation = try container.decodeIfPresent(AxolotyTestIsolation.self, forKey: .isolation) ?? .exclusive
         expectedDurationSeconds = try container.decodeIfPresent(TimeInterval.self, forKey: .expectedDurationSeconds)
     }
 }
@@ -282,17 +314,25 @@ public struct AxolotyCheckTiming: Codable, Equatable, Sendable {
     public let resourceLeaseWaitSeconds: TimeInterval
     /// Whether elapsed time exceeded the configured expectation.
     public let exceededExpectation: Bool
+    /// Compilation time reported by the command, when present.
+    public let compilationSeconds: TimeInterval?
+    /// Test case time reported by the command, when present.
+    public let testSeconds: TimeInterval?
 
     /// Creates timing evidence for a completed node.
     public init(
         elapsedSeconds: TimeInterval,
         expectedDurationSeconds: TimeInterval?,
-        resourceLeaseWaitSeconds: TimeInterval
+        resourceLeaseWaitSeconds: TimeInterval,
+        compilationSeconds: TimeInterval? = nil,
+        testSeconds: TimeInterval? = nil
     ) {
         self.elapsedSeconds = elapsedSeconds
         self.expectedDurationSeconds = expectedDurationSeconds
         self.resourceLeaseWaitSeconds = resourceLeaseWaitSeconds
         exceededExpectation = expectedDurationSeconds.map { elapsedSeconds >= $0 } ?? false
+        self.compilationSeconds = compilationSeconds
+        self.testSeconds = testSeconds
     }
 }
 
@@ -305,6 +345,8 @@ public struct AxolotyCheckResult: Codable, Equatable, Sendable {
     /// The command result, when execution occurred or the executor emitted a
     /// lifecycle diagnostic such as an expired plan deadline.
     public let command: AxolotyCheckCommandResult?
+    /// The first direct prerequisite that prevented a skipped node from running.
+    public let blockingDependency: String?
     /// Executor-owned timing, absent for nodes that never started.
     public let timing: AxolotyCheckTiming?
 
@@ -313,11 +355,13 @@ public struct AxolotyCheckResult: Codable, Equatable, Sendable {
         name: String,
         status: AxolotyCheckStatus,
         command: AxolotyCheckCommandResult? = nil,
+        blockingDependency: String? = nil,
         timing: AxolotyCheckTiming? = nil
     ) {
         self.name = name
         self.status = status
         self.command = command
+        self.blockingDependency = blockingDependency
         self.timing = timing
     }
 }

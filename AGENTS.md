@@ -55,6 +55,16 @@ The supported external-consumer boundary is `docs/embedded-consumer-contract.jso
 
 Linux product builds and the Core Embedded Swift gate use the pinned container through root Make targets. Do not run native Swift product builds on Linux. A cold mounted-worktree build on a four-core Linux host can spend about 15 minutes compiling tooling before the requested node starts; compiler and heartbeat output are progress even when no test name changes, so let the repository timeout own the deadline and do not cancel an advancing build. Firmware cross-builds, flashing, and device qualification run in `phynics/axoloty-embedded`, not here.
 
+## Parallel agent verification and resource budgets
+
+- Give each agent one issue and one worktree. Do not have agents share a writable checkout or build scratch.
+- Use `make test-one FILTER='...'` for focused feedback. Before changing canonical dependencies or scheduling, inspect the graph with `make explain TIER=ci`. Run the canonical tier with `make test-tier TIER=ci`, then run `make verify` before PR review. Use `make verify-ci` only to reproduce CI behavior.
+- The canonical scheduler runs only nodes explicitly marked parallel-safe after all dependencies pass. New nodes default to serial until their filesystem outputs, process-global state, fixtures, ports, external services, databases, hardware, and container use have been audited. A `parallel` isolation label describes a command's internal behavior; it does not grant graph-level concurrency.
+- The scheduler limits fan-out from available CPUs and memory. `AXOLOTY_CHECK_CONCURRENCY=1` forces serial execution for debugging and regression comparisons; higher values are capped by the detected resource budget. Respect exclusive resource leases and node lanes.
+- Never let concurrent compiler processes write to the same mutable SwiftPM scratch directory. Use an exclusive scratch resource or serialize the nodes. Shared package downloads and content-addressed caches may be shared only where SwiftPM supports it. Keep the pinned development container canonical for Linux product builds and Embedded Swift checks.
+- Use serial mode to investigate nondeterministic failures. Do not treat missing new test-name output as a hung compiler while compiler progress or heartbeat evidence continues; let the repository timeout own the deadline.
+- Ordinary verification must not probe, reserve, flash, or request privileged access to hardware.
+
 The Makefile and shell launchers are thin bootstrap and compatibility layers. Put orchestration policy, validation, and lifecycle behavior in `AxolotyTooling`, and runtime/debug service supervision in `AxolotyDebug`. `Package.resolved` is authoritative. Use the repository resolution target for an authorized dependency update.
 
 ## GitHub-centered work

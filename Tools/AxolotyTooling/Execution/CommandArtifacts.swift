@@ -204,8 +204,10 @@ final class AxolotyCommandArtifactStore: Sendable {
             metadata["escalatedToKill"] = lifecycle.escalatedToKill
         } else if let observation = result.observation {
             metadata["artifactPath"] = observation.artifactPath
+            metadata["compilationSeconds"] = observation.compilationSeconds ?? NSNull()
             metadata["lastTest"] = observation.lastTest ?? NSNull()
             metadata["outputBytes"] = observation.outputBytes
+            metadata["testSeconds"] = observation.testSeconds ?? NSNull()
         }
         try? writeJSON(metadata, to: artifact.metadata, mergeWithExisting: true)
 
@@ -223,8 +225,10 @@ final class AxolotyCommandArtifactStore: Sendable {
         } else {
             manifest["outcome"] = result.exitCode == 0 ? "passed" : "failed"
             if let observation = result.observation {
+                manifest["compilationSeconds"] = observation.compilationSeconds ?? NSNull()
                 manifest["lastTest"] = observation.lastTest ?? NSNull()
                 manifest["outputBytes"] = observation.outputBytes
+                manifest["testSeconds"] = observation.testSeconds ?? NSNull()
             }
         }
         try? writeJSON(manifest, to: artifact.manifest, mergeWithExisting: true)
@@ -237,6 +241,8 @@ final class AxolotyCommandArtifactStore: Sendable {
             "timedOut": result.lifecycle?.outcome == .timedOut,
             "lastTest": result.observation?.lastTest ?? result.lifecycle?.lastTest ?? NSNull(),
             "outputBytes": result.observation?.outputBytes ?? result.lifecycle?.outputBytes ?? NSNull(),
+            "compilationSeconds": result.observation?.compilationSeconds ?? NSNull(),
+            "testSeconds": result.observation?.testSeconds ?? NSNull(),
             "escalatedToKill": result.lifecycle?.escalatedToKill ?? false,
         ]
         try? writeJSON(durableResult, to: artifact.result)

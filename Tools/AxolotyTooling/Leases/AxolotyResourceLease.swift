@@ -28,6 +28,42 @@ public protocol AxolotyResourceLeasing: Sendable {
         timeoutSeconds: TimeInterval?,
         owner: String
     ) throws -> any AxolotyResourceLease
+
+    /// Acquires a lease and observes cancellation while waiting for another owner.
+    ///
+    /// - Parameters:
+    ///   - resource: A stable resource name.
+    ///   - timeoutSeconds: The maximum total wait in seconds.
+    ///   - owner: A diagnostic owner description.
+    ///   - cancellation: The token that can stop resource acquisition.
+    /// - Returns: The held lease.
+    /// - Throws: ``AxolotyResourceLeaseError`` when acquisition fails or is cancelled.
+    func acquire(
+        resource: String,
+        timeoutSeconds: TimeInterval?,
+        owner: String,
+        cancellation: AxolotyCommandCancellation?
+    ) throws -> any AxolotyResourceLease
+}
+
+extension AxolotyResourceLeasing {
+    /// Adapts a lease manager that does not provide cancellation-aware waiting.
+    ///
+    /// - Parameters:
+    ///   - resource: A stable resource name.
+    ///   - timeoutSeconds: The maximum wait in seconds.
+    ///   - owner: A diagnostic owner description.
+    ///   - cancellation: Ignored by managers that implement only the basic acquisition method.
+    /// - Returns: The held lease.
+    /// - Throws: An error reported by the basic acquisition method.
+    public func acquire(
+        resource: String,
+        timeoutSeconds: TimeInterval?,
+        owner: String,
+        cancellation _: AxolotyCommandCancellation?
+    ) throws -> any AxolotyResourceLease {
+        try acquire(resource: resource, timeoutSeconds: timeoutSeconds, owner: owner)
+    }
 }
 /// Errors emitted while acquiring a named resource lease.
 public enum AxolotyResourceLeaseError: Error, Equatable, Sendable {
@@ -39,6 +75,8 @@ public enum AxolotyResourceLeaseError: Error, Equatable, Sendable {
     case unavailable(path: String, reason: String)
     /// Another process owns the resource when the bounded wait expires.
     case busy(resource: String, owner: String?)
+    /// Cancellation was requested while waiting for the resource.
+    case cancelled(resource: String)
 }
 
 extension AxolotyResourceLeaseError: LocalizedError {
@@ -53,6 +91,8 @@ extension AxolotyResourceLeaseError: LocalizedError {
         case .busy(let resource, let owner):
             let ownerDescription = owner.map { " owner=\($0)" } ?? " owner=unknown"
             return "resource lease busy: resource=\(resource)\(ownerDescription)"
+        case .cancelled(let resource):
+            return "resource lease acquisition cancelled: resource=\(resource)"
         }
     }
 }
@@ -116,6 +156,16 @@ public struct FoundationResourceLeaseManager: AxolotyResourceLeasing {
         timeoutSeconds: TimeInterval? = 0,
         owner: String = "unknown"
     ) throws -> any AxolotyResourceLease {
+        try acquire(resource: resource, timeoutSeconds: timeoutSeconds, owner: owner, cancellation: nil)
+    }
+
+    /// Acquires a named lease and stops polling when cancellation is requested.
+    public func acquire(
+        resource: String,
+        timeoutSeconds: TimeInterval?,
+        owner: String,
+        cancellation: AxolotyCommandCancellation?
+    ) throws -> any AxolotyResourceLease {
         guard Self.isSafeResource(resource) else {
             throw AxolotyResourceLeaseError.invalidResource(resource)
         }
@@ -151,7 +201,8 @@ public struct FoundationResourceLeaseManager: AxolotyResourceLeasing {
             ownerURL: ownerURL,
             resource: resource,
             timeoutSeconds: timeoutSeconds,
-            owner: owner
+            owner: owner,
+            cancellation: cancellation
         )
     }
 
@@ -160,7 +211,8 @@ public struct FoundationResourceLeaseManager: AxolotyResourceLeasing {
         ownerURL: URL,
         resource: String,
         timeoutSeconds: TimeInterval?,
-        owner: String
+        owner: String,
+        cancellation: AxolotyCommandCancellation?
     ) throws -> any AxolotyResourceLease {
         let clock = ContinuousClock()
         let deadline = timeoutSeconds.map { timeout in
@@ -168,6 +220,10 @@ public struct FoundationResourceLeaseManager: AxolotyResourceLeasing {
             return clock.now.advanced(by: .milliseconds(milliseconds))
         }
         while true {
+            if cancellation?.isCancelled == true {
+                _ = close(descriptor)
+                throw AxolotyResourceLeaseError.cancelled(resource: resource)
+            }
             if flock(descriptor, LOCK_EX | LOCK_NB) == 0 {
                 let record = Self.ownerRecord(resource: resource, owner: owner)
                 do {
