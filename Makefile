@@ -28,7 +28,7 @@ WIRE_OUTPUT_DIR ?= $(AXOLOTY_RUNS_DIR)/$(RUN_ID)/wire
 # This is deliberately container-visible. The path is relative to the
 # mounted worktree, while .swiftpm-cache is the shared cache mount.
 AXOLOTY_RESOURCE_LEASE_ROOT ?= .swiftpm-cache/.axoloty-resource-leases
-AXOLOTY_RUN_CONTAINER_ENV_VARS := AXOLOTY_RUN_ID AXOLOTY_RUNS_DIR WIRE_OUTPUT_DIR AXOLOTY_RESOURCE_LEASE_ROOT
+AXOLOTY_RUN_CONTAINER_ENV_VARS := AXOLOTY_RUN_ID AXOLOTY_RUNS_DIR WIRE_OUTPUT_DIR AXOLOTY_RESOURCE_LEASE_ROOT AXOLOTY_CHECK_CONCURRENCY
 export AXOLOTY_RUN_ID AXOLOTY_RUNS_DIR WIRE_OUTPUT_DIR AXOLOTY_RESOURCE_LEASE_ROOT
 BUILD_LOCK ?= 1
 export BUILD_LOCK
@@ -105,7 +105,7 @@ help:
 		'make axoloty-tool AXOLOTY_TOOL_ARGS="--help"  Run the Swift tooling CLI in-container' \
 		'make verify        Run the canonical ordinary pre-PR verification plan' \
 		'make test-one FILTER=... [REPEAT=n] [REPEAT_UNTIL=pass|fail]  Run a bounded test filter, optionally repeated' \
-		'make test-tier TIER=ci|wire|wire-cbor|embedded|release|zenoh-live|zenoh-offline  Run one canonical test tier' \
+		'make test-tier TIER=ci|wire|wire-cbor|embedded|release|zenoh-live|zenoh-offline [NODE=id]  Run a tier or one node' \
 		'make explain TIER=...  Explain commands, policies, locks, and artifacts' \
 		'make checkpoint     Run the release checkpoint validation' \
 		'make serve-mqtt    Run the local MQTT broker in the container' \
@@ -212,10 +212,12 @@ test-one: image
 # that evidence; both used to live in the retired test-wire-live wrapper.
 test-tier:
 	@tier=$(call shell_quote,$(TIER)); \
+		node=$(call shell_quote,$(NODE)); \
 		test -n "$$tier" || { echo 'TIER is required' >&2; exit 2; }; \
+		case "$$node" in '' ) node_argument=;; *[!A-Za-z0-9._-]*) echo 'NODE must contain only letters, numbers, dots, underscores, or hyphens' >&2; exit 2;; *) node_argument=" --node $$node";; esac; \
 		case "$(TIER)" in wire) bridge=1;; *) bridge="$(AXOLOTY_HOST_RUNTIME_BRIDGE)";; esac; \
 		$(MAKE) --no-print-directory axoloty-tool \
-			AXOLOTY_TOOL_ARGS="test-tier $$tier" \
+			AXOLOTY_TOOL_ARGS="test-tier $$tier$$node_argument" \
 			AXOLOTY_CONTAINER_COMMAND_TIMEOUT_SECONDS=$(AXOLOTY_TIER_TIMEOUT_SECONDS) \
 			AXOLOTY_HOST_RUNTIME_BRIDGE="$$bridge"
 	@if [ "$(TIER)" = "wire" ] && test -n "$${AXOLOTY_G6_WIRE_EVIDENCE:-}"; then \
@@ -226,7 +228,7 @@ explain: image
 	@tier=$(call shell_quote,$(TIER)); \
 		test -n "$$tier" || { echo 'TIER is required' >&2; exit 2; }; \
 		CONTAINER_COMMAND_TIMEOUT_SECONDS="$(AXOLOTY_EXPLAIN_TIMEOUT_SECONDS)" CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" \
-		CONTAINER_ENV_VARS=AXOLOTY_OUTPUT AXOLOTY_OUTPUT=human \
+		CONTAINER_ENV_VARS="AXOLOTY_OUTPUT AXOLOTY_CHECK_CONCURRENCY" AXOLOTY_OUTPUT=human \
 		.devcontainer/run.sh /opt/axoloty/bin/axoloty-tool explain "$$tier"
 
 checkpoint:

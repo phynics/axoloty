@@ -19,6 +19,7 @@ func executorRunsIndependentNodesAfterFailure() throws {
     #expect(results.map(\.name) == ["failed", "blocked", "independent"])
     #expect(results.map(\.status) == [.failed, .skipped, .passed])
     #expect(results[1].command == nil)
+    #expect(results[1].blockingDependency == "failed")
 }
 
 @Test

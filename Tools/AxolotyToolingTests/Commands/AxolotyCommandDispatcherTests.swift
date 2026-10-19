@@ -87,7 +87,19 @@ func typedInvocationParserClassifiesReleaseCommandsAndEnvironmentFallbacks() {
     #expect(parser.parse(["zenoh", "live"]) == .zenohLive)
     #expect(parser.parse(["zenoh", "offline"]) == .zenohOffline)
     #expect(parser.parse(["test-one"]) == .testOne(filter: "FallbackSuite", repetition: nil))
-    #expect(parser.parse(["test-tier"]) == .testTier(name: "unit", ci: false))
+    #expect(parser.parse(["test-tier"]) == .testTier(name: "unit", ci: false, requested: nil))
+    #expect(parser.parse(["test-tier", "ci", "--node", "build"]) == .testTier(
+        name: "ci",
+        ci: false,
+        requested: ["build"]
+    ))
+    #expect(parser.parse(["test-tier", "--ci", "ci", "--node", "build"]) == .testTier(
+        name: "ci",
+        ci: true,
+        requested: ["build"]
+    ))
+    #expect(parser.parse(["test-tier", "ci", "--node", "../build"]) == .unsupported)
+    #expect(parser.parse(["test-tier", "ci", "--node", "build", "--node", "lint"]) == .unsupported)
     #expect(parser.parse(["explain"]) == .explain(tier: "unit", ci: false))
     #expect(parser.parse([
         "test-one", "--filter", "flakyTest",
@@ -619,6 +631,7 @@ func releaseCheckpointUsesTheInjectedExecutorEventSink() {
         fileSystem: StubFileSystem(paths: []),
         environment: projectEnvironment.merging([
             "AXOLOTY_TEST_MANIFEST": manifestURL.path,
+            "AXOLOTY_CHECK_CONCURRENCY": "1",
         ]) { _, value in value },
         eventSink: { event in events.append(event.diagnosticLine()) },
         clock: CheckTestClock(),
@@ -629,11 +642,12 @@ func releaseCheckpointUsesTheInjectedExecutorEventSink() {
 
     #expect(result.standardError.isEmpty)
     // The release category declares an expected duration; the plan it replaced
-    // declared none.
+    // declared none. The concurrency budget is pinned to one so the plan-start
+    // line does not depend on the host CPU and memory budget.
     #expect(events.lines == [
-        "[axoloty] event=plan-start expected=9000.000s\n",
-        "[axoloty] event=node-start node=resolve expected=60.000s lease-wait=0.000s\n",
-        "[axoloty] event=node-completion node=resolve status=passed elapsed=0.000s expected=60.000s lease-wait=0.000s\n",
+        "[axoloty] event=plan-start concurrency=1 expected=9000.000s\n",
+        "[axoloty] event=node-start node=resolve depends=- lane=swiftpm isolation=exclusive parallel-safe=false resources=swiftpm-cache shared-resources=- timeout=600.000s expected=60.000s lease-wait=0.000s\n",
+        "[axoloty] event=node-completion node=resolve depends=- lane=swiftpm isolation=exclusive parallel-safe=false resources=swiftpm-cache shared-resources=- timeout=600.000s status=passed exit-code=0 timed-out=false elapsed=0.000s expected=60.000s lease-wait=0.000s\n",
         "[axoloty] event=plan-completion status=passed elapsed=0.000s expected=9000.000s lease-wait=0.000s output-bytes=0\n",
     ])
 }

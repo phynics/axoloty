@@ -1,6 +1,7 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
 @testable import AxolotyTooling
+import Dispatch
 import Foundation
 import Testing
 #if canImport(Darwin)
@@ -87,6 +88,31 @@ private final class ResourceLeaseProbeProcess {
         guard process.isRunning else { return wait(timeout: 1) }
         _ = kill(process.processIdentifier, SIGKILL)
         return wait(timeout: 2)
+    }
+}
+
+private final class ResourceLeaseWaitResult: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storedError: Error?
+    private var storedAcquired = false
+
+    func store(acquired: Bool, error: Error?) {
+        lock.lock()
+        storedAcquired = acquired
+        storedError = error
+        lock.unlock()
+    }
+
+    var error: Error? {
+        lock.lock()
+        defer { lock.unlock() }
+        return storedError
+    }
+
+    var acquired: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return storedAcquired
     }
 }
 
@@ -202,6 +228,46 @@ func independentNamedResourceLeasesCoexist() throws {
 }
 
 @Test
+func resourceLeaseWaitStopsWhenCancelled() throws {
+    let root = try temporaryResourceLeaseRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let ready = root.appending(path: "owner-ready")
+    let owner = try ResourceLeaseProbeProcess(
+        root: root,
+        resource: "swiftpm-build",
+        ready: ready,
+        hold: true
+    )
+    defer { if owner.process.isRunning { _ = owner.stopAbruptly() } }
+    #expect(waitForReady(ready, owner: owner))
+
+    let manager = FoundationResourceLeaseManager(root: root)
+    let cancellation = AxolotyCommandCancellation()
+    let result = ResourceLeaseWaitResult()
+    let finished = DispatchSemaphore(value: 0)
+    DispatchQueue.global().async {
+        do {
+            _ = try manager.acquire(
+                resource: "swiftpm-build",
+                timeoutSeconds: 10,
+                owner: "cancelled-contender",
+                cancellation: cancellation
+            )
+            result.store(acquired: true, error: nil)
+        } catch {
+            result.store(acquired: false, error: error)
+        }
+        finished.signal()
+    }
+    Thread.sleep(forTimeInterval: 0.1)
+    cancellation.cancel()
+
+    #expect(finished.wait(timeout: .now() + 1) == .success)
+    #expect(!result.acquired)
+    #expect(result.error as? AxolotyResourceLeaseError == .cancelled(resource: "swiftpm-build"))
+}
+
+@Test
 func executorLeasesOnlyCollisionProneDeclaredResources() {
     let manager = RecordingLeaseManager()
     let validator = AxolotyExecutionContextValidator(environment: ["AXOLOTY_DEVCONTAINER": "1"])
@@ -217,8 +283,8 @@ func executorLeasesOnlyCollisionProneDeclaredResources() {
     ).execute(AxolotyCheckPlan(nodes: [node]))
 
     #expect(results.map(\.status) == [.passed])
-    #expect(manager.acquiredResources == ["fixed-port-1883", "wire-containers"])
-    #expect(manager.acquiredTimeouts == [30, 30])
+    #expect(manager.acquiredResources == ["fixed-port-1883", "swiftpm-build", "wire-containers"])
+    #expect(manager.acquiredTimeouts == [30, 30, 30])
 }
 
 @Test

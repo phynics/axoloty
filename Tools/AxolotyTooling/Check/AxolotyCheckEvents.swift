@@ -25,8 +25,34 @@ public struct AxolotyCheckExecutionEvent: Codable, Equatable, Sendable {
     public let kind: Kind
     /// Node identifier for node events.
     public let node: String?
+    /// Ordered prerequisites for a node event.
+    public let dependencies: [String]?
+    /// Scheduling lane declared for a node.
+    public let lane: String?
+    /// Process/resource isolation declared for a node.
+    public let isolation: AxolotyTestIsolation?
+    /// Explicit graph-level concurrency permission.
+    public let parallelSafe: Bool?
+    /// Resource claims declared for a node.
+    public let resources: [String]?
+    /// Shared, read-only resource claims declared for a node.
+    public let sharedResources: [String]?
+    /// Effective command timeout in seconds when known.
+    public let timeoutSeconds: TimeInterval?
+    /// Compilation time reported by SwiftPM when available.
+    public let compilationSeconds: TimeInterval?
+    /// Test case time reported by Swift Testing when available.
+    public let testSeconds: TimeInterval?
+    /// Effective node concurrency budget at plan start.
+    public let concurrencyLimit: Int?
     /// Completion status when known.
     public let status: AxolotyCheckStatus?
+    /// Subprocess exit status when known.
+    public let exitCode: Int32?
+    /// Whether the subprocess timed out.
+    public let timedOut: Bool?
+    /// The first prerequisite that prevented a dependent node from running.
+    public let blockingDependency: String?
     /// Elapsed wall-clock seconds when known.
     public let elapsedSeconds: TimeInterval?
     /// Configured warning threshold when present.
@@ -44,7 +70,20 @@ public struct AxolotyCheckExecutionEvent: Codable, Equatable, Sendable {
     public init(
         kind: Kind,
         node: String? = nil,
+        dependencies: [String]? = nil,
+        lane: String? = nil,
+        isolation: AxolotyTestIsolation? = nil,
+        parallelSafe: Bool? = nil,
+        resources: [String]? = nil,
+        sharedResources: [String]? = nil,
+        timeoutSeconds: TimeInterval? = nil,
+        compilationSeconds: TimeInterval? = nil,
+        testSeconds: TimeInterval? = nil,
+        concurrencyLimit: Int? = nil,
         status: AxolotyCheckStatus? = nil,
+        exitCode: Int32? = nil,
+        timedOut: Bool? = nil,
+        blockingDependency: String? = nil,
         elapsedSeconds: TimeInterval? = nil,
         expectedDurationSeconds: TimeInterval? = nil,
         resourceLeaseWaitSeconds: TimeInterval? = nil,
@@ -54,7 +93,20 @@ public struct AxolotyCheckExecutionEvent: Codable, Equatable, Sendable {
     ) {
         self.kind = kind
         self.node = node
+        self.dependencies = dependencies
+        self.lane = lane
+        self.isolation = isolation
+        self.parallelSafe = parallelSafe
+        self.resources = resources
+        self.sharedResources = sharedResources
+        self.timeoutSeconds = timeoutSeconds
+        self.compilationSeconds = compilationSeconds
+        self.testSeconds = testSeconds
+        self.concurrencyLimit = concurrencyLimit
         self.status = status
+        self.exitCode = exitCode
+        self.timedOut = timedOut
+        self.blockingDependency = blockingDependency
         self.elapsedSeconds = elapsedSeconds
         self.expectedDurationSeconds = expectedDurationSeconds
         self.resourceLeaseWaitSeconds = resourceLeaseWaitSeconds
@@ -66,7 +118,20 @@ public struct AxolotyCheckExecutionEvent: Codable, Equatable, Sendable {
     func diagnosticLine() -> String {
         var fields = ["[axoloty]", "event=\(kind.rawValue)"]
         if let node { fields.append("node=\(node)") }
+        if let dependencies { fields.append("depends=\(dependencies.isEmpty ? "-" : dependencies.joined(separator: ","))") }
+        if let lane { fields.append("lane=\(lane)") }
+        if let isolation { fields.append("isolation=\(isolation.rawValue)") }
+        if let parallelSafe { fields.append("parallel-safe=\(parallelSafe)") }
+        if let resources { fields.append("resources=\(resources.isEmpty ? "-" : resources.joined(separator: ","))") }
+        if let sharedResources { fields.append("shared-resources=\(sharedResources.isEmpty ? "-" : sharedResources.joined(separator: ","))") }
+        if let timeoutSeconds { fields.append(String(format: "timeout=%.3fs", locale: Locale(identifier: "en_US_POSIX"), timeoutSeconds)) }
+        if let compilationSeconds { fields.append(String(format: "compile=%.3fs", locale: Locale(identifier: "en_US_POSIX"), compilationSeconds)) }
+        if let testSeconds { fields.append(String(format: "test-time=%.3fs", locale: Locale(identifier: "en_US_POSIX"), testSeconds)) }
+        if let concurrencyLimit { fields.append("concurrency=\(concurrencyLimit)") }
         if let status { fields.append("status=\(status.rawValue)") }
+        if let exitCode { fields.append("exit-code=\(exitCode)") }
+        if let timedOut { fields.append("timed-out=\(timedOut)") }
+        if let blockingDependency { fields.append("blocked-by=\(blockingDependency)") }
         if let elapsedSeconds { fields.append(String(format: "elapsed=%.3fs", locale: Locale(identifier: "en_US_POSIX"), elapsedSeconds)) }
         if let expectedDurationSeconds { fields.append(String(format: "expected=%.3fs", locale: Locale(identifier: "en_US_POSIX"), expectedDurationSeconds)) }
         if let resourceLeaseWaitSeconds { fields.append(String(format: "lease-wait=%.3fs", locale: Locale(identifier: "en_US_POSIX"), resourceLeaseWaitSeconds)) }

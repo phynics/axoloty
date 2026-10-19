@@ -49,6 +49,44 @@ func canonicalManifestAndExecutablePlansUseIndependentSchemaVersions() throws {
 }
 
 @Test
+func explainReportsTheLongestExpectedDependencyPath() throws {
+    let resolver = try AxolotyCanonicalTestPlanResolver(environment: ProcessInfo.processInfo.environment)
+    let explanation = try resolver.explanation(for: .tier(
+        name: CanonicalTier.ci.rawValue,
+        ci: false,
+        platform: .linux
+    ))
+    let nodes = Dictionary(uniqueKeysWithValues: explanation.nodes.map { ($0.id, $0) })
+
+    #expect(!explanation.criticalPathNodes.isEmpty)
+    #expect(explanation.criticalPathSeconds > 0)
+    #expect(explanation.maxConcurrentNodes > 0)
+    #expect(explanation.criticalPathSeconds == explanation.criticalPathNodes.reduce(0) {
+        $0 + (nodes[$1]?.expectedDurationSeconds ?? 0)
+    })
+    for pair in zip(explanation.criticalPathNodes, explanation.criticalPathNodes.dropFirst()) {
+        #expect(nodes[pair.1]?.dependencies.contains(pair.0) == true)
+    }
+    #expect(AxolotyCommandFamilySupport.humanExplanation(explanation).contains("dependency-critical-path expected="))
+    #expect(AxolotyCommandFamilySupport.humanExplanation(explanation).contains("scheduler max-concurrency="))
+}
+
+@Test
+func requestedTierNodeIncludesItsPrerequisitesAndOnlyItsClosure() throws {
+    let resolver = try AxolotyCanonicalTestPlanResolver(environment: ProcessInfo.processInfo.environment)
+    let plan = try resolver.resolve(.tier(
+        name: CanonicalTier.ci.rawValue,
+        ci: false,
+        platform: .linux,
+        requested: ["test-unit"]
+    ))
+
+    #expect(plan.nodes.map(\.name) == ["resolve", "build", "test-tooling", "test-unit"])
+    #expect(!plan.nodes.contains { $0.name == "lint" })
+    #expect(plan.nodes.last?.parallelSafe == true)
+}
+
+@Test
 func injectedManifestSchemaIsValidatedBeforeResolution() throws {
     let resolver = try AxolotyCanonicalTestPlanResolver(environment: ProcessInfo.processInfo.environment)
     let invalid = AxolotyCanonicalTestManifest(

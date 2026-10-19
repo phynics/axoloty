@@ -39,17 +39,22 @@ public enum AxolotyTestHardwarePolicy: String, Codable, Equatable, Sendable {
 /// The process and resource isolation declared by a canonical test entry.
 public enum AxolotyTestIsolation: String, Codable, Equatable, Sendable {
     /// The command may use ordinary parallelism inside its own process.
-    ///
-    /// The canonical graph executor still invokes graph nodes serially.
+    /// This value does not grant graph-level overlap.
     case parallel
     /// The command must be a separate process from other Swift test lanes.
-    ///
-    /// The canonical graph executor prevents overlap with other graph nodes.
+    /// Lane and resource claims control graph-level contention.
     case separateProcess = "separate-process"
     /// The command owns an exclusive resource lane.
-    ///
-    /// The canonical graph executor prevents overlap with other graph nodes.
+    /// Nodes with this isolation are not graph-parallel.
     case exclusive
+}
+
+/// The canonical graph scheduling permission for a node.
+public enum AxolotyTestConcurrencyPolicy: String, Codable, Equatable, Sendable {
+    /// Run alone because the node has not been audited for overlap.
+    case serial
+    /// The node has been audited to overlap with other eligible nodes.
+    case parallel
 }
 
 /// A command specification stored in the canonical test manifest.
@@ -83,6 +88,12 @@ public struct AxolotyCanonicalTestCommand: Codable, Equatable, Sendable {
 }
 /// A typed node in the canonical test execution manifest.
 public struct AxolotyCanonicalTestNode: Codable, Equatable, Sendable {
+    private enum CodingKeys: String, CodingKey {
+        case id, dependencies, command, filter, timeoutSeconds, expectedDurationSeconds, cadence
+        case required, local, ci, network, broker, hardware, resources, isolation, lane, artifacts
+        case platforms, concurrency, sharedResources
+    }
+
     /// The stable node identifier.
     public let id: String
     /// Prerequisite node identifiers.
@@ -109,17 +120,20 @@ public struct AxolotyCanonicalTestNode: Codable, Equatable, Sendable {
     public let broker: AxolotyTestBrokerPolicy
     /// The hardware access policy.
     public let hardware: AxolotyTestHardwarePolicy
-    /// Named resources owned by the node. Resource ownership is enforced by
-    /// the serial canonical graph executor, rather than by a parallel
-    /// scheduler.
+    /// Named resources owned exclusively by the node while it runs.
     public let resources: [String]
-    /// The process/resource isolation mode. Graph nodes never overlap; this
-    /// value describes the command's permitted internal parallelism and
-    /// process boundary.
+    /// Resources the node reads without modifying. These claims may be shared
+    /// by concurrently scheduled nodes; every other resource claim is exclusive.
+    public let sharedResources: [String]
+    /// The process/resource isolation mode. This does not grant graph-level
+    /// overlap; use `concurrency` to declare that permission.
     public let isolation: AxolotyTestIsolation
-    /// The explicit scheduling lane, when one is required. Lanes are
-    /// serialized by the canonical graph executor.
+    /// The explicit scheduling lane, when one is required. Nodes in one lane
+    /// do not overlap.
     public let lane: String?
+    /// Whether this node has been explicitly audited for graph-level overlap.
+    /// Missing values in existing manifests default to serial execution.
+    public let concurrency: AxolotyTestConcurrencyPolicy
     /// Artifact names emitted or retained by the node.
     public let artifacts: [String]
     /// Platforms on which the node is available. Missing means all platforms.
@@ -141,8 +155,10 @@ public struct AxolotyCanonicalTestNode: Codable, Equatable, Sendable {
         broker: AxolotyTestBrokerPolicy,
         hardware: AxolotyTestHardwarePolicy,
         resources: [String] = [],
+        sharedResources: [String] = [],
         isolation: AxolotyTestIsolation = .parallel,
         lane: String? = nil,
+        concurrency: AxolotyTestConcurrencyPolicy = .serial,
         artifacts: [String] = [],
         platforms: [AxolotyCheckPlan.Platform]? = nil
     ) {
@@ -160,10 +176,62 @@ public struct AxolotyCanonicalTestNode: Codable, Equatable, Sendable {
         self.broker = broker
         self.hardware = hardware
         self.resources = resources
+        self.sharedResources = sharedResources
         self.isolation = isolation
         self.lane = lane
+        self.concurrency = concurrency
         self.artifacts = artifacts
         self.platforms = platforms
+    }
+
+    /// Decodes a canonical node, treating absent scheduling policy as serial.
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        dependencies = try container.decode([String].self, forKey: .dependencies)
+        command = try container.decode(AxolotyCanonicalTestCommand.self, forKey: .command)
+        filter = try container.decodeIfPresent(String.self, forKey: .filter)
+        timeoutSeconds = try container.decode(TimeInterval.self, forKey: .timeoutSeconds)
+        expectedDurationSeconds = try container.decode(TimeInterval.self, forKey: .expectedDurationSeconds)
+        cadence = try container.decode(String.self, forKey: .cadence)
+        required = try container.decode(Bool.self, forKey: .required)
+        local = try container.decode(Bool.self, forKey: .local)
+        ci = try container.decode(Bool.self, forKey: .ci)
+        network = try container.decode(AxolotyTestNetworkPolicy.self, forKey: .network)
+        broker = try container.decode(AxolotyTestBrokerPolicy.self, forKey: .broker)
+        hardware = try container.decode(AxolotyTestHardwarePolicy.self, forKey: .hardware)
+        resources = try container.decodeIfPresent([String].self, forKey: .resources) ?? []
+        sharedResources = try container.decodeIfPresent([String].self, forKey: .sharedResources) ?? []
+        isolation = try container.decodeIfPresent(AxolotyTestIsolation.self, forKey: .isolation) ?? .parallel
+        lane = try container.decodeIfPresent(String.self, forKey: .lane)
+        concurrency = try container.decodeIfPresent(AxolotyTestConcurrencyPolicy.self, forKey: .concurrency) ?? .serial
+        artifacts = try container.decodeIfPresent([String].self, forKey: .artifacts) ?? []
+        platforms = try container.decodeIfPresent([AxolotyCheckPlan.Platform].self, forKey: .platforms)
+    }
+
+    /// Encodes the canonical node's scheduling and resource policy.
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(dependencies, forKey: .dependencies)
+        try container.encode(command, forKey: .command)
+        try container.encodeIfPresent(filter, forKey: .filter)
+        try container.encode(timeoutSeconds, forKey: .timeoutSeconds)
+        try container.encode(expectedDurationSeconds, forKey: .expectedDurationSeconds)
+        try container.encode(cadence, forKey: .cadence)
+        try container.encode(required, forKey: .required)
+        try container.encode(local, forKey: .local)
+        try container.encode(ci, forKey: .ci)
+        try container.encode(network, forKey: .network)
+        try container.encode(broker, forKey: .broker)
+        try container.encode(hardware, forKey: .hardware)
+        try container.encode(resources, forKey: .resources)
+        try container.encode(sharedResources, forKey: .sharedResources)
+        try container.encode(isolation, forKey: .isolation)
+        try container.encodeIfPresent(lane, forKey: .lane)
+        try container.encode(concurrency, forKey: .concurrency)
+        try container.encode(artifacts, forKey: .artifacts)
+        try container.encodeIfPresent(platforms, forKey: .platforms)
     }
 
     /// Whether the node is available for a platform.
@@ -206,11 +274,11 @@ public struct AxolotyCanonicalTestTier: Codable, Equatable, Sendable {
     public let broker: AxolotyTestBrokerPolicy
     /// The hardware access policy.
     public let hardware: AxolotyTestHardwarePolicy
-    /// Named resources owned by the tier. The serial canonical graph executor
-    /// prevents overlapping graph nodes from sharing these resources.
+    /// Aggregate resource requirements for the tier. Node-level resource claims
+    /// control scheduling and shared/exclusive access during execution.
     public let resources: [String]
-    /// The process/resource isolation mode at the graph boundary. Nodes are
-    /// serialized; this value describes their internal process/test policy.
+    /// The process/resource isolation mode declared for the category. Node-level
+    /// concurrency permission is declared separately on each executable node.
     public let isolation: AxolotyTestIsolation
     /// Artifact names retained for the tier.
     public let artifacts: [String]
@@ -287,11 +355,10 @@ public struct AxolotyCanonicalTestInterface: Codable, Equatable, Sendable {
     public let broker: AxolotyTestBrokerPolicy
     /// The hardware policy.
     public let hardware: AxolotyTestHardwarePolicy
-    /// Resources owned by the invocation. A canonical graph invocation is
-    /// serialized with other graph nodes.
+    /// Resources needed by the standalone `test-one` invocation.
     public let resources: [String]
-    /// The required process isolation mode. The graph executor runs one node
-    /// at a time, while the command may control its own test parallelism.
+    /// The process isolation mode for the command. This is distinct from
+    /// graph-level concurrency permission on canonical nodes.
     public let isolation: AxolotyTestIsolation
     /// Artifact names retained by the invocation.
     public let artifacts: [String]

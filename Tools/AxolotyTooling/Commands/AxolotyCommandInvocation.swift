@@ -11,7 +11,7 @@ enum AxolotyCommandInvocation: Equatable, Sendable {
     case unsupported
     case repositoryValidation(arguments: [String])
     case testOne(filter: String, repetition: AxolotyTestRepetition?)
-    case testTier(name: String, ci: Bool)
+    case testTier(name: String, ci: Bool, requested: [String]?)
     case explain(tier: String, ci: Bool)
     case checkPlan
     case check(requested: [String]?)
@@ -43,11 +43,8 @@ struct AxolotyCommandParser: Sendable {
         if arguments.first == "test-one" {
             return testOneInvocation(arguments)
         }
-        if arguments.count == 2, arguments[0] == "test-tier" {
-            return .testTier(name: arguments[1], ci: false)
-        }
-        if arguments.count == 3, arguments[0] == "test-tier", arguments[1] == "--ci" {
-            return .testTier(name: arguments[2], ci: true)
+        if arguments.first == "test-tier", arguments.count > 1 {
+            return testTierInvocation(arguments)
         }
         if arguments.count == 2, arguments[0] == "explain" {
             return .explain(tier: arguments[1], ci: false)
@@ -76,7 +73,7 @@ struct AxolotyCommandParser: Sendable {
         case ["verify", "--ci"]:
             return .verify(ci: true)
         case ["test-tier"]:
-            return .testTier(name: environment["TIER"] ?? "", ci: false)
+            return .testTier(name: environment["TIER"] ?? "", ci: false, requested: nil)
         case ["explain"]:
             return .explain(tier: environment["TIER"] ?? "", ci: false)
         case ["build"]:
@@ -126,6 +123,34 @@ struct AxolotyCommandParser: Sendable {
             AxolotyTestRepetition(maximumRepetitions: maximum, repeatUntil: repeatUntil)
         }
         return .testOne(filter: filter, repetition: repetition)
+    }
+
+    private func testTierInvocation(_ arguments: [String]) -> AxolotyCommandInvocation {
+        var index = 1
+        var ci = false
+        if arguments.indices.contains(index), arguments[index] == "--ci" {
+            ci = true
+            index += 1
+        }
+        guard arguments.indices.contains(index) else { return .unsupported }
+        let name = arguments[index]
+        index += 1
+        var requested: [String]?
+        while index < arguments.count {
+            guard arguments[index] == "--node",
+                  index + 1 < arguments.count,
+                  requested == nil,
+                  Self.isNodeIdentifier(arguments[index + 1]) else { return .unsupported }
+            requested = [arguments[index + 1]]
+            index += 2
+        }
+        return .testTier(name: name, ci: ci, requested: requested)
+    }
+
+    private static func isNodeIdentifier(_ value: String) -> Bool {
+        !value.isEmpty && value.allSatisfy {
+            $0.isASCII && ($0.isLetter || $0.isNumber || "._-".contains($0))
+        }
     }
 }
 

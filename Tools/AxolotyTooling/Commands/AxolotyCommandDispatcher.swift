@@ -104,7 +104,8 @@ public struct AxolotyCommandDispatcher: Sendable {
             quarantine: AxolotyQuarantineLedger(entries: (try? planResolution.get())?.manifest.quarantine ?? []),
             eventSink: eventSink ?? { event in
                 try? FileHandle.standardError.write(contentsOf: Data(event.diagnosticLine().utf8))
-            }
+            },
+            schedulingConfiguration: AxolotyCheckSchedulingConfiguration(environment: environment)
         )
 
         self.executableName = executableName
@@ -176,8 +177,8 @@ public struct AxolotyCommandDispatcher: Sendable {
             return repositoryValidationCommands.run(arguments: arguments)
         case .testOne(let filter, let repetition):
             return checkCommands.run(.testOne(filter: filter, repetition: repetition))
-        case .testTier(let name, let ci):
-            return checkCommands.run(.testTier(name: name, ci: ci))
+        case .testTier(let name, let ci, let requested):
+            return checkCommands.run(.testTier(name: name, ci: ci, requested: requested))
         case .explain(let name, let ci):
             return checkCommands.run(.explain(tier: name, ci: ci))
         case .checkPlan:

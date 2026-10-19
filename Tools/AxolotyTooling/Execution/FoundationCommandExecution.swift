@@ -267,6 +267,9 @@ final class FoundationCommandExecution: Sendable {
         state.collector.finishLines()
         let standardOutput = state.collector.data(for: .standardOutput)
         let standardError = state.collector.data(for: .standardError)
+        let phaseTimings = AxolotyCommandPhaseTimingParser.parse(
+            String(decoding: standardOutput + Data([10]) + standardError, as: UTF8.self)
+        )
         let processExitCode = state.process.terminationStatus
         let emptyTestRun = processExitCode == 0
             && Self.isSwiftTestCommand(state.command)
@@ -285,7 +288,9 @@ final class FoundationCommandExecution: Sendable {
                 lastTest: snapshot.lastTest,
                 outputBytes: snapshot.outputBytes,
                 artifactPath: state.artifact.directory.path,
-                failedTestNames: state.tracker?.failedTestNames() ?? []
+                failedTestNames: state.tracker?.failedTestNames() ?? [],
+                compilationSeconds: phaseTimings.compilationSeconds,
+                testSeconds: phaseTimings.testSeconds
             ))
         )
         state.tracker?.complete(

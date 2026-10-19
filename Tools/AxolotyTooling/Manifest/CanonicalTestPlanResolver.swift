@@ -218,17 +218,23 @@ struct AxolotyCanonicalTestPlanResolver: Sendable {
                 broker: node.broker,
                 hardware: node.hardware,
                 resources: node.resources,
+                sharedResources: node.sharedResources,
                 isolation: node.isolation,
                 lane: node.lane,
+                concurrency: node.concurrency,
                 artifacts: node.artifacts
             )
         }
+        let criticalPath = Self.expectedCriticalPath(nodes)
         return AxolotyCanonicalTestExplanation(
             schemaVersion: manifest.schemaVersion,
             name: name,
             ci: ci,
             timeoutSeconds: plan.deadlineSeconds,
-            nodes: nodes
+            nodes: nodes,
+            criticalPathNodes: criticalPath.nodes,
+            criticalPathSeconds: criticalPath.seconds,
+            maxConcurrentNodes: AxolotyCheckSchedulingConfiguration(environment: environment).maxConcurrentNodes
         )
     }
 
@@ -290,6 +296,20 @@ struct AxolotyCanonicalTestPlanResolver: Sendable {
         guard manifest.schemaVersion == AxolotyCanonicalTestManifest.currentSchemaVersion else {
             throw AxolotyCanonicalTestManifestError.unsupportedSchema(manifest.schemaVersion)
         }
+        for node in manifest.nodes {
+            guard Set(node.sharedResources).isSubset(of: Set(node.resources)) else {
+                throw AxolotyCanonicalTestManifestError.invalidPlan(
+                    name: node.id,
+                    reason: "shared resources must also appear in resources"
+                )
+            }
+            if node.concurrency == .parallel, node.isolation != .parallel {
+                throw AxolotyCanonicalTestManifestError.invalidPlan(
+                    name: node.id,
+                    reason: "graph concurrency requires parallel process isolation"
+                )
+            }
+        }
     }
 
     private func resolve(
@@ -336,6 +356,10 @@ struct AxolotyCanonicalTestPlanResolver: Sendable {
                 timeoutSeconds: node.timeoutSeconds
             ),
             resources: node.resources,
+            sharedResources: node.sharedResources,
+            parallelSafe: node.concurrency == .parallel,
+            lane: node.lane,
+            isolation: node.isolation,
             expectedDurationSeconds: node.expectedDurationSeconds
         )
     }
@@ -426,12 +450,31 @@ struct AxolotyCanonicalTestPlanResolver: Sendable {
                         timeoutSeconds: node.command.timeoutSeconds
                     ),
                     resources: node.resources,
+                    sharedResources: node.sharedResources,
+                    parallelSafe: node.parallelSafe,
+                    lane: node.lane,
+                    isolation: node.isolation,
                     expectedDurationSeconds: node.expectedDurationSeconds
                 )
             },
             deadlineSeconds: plan.deadlineSeconds,
             expectedDurationSeconds: plan.expectedDurationSeconds
         )
+    }
+
+    private static func expectedCriticalPath(
+        _ nodes: [AxolotyCanonicalTestNodeExplanation]
+    ) -> (nodes: [String], seconds: TimeInterval) {
+        var paths: [String: (nodes: [String], seconds: TimeInterval)] = [:]
+        for node in nodes {
+            let predecessor = node.dependencies.compactMap { paths[$0] }
+                .max { left, right in left.seconds < right.seconds }
+            paths[node.id] = (
+                nodes: (predecessor?.nodes ?? []) + [node.id],
+                seconds: (predecessor?.seconds ?? 0) + node.expectedDurationSeconds
+            )
+        }
+        return paths.values.max { left, right in left.seconds < right.seconds } ?? ([], 0)
     }
 
     private static func loadManifest(

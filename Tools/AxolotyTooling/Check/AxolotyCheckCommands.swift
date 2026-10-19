@@ -10,7 +10,7 @@ enum AxolotyCheckCommand: Equatable, Sendable {
     case testTooling
     case verify(ci: Bool)
     case testOne(filter: String, repetition: AxolotyTestRepetition?)
-    case testTier(name: String, ci: Bool)
+    case testTier(name: String, ci: Bool, requested: [String]?)
     case explain(tier: String, ci: Bool)
 }
 
@@ -51,8 +51,8 @@ struct AxolotyCheckCommands: Sendable {
             return verifyResult(ci: ci)
         case .testOne(let filter, let repetition):
             return testOneResult(filter: filter, repetition: repetition)
-        case .testTier(let name, let ci):
-            return testTierResult(tier: name, ci: ci)
+        case .testTier(let name, let ci, let requested):
+            return testTierResult(tier: name, ci: ci, requested: requested)
         case .explain(let tier, let ci):
             return explainResult(tier: tier, ci: ci)
         }
@@ -112,7 +112,11 @@ struct AxolotyCheckCommands: Sendable {
                 ci: ci,
                 platform: AxolotyCheckPlan.currentPlatform
             ))
-            return execute(plan: plan, writeVerificationReport: ci)
+            return execute(
+                plan: plan,
+                writeVerificationReport: ci,
+                rerunTier: CanonicalTier.ci.rawValue
+            )
         } catch {
             return AxolotyCommandResult(
                 standardError: "error: \(AxolotyCommandFamilySupport.manifestDiagnostic(error))\n",
@@ -201,7 +205,11 @@ struct AxolotyCheckCommands: Sendable {
         return command.arguments[command.arguments.index(after: index)]
     }
 
-    private func testTierResult(tier: String, ci: Bool) -> AxolotyCommandResult {
+    private func testTierResult(
+        tier: String,
+        ci: Bool,
+        requested: [String]?
+    ) -> AxolotyCommandResult {
         guard !tier.isEmpty else {
             return AxolotyCommandResult(
                 standardError: "error: test-tier requires a non-empty TIER or tier argument\n",
@@ -213,9 +221,10 @@ struct AxolotyCheckCommands: Sendable {
             let plan = try resolver.resolve(.tier(
                 name: tier,
                 ci: ci,
-                platform: AxolotyCheckPlan.currentPlatform
+                platform: AxolotyCheckPlan.currentPlatform,
+                requested: requested
             ))
-            return execute(plan: plan)
+            return execute(plan: plan, rerunTier: tier)
         } catch {
             return AxolotyCommandResult(
                 standardError: "error: \(AxolotyCommandFamilySupport.manifestDiagnostic(error))\n",
@@ -254,7 +263,8 @@ struct AxolotyCheckCommands: Sendable {
 
     private func execute(
         plan availablePlan: AxolotyCheckPlan,
-        writeVerificationReport: Bool = false
+        writeVerificationReport: Bool = false,
+        rerunTier: String? = nil
     ) -> AxolotyCommandResult {
         let results = executor.execute(availablePlan)
         let exitCode: Int32 = results.allSatisfy { $0.status == .passed } ? 0 : 1
@@ -281,7 +291,8 @@ struct AxolotyCheckCommands: Sendable {
         return AxolotyCommandFamilySupport.manifestResult(
             AxolotyCheckManifest(results: results),
             outputMode: outputMode,
-            exitCode: exitCode
+            exitCode: exitCode,
+            rerunTier: rerunTier
         )
     }
 
