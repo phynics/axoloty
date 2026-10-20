@@ -96,6 +96,8 @@ correlations. A request with a finite `timeoutMS` expires at the caller's
 monotonic deadline; a Discover request with `timeoutMS: nil` remains active
 until a response, explicit cancellation, reconnect, or shutdown. Late,
 duplicate, mismatched, and expired responses are rejected without mutation.
+Reconnect restores profile subscriptions and local advertisements, but it does
+not replay accepted request commands or reopen their pending correlations.
 
 Application event streams are registered before startup and use one bounded
 `RuntimeBufferingPolicy`: `fail`, `dropOldest`, `dropNewest`, or

@@ -994,9 +994,17 @@ actor ProtocolExecutor {
     /// last failed, in publication order, after a successful reconnect.
     /// Called before `flushOfflineOperations(nowMS:)` so already-accepted
     /// work is replayed ahead of operations accepted while reconnecting.
+    ///
+    /// Request publications are never replayed. Reconnect discards the
+    /// pending-correlation ledger, so replaying a request would either create
+    /// an untracked command or make a late response ambiguous. One-way
+    /// publications remain safe to replay.
     private func replayQueuedOutboundEffects() {
         guard !pendingOutboundEffects.isEmpty else { return }
-        let effects = pendingOutboundEffects
+        let effects = pendingOutboundEffects.filter { effect in
+            guard case let .publish(publication) = effect else { return true }
+            return publication.routingKey.capability.isOneWay
+        }
         pendingOutboundEffects.removeAll(keepingCapacity: true)
         enqueueTransportEffects(effects)
     }
