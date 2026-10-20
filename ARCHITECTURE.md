@@ -9,7 +9,7 @@ epics, and the 0.8 firmware split
 released. Their history is in [`docs/ROADMAP.md`](./docs/ROADMAP.md),
 [`docs/releases/`](./docs/releases/), and git.
 
-## Current implementation (0.8 checkpoint)
+## Current implementation (0.9.0 checkpoint)
 
 The released implementation consists of the root `Axoloty` host library, the
 Foundation-free `AxolotyWire`, `AxolotyObjectModel`, and `AxolotyProtocol`
@@ -169,11 +169,45 @@ device qualification live in `phynics/axoloty-embedded` under epic #845.
 Portable packages stay here and are never copied. This repository keeps only
 the hardware-free Core Embedded Swift gate.
 
-## Product boundary
+## Product and repository ownership
 
-Axoloty is a core runtime plus first-party development tools.
+Axoloty is a bounded, Embedded-Swift-capable distributed object runtime with
+Coaty wire semantics. `coaty/3` JSON is its compatibility profile, and
+`axoloty/1` CBOR is its native profile. [ADR 0012](./docs/adr/0012-approved-product-and-ownership-contracts.md)
+records the approved product and ownership contracts.
 
-The core consists of a portable wire implementation, portable protocol processing and state, a host runtime profile, and a static runtime profile. The `AxolotyMQTT` adapter is the default and validated transport, not the definition of Axoloty networking: a consumer that never constructs a transport links no MQTT or SwiftNIO code. Inspector (`Apps`), MCP (`Apps`), and repository orchestration (`Tools`) are first-party tools that consume supported runtime interfaces from separate SwiftPM packages, not root-package products. SensorThings, Coaty convenience models, and automatic IO-routing policy are optional products rather than core protocol concerns.
+The Core 1.0 stability contract covers six products: `Axoloty` for the host
+runtime, `AxolotyWire` for wire syntax and codecs, `AxolotyProtocol` for
+protocol processing and bounded state, `AxolotyObjectModel` for bounded
+semantic objects, `AxolotyStaticRuntime` for fixed synchronous composition,
+and `AxolotyMQTT` for the host MQTT adapter. These products have separate
+roles and share the same production protocol path where their runtime profiles
+overlap.
+
+The three repositories have distinct ownership. `phynics/axoloty` owns the
+portable Core and host runtime, including MQTT and experimental host Zenoh.
+`phynics/axoloty-embedded` owns firmware, platform and C-ABI integration, and
+device qualification. `phynics/axoloty-debug` owns operator tooling, the
+`serve` CLI, the object inspector, MCP, and process supervision.
+
+Other products and tools remain experimental and outside the Core 1.0 API
+stability promise. These include Zenoh, Coaty convenience models, IO routing,
+SensorThings, schema macros, `Tools`, `Apps`, and `axoloty-debug`. The
+`AxolotyMQTT` adapter is the stable default transport for Coaty compatibility;
+a consumer that does not construct a transport links no MQTT or SwiftNIO code.
+
+The application owns durable object data, persistence, conflict resolution,
+and business authorization. `AxolotyObjectModel` represents bounded semantic
+objects, and `AxolotyProtocol` interprets operations and owns bounded protocol
+state. Neither provides a persistent or replicated object store or a globally
+authoritative object view.
+
+Transport adapters own carrier mechanics. They do not define protocol meaning
+or automatically bridge wire profiles or transports. `coaty/3` and
+`axoloty/1` are separate wire domains; Zenoh carries `axoloty/1` only, while
+MQTT carries `coaty/3` in Core v1. Device peer-mode qualification is deferred
+beyond embedded v1. The Core contract also excludes consensus or Raft,
+automatic command replay, controller restoration, and BLE Mesh.
 
 ## Runtime profiles
 

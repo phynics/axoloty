@@ -20,13 +20,22 @@ The shared interpretation and state-transition path used by every runtime profil
 _Avoid_: embedded path, host path
 
 **Protocol suite**:
-The set of protocol profiles understood by an Axoloty runtime.
+The set of wire profiles understood by an Axoloty runtime.
 
 **Coaty Core Profile 3**:
-The sealed, compatibility-governed Coaty protocol profile using the `coaty/3` binding.
+The sealed Coaty compatibility profile that uses the `coaty/3` route binding and JSON encoding.
 
 **Axoloty extension profile**:
-A separately versioned first-party protocol profile for primitives that cannot safely be composed from Coaty Core Profile operations.
+A separately versioned Axoloty protocol profile for behavior that cannot safely be composed from Coaty Core Profile operations. `axoloty/1` is the native CBOR profile.
+
+**Wire domain**:
+A profile-specific route and encoding space shared by communicating peers. `coaty/3` and `axoloty/1` are separate wire domains.
+
+**Object authority**:
+The application owns durable object data and conflict resolution. Axoloty provides bounded object representation and protocol operations, not a shared source of truth.
+
+**Experimental product**:
+An Axoloty product outside the six-product Core 1.0 stability contract. Its API is not covered by that contract.
 
 **Protocol action**:
 A normalized consequence of protocol processing for a runtime adapter or application.
