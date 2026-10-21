@@ -44,28 +44,29 @@ The 1.0 API freeze covers the following:
 - **Stable Core 1.0 products:** `Axoloty`, `AxolotyWire`, `AxolotyProtocol`,
   `AxolotyObjectModel`, `AxolotyStaticRuntime`, and `AxolotyMQTT`.
 - **Everything else is experimental** for Core 1.0. This includes Zenoh,
-  Coaty convenience models, SensorThings and IO-routing products, schema
-  macros, the `Tools/` harness, `Apps/`, and products in the sibling
-  `phynics/axoloty-debug` package.
+  Coaty convenience models, SensorThings and IO-routing products,
+  macro-generated schema support, the `Tools/` harness, and products in the
+  sibling `phynics/axoloty-debug` package.
 - **`axoloty/1` CBOR is in 1.0 scope and implemented on `main`.** The bounded
   codec, `axoloty/1` routes, frozen golden corpus, host/static trace parity,
   Zenoh-only profile, and embedded consumer contract surface are in the tree.
   [ADR 0009](./adr/0009-zenoh-carries-only-axoloty-1.md) makes it the only
   Zenoh encoding, and `coaty/3` JSON stays sealed on MQTT for CoatyJS
   compatibility. [Epic #977](https://github.com/phynics/axoloty/issues/977)
-  tracks the remaining pre-release work noted in
-  [protocol/axoloty-1.md](./protocol/axoloty-1.md#cbor-only-consumers). The
-  `wire-cbor` tier runs the corpus and trace parity on every pull request.
+  delivered the profile and closed. Remaining 1.0 acceptance work is tracked in
+  [#1043](https://github.com/phynics/axoloty/issues/1043). The `wire-cbor` tier
+  runs the corpus and trace parity on every pull request.
 - **Not frozen:** a JSON Zenoh encoding, or any JSON-only codec surface that the
   CBOR profile would replace.
 
 The version numbers, deprecation window, and security support for these
 products are recorded in [the versioning and deprecation policy](./versioning.md)
-and [`SECURITY.md`](../SECURITY.md).
-
-Scoping decisions and the remaining pre-1.0 work are tracked in
-[#978](https://github.com/phynics/axoloty/issues/978) and
-[#987](https://github.com/phynics/axoloty/issues/987).
+and [`SECURITY.md`](../SECURITY.md). Scoping decisions are recorded in the
+closed historical review
+[#978](https://github.com/phynics/axoloty/issues/978). Remaining 1.0 acceptance
+work is tracked in
+[#1043](https://github.com/phynics/axoloty/issues/1043), and the API audit is
+tracked in [#1000](https://github.com/phynics/axoloty/issues/1000).
 
 ## Completed: 0.7 architecture stabilization and transport boundary
 
@@ -155,16 +156,16 @@ The Core 1.0 contract excludes the following:
 
 - a replicated object store;
 - Core consensus or Raft;
-- automatic command replay after reconnect;
+- automatic replay of accepted request commands after reconnect;
 - controller restoration;
 - a Core authentication or authorization contract;
 - an automatic bridge between wire domains or transports;
-- BLE Mesh;
+- BLE Mesh or other BLE transports;
 - device peer-mode qualification before embedded v1;
 - dynamic profile registration or live runtime reconfiguration;
 - a schema migration engine;
 - AT Protocol production integration;
-- WASM, BLE, or libp2p transports;
+- WASM or libp2p transports;
 - complete ESP32-C6 capability parity with the host profile;
 - a second compatibility runtime.
 

@@ -182,7 +182,9 @@ protocol processing and bounded state, `AxolotyObjectModel` for bounded
 semantic objects, `AxolotyStaticRuntime` for fixed synchronous composition,
 and `AxolotyMQTT` for the host MQTT adapter. These products have separate
 roles and share the same production protocol path where their runtime profiles
-overlap.
+overlap. The versioning and deprecation policy in
+[`docs/versioning.md`](./docs/versioning.md) applies to exactly these six
+products.
 
 The three repositories have distinct ownership. `phynics/axoloty` owns the
 portable Core and host runtime, including MQTT and experimental host Zenoh.
@@ -192,7 +194,8 @@ device qualification. `phynics/axoloty-debug` owns operator tooling, the
 
 Other products and tools remain experimental and outside the Core 1.0 API
 stability promise. These include Zenoh, Coaty convenience models, IO routing,
-SensorThings, schema macros, `Tools`, `Apps`, and `axoloty-debug`. The
+SensorThings, macro-generated schema support (`AxolotyObjectMacros`), the
+`Tools` harness, and the products in the sibling `axoloty-debug` package. The
 `AxolotyMQTT` adapter is the stable default transport for Coaty compatibility;
 a consumer that does not construct a transport links no MQTT or SwiftNIO code.
 
@@ -207,7 +210,8 @@ or automatically bridge wire profiles or transports. `coaty/3` and
 `axoloty/1` are separate wire domains; Zenoh carries `axoloty/1` only, while
 MQTT carries `coaty/3` in Core v1. Device peer-mode qualification is deferred
 beyond embedded v1. The Core contract also excludes consensus or Raft,
-automatic command replay, controller restoration, and BLE Mesh.
+automatic replay of accepted request commands, controller restoration, and BLE
+Mesh or other BLE transports.
 
 ## Runtime profiles
 
