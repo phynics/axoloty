@@ -1,6 +1,9 @@
 # Axoloty roadmap
 
-Axoloty is a Swift runtime and protocol suite for collaborative distributed agents across host systems and constrained devices. GitHub Issues are the complete planning record; this document is the curated active strategy.
+Axoloty is a bounded, Embedded-Swift-capable distributed object runtime with
+Coaty wire semantics. `coaty/3` JSON preserves Coaty compatibility, and
+`axoloty/1` CBOR is the native profile. GitHub Issues are the complete planning
+record; this document summarizes the active strategy.
 
 ## Current checkpoint
 
@@ -8,57 +11,62 @@ Axoloty is a Swift runtime and protocol suite for collaborative distributed agen
 
 Historical release outcomes are preserved in [`docs/releases/`](./releases/) and [`CHANGELOG.md`](../CHANGELOG.md). They do not define current strategy.
 
-## Active direction: scope 1.0 and qualify Zenoh
+## Active direction: complete the Core 1.0 contract
 
 Axoloty 0.9.0 closes [epic #845](https://github.com/phynics/axoloty/issues/845),
-which moved concrete firmware and device qualification into
-`phynics/axoloty-embedded`, and ships the host Zenoh transport from
-[epic #796](https://github.com/phynics/axoloty/issues/796) as experimental. The
-release record is [`docs/releases/0.9.0.md`](./releases/0.9.0.md).
+which moved firmware and device qualification into
+`phynics/axoloty-embedded`. The release also ships the host Zenoh transport from
+[epic #796](https://github.com/phynics/axoloty/issues/796) as experimental.
+The release record is [`docs/releases/0.9.0.md`](./releases/0.9.0.md). The
+approved product and ownership contracts are in
+[ADR 0012](./adr/0012-approved-product-and-ownership-contracts.md).
 
 ### Zenoh status
 
 - **Host binding:** shipped experimental in 0.9.0 as the `AxolotyZenoh`
   package, in client and peer modes.
-- **Embedded binding:** the build and carrier work is done in
-  `phynics/axoloty-embedded`. Device qualification is tracked in
-  [phynics/axoloty-embedded#8](https://github.com/phynics/axoloty-embedded/issues/8).
+- **Embedded binding:** firmware and carrier work belong to
+  `phynics/axoloty-embedded`. Device peer-mode qualification is deferred beyond
+  embedded v1.
 - **Wire encoding moves to `axoloty/1` CBOR.** The profile is implemented on
   `main`. [ADR 0009](./adr/0009-zenoh-carries-only-axoloty-1.md) makes Zenoh
   carry only the `axoloty/1` CBOR profile. Zenoh peers built on 0.9.x will not
   interoperate with the 1.0 release.
 - **Consumption:** the adapter is consumed by path from a checkout, not through
   a URL dependency ([ADR 0007](./adr/0007-zenoh-adapter-package-boundary.md)).
-  Zenoh stays experimental until its packaging is resolved.
+  Zenoh remains outside the Core 1.0 stability contract. Promotion is tracked
+  separately in [#1045](https://github.com/phynics/axoloty/issues/1045).
 
 ### 1.0 scope
 
 The 1.0 API freeze covers the following:
 
-- **Frozen core products:** `Axoloty`, `AxolotyWire`, `AxolotyProtocol`,
+- **Stable Core 1.0 products:** `Axoloty`, `AxolotyWire`, `AxolotyProtocol`,
   `AxolotyObjectModel`, `AxolotyStaticRuntime`, and `AxolotyMQTT`.
-- **Everything else is experimental** for 1.0, including the Zenoh transport,
-  the optional SensorThings and IO-routing products, the `Tools/` harness, and
-  the runtime/debug products in the sibling `phynics/axoloty-debug` package.
+- **Everything else is experimental** for Core 1.0. This includes Zenoh,
+  Coaty convenience models, SensorThings and IO-routing products,
+  macro-generated schema support, the `Tools/` harness, and products in the
+  sibling `phynics/axoloty-debug` package.
 - **`axoloty/1` CBOR is in 1.0 scope and implemented on `main`.** The bounded
   codec, `axoloty/1` routes, frozen golden corpus, host/static trace parity,
   Zenoh-only profile, and embedded consumer contract surface are in the tree.
   [ADR 0009](./adr/0009-zenoh-carries-only-axoloty-1.md) makes it the only
   Zenoh encoding, and `coaty/3` JSON stays sealed on MQTT for CoatyJS
   compatibility. [Epic #977](https://github.com/phynics/axoloty/issues/977)
-  tracks the remaining pre-release work noted in
-  [protocol/axoloty-1.md](./protocol/axoloty-1.md#cbor-only-consumers). The
-  `wire-cbor` tier runs the corpus and trace parity on every pull request.
+  delivered the profile and closed. Remaining 1.0 acceptance work is tracked in
+  [#1043](https://github.com/phynics/axoloty/issues/1043). The `wire-cbor` tier
+  runs the corpus and trace parity on every pull request.
 - **Not frozen:** a JSON Zenoh encoding, or any JSON-only codec surface that the
   CBOR profile would replace.
 
 The version numbers, deprecation window, and security support for these
 products are recorded in [the versioning and deprecation policy](./versioning.md)
-and [`SECURITY.md`](../SECURITY.md).
-
-Scoping decisions and the remaining pre-1.0 work are tracked in
-[#978](https://github.com/phynics/axoloty/issues/978) and
-[#987](https://github.com/phynics/axoloty/issues/987).
+and [`SECURITY.md`](../SECURITY.md). Scoping decisions are recorded in the
+closed historical review
+[#978](https://github.com/phynics/axoloty/issues/978). Remaining 1.0 acceptance
+work is tracked in
+[#1043](https://github.com/phynics/axoloty/issues/1043), and the API audit is
+tracked in [#1000](https://github.com/phynics/axoloty/issues/1000).
 
 ## Completed: 0.7 architecture stabilization and transport boundary
 
@@ -144,11 +152,22 @@ Implementation tickets are created lazily as each gate opens. [AT Protocol resea
 
 ## Explicit non-goals
 
-These remain out of scope through the 1.0 line:
+The Core 1.0 contract excludes the following:
 
+- a replicated object store;
+- Core consensus or Raft;
+- automatic replay of accepted request commands after reconnect;
+- controller restoration;
+- a Core authentication or authorization contract;
+- an automatic bridge between wire domains or transports;
+- BLE Mesh or other BLE transports;
+- device peer-mode qualification before embedded v1;
 - dynamic profile registration or live runtime reconfiguration;
 - a schema migration engine;
 - AT Protocol production integration;
-- WASM, BLE, or libp2p transports;
+- WASM or libp2p transports;
 - complete ESP32-C6 capability parity with the host profile;
 - a second compatibility runtime.
+
+The full ownership and supersession map is in
+[ADR 0012](./adr/0012-approved-product-and-ownership-contracts.md).

@@ -29,16 +29,10 @@ published product.
 
 ## Frozen 1.0 products
 
-The [1.0 scope](./ROADMAP.md) freezes exactly these products:
-
-| Product | Owns |
-|---|---|
-| `Axoloty` | Host runtime lifecycle, scheduling, transport ownership, bounded ingress, and diagnostics. |
-| `AxolotyWire` | Profile-neutral wire syntax, route envelopes, codecs, validation, and wire values. |
-| `AxolotyProtocol` | Sealed profile inventory, routing keys, frame boundaries, bounded state, and the shared processor. |
-| `AxolotyObjectModel` | Bounded semantic objects, schemas, presence, number and JSON views, and predicates. |
-| `AxolotyStaticRuntime` | Fixed synchronous composition around one shared processor. |
-| `AxolotyMQTT` | The MQTT transport adapter binding. |
+The [1.0 scope](./ROADMAP.md) freezes exactly the six products defined by
+[ADR 0012](./adr/0012-approved-product-and-ownership-contracts.md):
+`Axoloty`, `AxolotyWire`, `AxolotyProtocol`, `AxolotyObjectModel`,
+`AxolotyStaticRuntime`, and `AxolotyMQTT`.
 
 Everything else is experimental for 1.0: `AxolotyZenoh`, `AxolotyZenohCore`,
 `AxolotyCoatyModels`, `AxolotyIoRouting`, `AxolotySensorThings*`, the `Tools/`

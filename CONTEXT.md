@@ -1,6 +1,6 @@
 # Axoloty
 
-Axoloty is a Swift runtime and protocol suite for collaborative distributed agents across host systems and constrained devices.
+Axoloty is a bounded, Embedded-Swift-capable distributed object runtime with Coaty wire semantics.
 
 ## Language
 
@@ -22,11 +22,26 @@ _Avoid_: embedded path, host path
 **Protocol suite**:
 The set of protocol profiles understood by an Axoloty runtime.
 
+**Wire profile**:
+A protocol profile's route prefix and payload encoding. `coaty/3` (JSON) and `axoloty/1` (CBOR) are separate wire profiles.
+
 **Coaty Core Profile 3**:
-The sealed, compatibility-governed Coaty protocol profile using the `coaty/3` binding.
+The sealed Coaty compatibility profile that uses the `coaty/3` route binding and JSON encoding.
 
 **Axoloty extension profile**:
-A separately versioned first-party protocol profile for primitives that cannot safely be composed from Coaty Core Profile operations.
+A separately versioned Axoloty protocol profile for behavior that cannot safely be composed from Coaty Core Profile operations. `axoloty/1` is the current extension profile.
+
+**Native profile**:
+The `axoloty/1` CBOR protocol profile used for Axoloty-native communication.
+
+**Wire domain**:
+A profile-specific route and encoding space shared by communicating peers. `coaty/3` and `axoloty/1` are separate wire domains.
+
+**Object authority**:
+The application owns durable object data and conflict resolution. Axoloty provides bounded object representation and protocol operations, not a shared source of truth.
+
+**Experimental product**:
+An Axoloty package, product, or tool outside the six-product Core 1.0 stability contract. Its public interface is not covered by that contract.
 
 **Protocol action**:
 A normalized consequence of protocol processing for a runtime adapter or application.
