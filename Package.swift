@@ -171,6 +171,7 @@ let package = Package(
                 "Runtime/AxolotyRuntimeEvents.swift",
                 "Runtime/AxolotyRuntimeOperations.swift",
                 "Runtime/AxolotyRuntimeDiagnostics.swift",
+                "Runtime/AxolotyRuntimeObservations.swift",
                 "Runtime/AxolotyRuntimeTransport.swift",
                 "Runtime/AxolotyRuntimeTransportCounters.swift",
                 "Runtime/AxolotyRuntimeHandlers.swift",

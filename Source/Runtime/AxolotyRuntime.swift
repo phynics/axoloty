@@ -103,6 +103,9 @@ actor ProtocolExecutor {
     private var transportExternalRoutes: [OwnedExternalRouteTransition] = []
     var diagnosticsSnapshotValue = RuntimeDiagnostics()
     private let transportDiagnostics = RuntimeTransportDiagnostics()
+    private var diagnosticSequence: UInt64 = 0
+    private var pendingRequestCapabilities: [UUID16: ProtocolCapability] = [:]
+    private var pendingReconnectCause: RuntimeReconnectCause = .requested
     var typedIoState: RuntimeTypedIoState
     var pendingTypedIoToken: RuntimeTypedIoPublicationToken? = nil
     var typedIoFlushAttempts = 0
@@ -135,10 +138,19 @@ actor ProtocolExecutor {
         self.eventStream = events.stream
         self.eventContinuation = events.continuation
         let diagnostics = AsyncStream<RuntimeDiagnostic>.makeStream(
-            bufferingPolicy: .bufferingNewest(definition.capacities.stream)
+            bufferingPolicy: .bufferingOldest(definition.capacities.stream)
         )
         self.diagnosticStream = diagnostics.stream
         self.diagnosticContinuation = diagnostics.continuation
+        self.diagnosticsSnapshotValue.diagnosticCapacity = definition.capacities.stream
+        self.diagnosticsSnapshotValue.capabilities = RuntimeCapabilityInformation(
+            protocolCapabilities: definition.capacities.protocolCapabilities,
+            wireProfile: wireProfile,
+            maximumPayloadBytes: definition.capacities.protocolMaximumPayloadBytes,
+            maximumObjects: definition.capacities.protocolMaximumObjects,
+            maximumPendingCorrelations: definition.capacities.protocolMaximumPendingCorrelations,
+            diagnosticCapacity: definition.capacities.stream
+        )
     }
 
     func start() async -> (AxolotyError.RuntimeErrorCode, String)? {
@@ -160,7 +172,7 @@ actor ProtocolExecutor {
         hasStarted = true
         recoveryArrivedBeforeFailure = false
         softRecoveryConsumed = false
-        state = .starting
+        transition(to: .starting)
         transportEpoch &+= 1
         let epoch = transportEpoch
         installTransportIngressPump(epoch: epoch)
@@ -175,7 +187,7 @@ actor ProtocolExecutor {
             let lastWill = try makeTransportLastWill()
             await transport.setDiagnostics(transportDiagnostics)
             await transport.setFailureHandler { [weak self] failure in
-                Task { await self?.transportFailed(failure.detail) }
+                Task { await self?.transportFailed(failure) }
             }
             await transport.setRecoveryHandler { [weak self] in
                 Task { await self?.transportRecovered() }
@@ -199,7 +211,7 @@ actor ProtocolExecutor {
                 await transport.stop()
                 return (.notStarted, "runtime start was superseded during advertisement")
             }
-            state = .running
+            transition(to: .running)
             await startRuntimeModules()
             return nil
         } catch {
@@ -209,10 +221,15 @@ actor ProtocolExecutor {
             // transport was suspended. Preserve that terminal transition
             // instead of resurrecting the runtime as failed.
             if state == .starting, transportEpoch == epoch {
+                let detail = runtimeErrorDetail(error)
                 failRuntime(
                     code: .brokerUnavailable,
-                    detail: runtimeErrorDetail(error),
-                    diagnostic: .transportFailed
+                    detail: detail,
+                    diagnostic: .transportFailed,
+                    observation: .transportFailure(RuntimeTransportObservation(
+                        code: .brokerUnavailable,
+                        detail: detail
+                    ))
                 )
             }
             return (.brokerUnavailable, runtimeErrorDetail(error))
@@ -234,7 +251,7 @@ actor ProtocolExecutor {
 
     private func performStop() async {
         await stopRuntimeModules()
-        state = .stopping
+        transition(to: .stopping)
         offlineOperations.removeAll(keepingCapacity: true)
         pendingOutboundEffects.removeAll(keepingCapacity: true)
         transportEpoch &+= 1
@@ -248,7 +265,7 @@ actor ProtocolExecutor {
             try enqueueIoDeadvertisements(nowMS: monotonicNowMS())
             try enqueueLifecycleDeadvertisement(nowMS: monotonicNowMS())
         } catch {
-            emit(.init(kind: .transportFailed, detail: runtimeErrorDetail(error)))
+            emitTransportFailure(error)
         }
         if hasLifecycleEffects {
             await drainOutboundPump()
@@ -256,7 +273,7 @@ actor ProtocolExecutor {
         do {
             try await transport.deactivateProfileInterest(namespace: definition.namespace)
         } catch {
-            emit(.init(kind: .transportFailed, detail: runtimeErrorDetail(error)))
+            emitTransportFailure(error)
         }
         await transport.stop()
         transportExternalRoutes.removeAll()
@@ -264,7 +281,7 @@ actor ProtocolExecutor {
             await drainOutboundPump()
         }
         guard state == .stopping, transportEpoch == stoppingEpoch else { return }
-        state = .stopped
+        transition(to: .stopped)
         signalTermination()
     }
 
@@ -273,7 +290,7 @@ actor ProtocolExecutor {
         if state == .running || state == .starting || state == .reconnecting || state == .failed {
             await stop()
         }
-        state = .closed
+        transition(to: .closed)
         signalTermination()
         finishIoObservers()
         for registration in eventRegistrations {
@@ -285,14 +302,16 @@ actor ProtocolExecutor {
 
     func reconnect() async {
         guard state == .running || state == .reconnecting else { return }
-        state = .reconnecting
+        transition(to: .reconnecting)
         recoveryArrivedBeforeFailure = false
         softRecoveryConsumed = false
         transportEpoch &+= 1
         let epoch = transportEpoch
         processor.resetTransport()
+        resetTransportPresence()
+        cancelPendingRequestsForTransportReset()
         clearIoTransportState()
-        diagnosticsSnapshotValue.reconnects += 1
+        recordReconnectStart(.requested)
         cancelIngressPump()
         installTransportIngressPump(epoch: epoch)
         do {
@@ -307,7 +326,7 @@ actor ProtocolExecutor {
             transportExternalRoutes.removeAll()
             installOutboundPump()
             await transport.setFailureHandler { [weak self] failure in
-                Task { await self?.transportFailed(failure.detail) }
+                Task { await self?.transportFailed(failure) }
             }
             await transport.setRecoveryHandler { [weak self] in
                 Task { await self?.transportRecovered() }
@@ -317,7 +336,11 @@ actor ProtocolExecutor {
                 lastWill: lastWill
             )
             guard state == .reconnecting, transportEpoch == epoch else { return }
-            try await finishTransportRecovery(epoch: epoch, activateProfileInterest: true)
+            try await finishTransportRecovery(
+                epoch: epoch,
+                activateProfileInterest: true,
+                cause: .requested
+            )
         } catch {
             guard state == .reconnecting, transportEpoch == epoch else { return }
             // A transport failure while recovering is no more terminal than one
@@ -329,7 +352,7 @@ actor ProtocolExecutor {
             // connections. Stay `.reconnecting` and report the attempt so the
             // caller can retry.
             diagnosticsSnapshotValue.transportFailures += 1
-            emit(.init(kind: .transportFailed, detail: runtimeErrorDetail(error)))
+            emitTransportFailure(error)
         }
     }
 
@@ -339,7 +362,12 @@ actor ProtocolExecutor {
         failRuntime(
             code: .capacityExceeded,
             detail: "transport ingress queue is full",
-            diagnostic: .capacityExceeded
+            diagnostic: .capacityExceeded,
+            observation: .admission(RuntimeAdmissionObservation(
+                resource: .ingress,
+                outcome: .rejected,
+                capacity: definition.capacities.ingress
+            ))
         )
     }
 
@@ -365,7 +393,11 @@ actor ProtocolExecutor {
         }
     }
 
-    private func finishTransportRecovery(epoch: UInt64, activateProfileInterest: Bool) async throws {
+    private func finishTransportRecovery(
+        epoch: UInt64,
+        activateProfileInterest: Bool,
+        cause: RuntimeReconnectCause
+    ) async throws {
         guard state == .reconnecting, transportEpoch == epoch else { return }
         if activateProfileInterest {
             try await transport.activateProfileInterest(namespace: definition.namespace)
@@ -374,8 +406,9 @@ actor ProtocolExecutor {
         try await publishLifecycleAdvertisement(nowMS: monotonicNowMS())
         try await publishIoAdvertisements(nowMS: monotonicNowMS())
         guard state == .reconnecting, transportEpoch == epoch else { return }
-        state = .running
+        transition(to: .running)
         softRecoveryConsumed = true
+        emitReconnectCompletion(cause: cause)
         await startRuntimeModules(restarting: true)
         // Replay effects that were accepted before failure ahead of work
         // accepted while reconnecting, preserving publication order.
@@ -401,11 +434,15 @@ actor ProtocolExecutor {
         installOutboundPump()
         do {
             try await releaseRetainedExternalRoutes(epoch: epoch)
-            try await finishTransportRecovery(epoch: epoch, activateProfileInterest: false)
+            try await finishTransportRecovery(
+                epoch: epoch,
+                activateProfileInterest: false,
+                cause: pendingReconnectCause
+            )
         } catch {
             guard state == .reconnecting, transportEpoch == epoch else { return }
             diagnosticsSnapshotValue.transportFailures += 1
-            emit(.init(kind: .transportFailed, detail: runtimeErrorDetail(error)))
+            emitTransportFailure(error)
         }
     }
 
@@ -421,6 +458,87 @@ actor ProtocolExecutor {
             guard state == .reconnecting, transportEpoch == epoch else { return }
             transportExternalRoutes.removeLast()
         }
+    }
+
+    /// Applies one lifecycle transition and records owned observation state.
+    private func transition(to next: RuntimeLifecycleState) {
+        let previous = state
+        guard previous != next else { return }
+        state = next
+        let observation = RuntimeLifecycleObservation(
+            from: previous,
+            to: next,
+            transportEpoch: transportEpoch
+        )
+        diagnosticsSnapshotValue.lifecycle = observation
+    }
+
+    private func recordReconnectStart(_ cause: RuntimeReconnectCause) {
+        diagnosticsSnapshotValue.reconnects += 1
+        pendingReconnectCause = cause
+        diagnosticsSnapshotValue.lastReconnect = RuntimeReconnectObservation(
+            cause: cause,
+            attempt: UInt64(diagnosticsSnapshotValue.reconnects),
+            transportEpoch: transportEpoch
+        )
+    }
+
+    private func emitReconnectCompletion(cause: RuntimeReconnectCause) {
+        let observation = RuntimeReconnectObservation(
+            cause: cause,
+            attempt: UInt64(diagnosticsSnapshotValue.reconnects),
+            transportEpoch: transportEpoch
+        )
+        diagnosticsSnapshotValue.lastReconnect = observation
+        emit(RuntimeDiagnostic(
+            kind: .reconnected,
+            detail: "transport reconnected",
+            sequence: 0,
+            timestampMS: 0,
+            observation: .reconnect(observation)
+        ))
+    }
+
+    private func resetTransportPresence() {
+        diagnosticsSnapshotValue.presenceUncertain = true
+        diagnosticsSnapshotValue.presenceResets += 1
+        diagnosticsSnapshotValue.activeObjects = processor.state.activeObjects
+        diagnosticsSnapshotValue.presenceGeneration = processor.state.generation
+        let observation = RuntimePresenceObservation(
+            sourceID: nil,
+            objectID: nil,
+            evidence: .transportReset,
+            activeObjects: processor.state.activeObjects,
+            generation: processor.state.generation
+        )
+        diagnosticsSnapshotValue.lastPresence = observation
+        emit(RuntimeDiagnostic(
+            kind: .presenceChanged,
+            detail: "transport reset made peer presence uncertain",
+            sequence: 0,
+            timestampMS: 0,
+            observation: .presence(observation)
+        ))
+    }
+
+    private func cancelPendingRequestsForTransportReset() {
+        let cancelled = pendingRequestCapabilities
+        pendingRequestCapabilities.removeAll(keepingCapacity: true)
+        for (correlationID, capability) in cancelled {
+            diagnosticsSnapshotValue.cancelledRequests &+= 1
+            emit(RuntimeDiagnostic(
+                kind: .requestCancelled,
+                detail: "request cancelled by transport reset",
+                sequence: 0,
+                timestampMS: 0,
+                observation: .request(RuntimeRequestObservation(
+                    capability: capability,
+                    correlationID: correlationID,
+                    outcome: .cancelled
+                ))
+            ))
+        }
+        diagnosticsSnapshotValue.pendingRequests = processor.state.pendingCorrelations
     }
 
     func lifecycleState() -> RuntimeLifecycleState { state }
@@ -495,6 +613,14 @@ actor ProtocolExecutor {
         snapshot.sessionFailures = transport.sessionFailures
         snapshot.transportReconnects = transport.reconnects
         snapshot.activeExternalSubscriptions = transport.activeExternalSubscriptions
+        let processorState = processor.state
+        snapshot.pendingRequests = processorState.pendingCorrelations
+        snapshot.activeObjects = processorState.activeObjects
+        if snapshot.lastPresence == nil {
+            snapshot.presenceGeneration = processorState.generation
+        }
+        snapshot.diagnosticSequence = diagnosticSequence
+        snapshot.diagnosticCapacity = definition.capacities.stream
         return snapshot
     }
 
@@ -502,14 +628,60 @@ actor ProtocolExecutor {
 
     func expire(nowMS: UInt32) -> Bool {
         guard state == .running else { return false }
-        let didExpire = processor.expire(nowMS: nowMS)
-        if didExpire { diagnosticsSnapshotValue.expiredRequests += 1 }
-        return didExpire
+        let before = pendingCorrelationIDs()
+        guard processor.expire(nowMS: nowMS) else { return false }
+        let after = pendingCorrelationIDs()
+        let afterSet = Set(after)
+        for correlationID in before where !afterSet.contains(correlationID) {
+            let capability = pendingRequestCapabilities.removeValue(forKey: correlationID)
+            diagnosticsSnapshotValue.expiredRequests += 1
+            emit(RuntimeDiagnostic(
+                kind: .requestExpired,
+                detail: "request deadline expired",
+                sequence: 0,
+                timestampMS: 0,
+                observation: .request(RuntimeRequestObservation(
+                    capability: capability,
+                    correlationID: correlationID,
+                    outcome: .expired
+                ))
+            ))
+        }
+        diagnosticsSnapshotValue.pendingRequests = after.count
+        return true
     }
 
     func cancel(correlationID: UUID16) -> Bool {
         guard state == .running else { return false }
-        return processor.cancel(correlationID: correlationID)
+        guard processor.cancel(correlationID: correlationID) else { return false }
+        let capability = pendingRequestCapabilities.removeValue(forKey: correlationID)
+        diagnosticsSnapshotValue.cancelledRequests &+= 1
+        diagnosticsSnapshotValue.pendingRequests = processor.state.pendingCorrelations
+        emit(RuntimeDiagnostic(
+            kind: .requestCancelled,
+            detail: "request cancelled",
+            sequence: 0,
+            timestampMS: 0,
+            observation: .request(RuntimeRequestObservation(
+                capability: capability,
+                correlationID: correlationID,
+                outcome: .cancelled
+            ))
+        ))
+        return true
+    }
+
+    private func pendingCorrelationIDs() -> [UUID16] {
+        var projection = ProtocolFixedStateSnapshot<64>()
+        processor.copyState(into: &projection)
+        var identities: [UUID16] = []
+        identities.reserveCapacity(projection.pendingCorrelationCount)
+        for index in 0..<projection.pendingCorrelationCount {
+            if let identity = projection.pendingCorrelationIDs[index] {
+                identities.append(identity)
+            }
+        }
+        return identities
     }
 
     private func decrementOutbound() {
@@ -560,7 +732,10 @@ actor ProtocolExecutor {
                         await self?.transportEffectCompleted(queuedEffect, delivered: true)
                     } catch {
                         await self?.transportEffectCompleted(queuedEffect, delivered: false)
-                        await self?.transportFailed(runtimeErrorDetail(error))
+                        await self?.transportFailed(RuntimeTransportFailure(
+                            code: .brokerUnavailable,
+                            detail: runtimeErrorDetail(error)
+                        ))
                         break
                     }
                 }
@@ -605,34 +780,44 @@ actor ProtocolExecutor {
 
     func publish(_ operation: RuntimeOperation, nowMS: UInt32) -> RuntimeReceipt {
         if operation.capability == .channel, operation.operationName == nil {
-            return .rejected(.invalidOperationName)
+            return rejectRequest(operation, .invalidOperationName)
         }
         if let operationName = operation.operationName,
            (operation.capability != .call && operation.capability != .channel && operation.capability != .associate)
             || !RuntimeOperationValidation.isValidCallOperation(operationName) {
-            return .rejected(.invalidOperationName)
+            return rejectRequest(operation, .invalidOperationName)
         }
         guard !operation.payload.isEmpty else {
-            return .rejected(.malformedPayload)
+            return rejectRequest(operation, .malformedPayload)
         }
         if state == .reconnecting {
             guard operation.capability.isOneWay, operation.correlationID == nil else {
-                return .rejected(.notRunning(state))
+                return rejectRequest(operation, .notRunning(state))
             }
             guard offlineOperations.count < definition.capacities.dispatch else {
                 diagnosticsSnapshotValue.dispatchSaturation += 1
-                return .rejected(.capacityExceeded)
+                emitAdmission(
+                    .dispatch,
+                    capacity: definition.capacities.dispatch,
+                    detail: "offline dispatch queue is full"
+                )
+                return rejectRequest(operation, .capacityExceeded)
             }
             offlineOperations.append(operation)
             eventContinuation.yield(.transition(.accepted))
             return .accepted
         }
         guard state == .running else {
-            return .rejected(.notRunning(state))
+            return rejectRequest(operation, .notRunning(state))
         }
         guard queuedTransportEffects < definition.capacities.dispatch else {
             diagnosticsSnapshotValue.dispatchSaturation += 1
-            return .rejected(.capacityExceeded)
+            emitAdmission(
+                .dispatch,
+                capacity: definition.capacities.dispatch,
+                detail: "outbound dispatch queue is full"
+            )
+            return rejectRequest(operation, .capacityExceeded)
         }
         let remainingTransportCapacity = definition.capacities.dispatch - queuedTransportEffects
         let maximumActionCount = operation.capability == .associate
@@ -646,9 +831,181 @@ actor ProtocolExecutor {
             dispatchActions(nowMS: nowMS)
         }
         let receipt = receipt(for: outcome)
+        recordRequestReceipt(operation, receipt: receipt)
         eventContinuation.yield(.transition(receipt))
-        guard case .accepted = receipt else { return receipt }
+        if case .accepted = receipt {
+            recordLocalPresence(operation)
+        }
         return receipt
+    }
+
+    private func rejectRequest(
+        _ operation: RuntimeOperation,
+        _ rejection: RuntimeRejection
+    ) -> RuntimeReceipt {
+        recordRequestRejected(operation, rejection: rejection)
+        return .rejected(rejection)
+    }
+
+    private func isRequestCapability(_ capability: ProtocolCapability) -> Bool {
+        switch capability {
+        case .discover, .query, .update, .call: return true
+        default: return false
+        }
+    }
+
+    private func isResponseCapability(_ capability: ProtocolCapability) -> Bool {
+        switch capability {
+        case .resolve, .retrieve, .complete, .returnEvent: return true
+        default: return false
+        }
+    }
+
+    private func recordRequestRejected(_ operation: RuntimeOperation, rejection: RuntimeRejection) {
+        guard isRequestCapability(operation.capability), let correlationID = operation.correlationID else { return }
+        diagnosticsSnapshotValue.rejectedRequests &+= 1
+        emit(RuntimeDiagnostic(
+            kind: .requestRejected,
+            detail: "request rejected",
+            sequence: 0,
+            timestampMS: 0,
+            observation: .request(RuntimeRequestObservation(
+                capability: operation.capability,
+                correlationID: correlationID,
+                outcome: .rejected,
+                rejection: rejection
+            ))
+        ))
+    }
+
+    private func recordRequestReceipt(_ operation: RuntimeOperation, receipt: RuntimeReceipt) {
+        guard isRequestCapability(operation.capability), let correlationID = operation.correlationID else { return }
+        switch receipt {
+        case .accepted:
+            pendingRequestCapabilities[correlationID] = operation.capability
+            diagnosticsSnapshotValue.acceptedRequests &+= 1
+            diagnosticsSnapshotValue.pendingRequests = processor.state.pendingCorrelations
+            emit(RuntimeDiagnostic(
+                kind: .requestAccepted,
+                detail: "request accepted",
+                sequence: 0,
+                timestampMS: 0,
+                observation: .request(RuntimeRequestObservation(
+                    capability: operation.capability,
+                    correlationID: correlationID,
+                    outcome: .accepted
+                ))
+            ))
+        case .rejected(let rejection):
+            recordRequestRejected(operation, rejection: rejection)
+        case .ignored:
+            break
+        }
+    }
+
+    private func recordInboundResponse(_ delivery: BorrowedProtocolDelivery) {
+        let capability = delivery.routingKey.capability
+        guard isResponseCapability(capability), let correlationID = delivery.routingKey.correlationID else { return }
+        recordResponseReceived(capability, correlationID: correlationID)
+    }
+
+    private func recordResponseReceived(_ capability: ProtocolCapability, correlationID: UUID16) {
+        diagnosticsSnapshotValue.responsesReceived &+= 1
+        if !processorHasPending(correlationID) {
+            pendingRequestCapabilities.removeValue(forKey: correlationID)
+        }
+        diagnosticsSnapshotValue.pendingRequests = processor.state.pendingCorrelations
+        emit(RuntimeDiagnostic(
+            kind: .responseReceived,
+            detail: "correlated response received",
+            sequence: 0,
+            timestampMS: 0,
+            observation: .request(RuntimeRequestObservation(
+                capability: capability,
+                correlationID: correlationID,
+                outcome: .responseReceived
+            ))
+        ))
+    }
+
+    private func processorHasPending(_ correlationID: UUID16) -> Bool {
+        pendingCorrelationIDs().contains(correlationID)
+    }
+
+    private func recordLocalPresence(_ operation: RuntimeOperation) {
+        guard operation.capability == .advertise || operation.capability == .deadvertise else { return }
+        let evidence: RuntimePresenceEvidence = operation.capability == .advertise
+            ? .localAdvertisement
+            : .localDeadvertisement
+        recordPresence(
+            capability: operation.capability,
+            sourceID: operation.sourceID,
+            payload: operation.payload,
+            evidence: evidence
+        )
+    }
+
+    private func recordInboundPresence(
+        capability: ProtocolCapability,
+        sourceID: UUID16,
+        payload: [UInt8]
+    ) {
+        let evidence: RuntimePresenceEvidence = capability == .advertise
+            ? .peerAdvertisement
+            : .peerDeadvertisement
+        recordPresence(
+            capability: capability,
+            sourceID: sourceID,
+            payload: payload,
+            evidence: evidence
+        )
+    }
+
+    private func recordPresence(
+        capability: ProtocolCapability,
+        sourceID: UUID16,
+        payload: [UInt8],
+        evidence: RuntimePresenceEvidence
+    ) {
+        guard capability == .advertise || capability == .deadvertise else { return }
+        let processorState = processor.state
+        let objectID = capability == .advertise ? advertisedObjectID(in: payload) : nil
+        let observation = RuntimePresenceObservation(
+            sourceID: sourceID,
+            objectID: objectID,
+            evidence: evidence,
+            activeObjects: processorState.activeObjects,
+            generation: processorState.generation
+        )
+        diagnosticsSnapshotValue.activeObjects = processorState.activeObjects
+        diagnosticsSnapshotValue.presenceGeneration = processorState.generation
+        diagnosticsSnapshotValue.presenceChanges &+= 1
+        diagnosticsSnapshotValue.lastPresence = observation
+        guard evidence == .peerAdvertisement || evidence == .peerDeadvertisement else { return }
+        diagnosticsSnapshotValue.presenceUncertain = false
+        emit(RuntimeDiagnostic(
+            kind: .presenceChanged,
+            detail: "object presence changed",
+            sequence: 0,
+            timestampMS: 0,
+            observation: .presence(observation)
+        ))
+    }
+
+    private func advertisedObjectID(in payload: [UInt8]) -> UUID16? {
+        let codec = WireCodec(profile: wireProfile)
+        return payload.withUnsafeBufferPointer { buffer in
+            guard let base = buffer.baseAddress else { return nil }
+            let reader = codec.reader(bytes: base, length: buffer.count)
+            guard let object = reader.readField("object") else { return nil }
+            return object.withBytes { objectPointer, objectLength in
+                let objectReader = codec.reader(
+                    bytes: objectPointer.assumingMemoryBound(to: UInt8.self),
+                    length: objectLength
+                )
+                return objectReader.readUUID("objectId")
+            }
+        }
     }
 
     private func flushOfflineOperations(nowMS: UInt32) {
@@ -674,6 +1031,7 @@ actor ProtocolExecutor {
     private func processInbound(_ frame: RuntimeInboundFrame) -> RuntimeReceipt {
         let outcome: ProtocolProcessOutcome
         var parseFailure: String?
+        var inboundPresence: (ProtocolCapability, UUID16, [UInt8])?
         switch frame {
         case .profile(var topic, let payload, let nowMS):
             guard !topic.isEmpty else { return .rejected(.malformedFrame(.malformedFrame)) }
@@ -704,6 +1062,8 @@ actor ProtocolExecutor {
                             payload: ByteSlice(bytes: payloadBase, length: payloadBuffer.count),
                             maximumTopicLength: definition.capacities.protocolMaximumTopicBytes
                         )
+                        let capability = borrowed.routingKey.capability
+                        let sourceID = borrowed.routingKey.sourceID
                         actionSink.removeAll()
                         let remainingTransportCapacity = definition.capacities.dispatch - queuedTransportEffects
                         let maximumActionCount = borrowed.routingKey.capability == .associate
@@ -718,6 +1078,9 @@ actor ProtocolExecutor {
                             sink: &actionSink
                         )
                         if case .accepted = outcome {
+                            if capability == .advertise || capability == .deadvertise {
+                                inboundPresence = (capability, sourceID, payload)
+                            }
                             dispatchActions(nowMS: nowMS)
                         }
                         return outcome
@@ -761,6 +1124,13 @@ actor ProtocolExecutor {
             diagnosticsSnapshotValue.malformedFrames += 1
             emit(.init(kind: .malformedFrame, detail: parseFailure))
         }
+        if case .accepted = outcome, let inboundPresence {
+            recordInboundPresence(
+                capability: inboundPresence.0,
+                sourceID: inboundPresence.1,
+                payload: inboundPresence.2
+            )
+        }
         let receipt = receipt(for: outcome)
         eventContinuation.yield(.transition(receipt))
         guard case .accepted = receipt else { return receipt }
@@ -769,7 +1139,11 @@ actor ProtocolExecutor {
 
     private func dispatchActions(nowMS: UInt32) {
         guard actionSink.count <= definition.capacities.dispatch else {
-            emit(.init(kind: .capacityExceeded, detail: "dispatch queue is full"))
+            emitAdmission(
+                .dispatch,
+                capacity: definition.capacities.dispatch,
+                detail: "dispatch queue is full"
+            )
             actionSink.removeAll()
             return
         }
@@ -783,10 +1157,12 @@ actor ProtocolExecutor {
             recordConformanceAction(action)
             switch borrowed {
             case .deliver(let delivery):
+                recordInboundResponse(delivery)
                 emitRegisteredEvents(for: delivery, owned: action, nowMS: nowMS)
                 dispatchToHandler(action, operation: operationName(for: delivery))
                 dispatchIoActorIfRegistered(action, nowMS: nowMS)
             case .associationChanged(let transition):
+                recordInboundResponse(transition.delivery)
                 emitRegisteredEvents(for: transition.delivery, owned: action, nowMS: nowMS)
                 dispatchToHandler(action, operation: operationName(for: transition.delivery))
                 changedSourceIDs.insert(ObjectID(uuid: transition.sourceID))
@@ -842,7 +1218,12 @@ actor ProtocolExecutor {
             let result = registration.continuation.yield(value)
             if case .dropped = result {
                 diagnosticsSnapshotValue.dispatchSaturation += 1
-                emit(.init(kind: .capacityExceeded, detail: "application event stream is full"))
+                emitAdmission(
+                    .applicationEvents,
+                    outcome: .dropped,
+                    capacity: definition.capacities.stream,
+                    detail: "application event stream is full"
+                )
                 switch registration.policy {
                 case .failAfterDrop, .fail:
                     failRuntime(
@@ -958,7 +1339,11 @@ actor ProtocolExecutor {
         // future caller changes that invariant.
         guard pendingOutboundEffects.count + effects.count <= definition.capacities.dispatch else {
             diagnosticsSnapshotValue.dispatchSaturation += 1
-            emit(.init(kind: .capacityExceeded, detail: "outbound retention queue is full"))
+            emitAdmission(
+                .dispatch,
+                capacity: definition.capacities.dispatch,
+                detail: "outbound retention queue is full"
+            )
             failRuntime(
                 code: .capacityExceeded,
                 detail: "outbound retention queue is full",
@@ -979,7 +1364,11 @@ actor ProtocolExecutor {
                 if case .typedIoPublication = effect { count += 1 }
             })
             diagnosticsSnapshotValue.dispatchSaturation += 1
-            emit(.init(kind: .capacityExceeded, detail: "outbound dispatch queue is full"))
+            emitAdmission(
+                .dispatch,
+                capacity: definition.capacities.dispatch,
+                detail: "outbound dispatch queue is full"
+            )
             failRuntime(
                 code: .capacityExceeded,
                 detail: "outbound dispatch queue is full",
@@ -1076,10 +1465,33 @@ actor ProtocolExecutor {
         await task?.value
     }
 
-    private func transportFailed(_ detail: String) async {
+    private func emitTransportFailure(_ error: any Error) {
+        let detail = runtimeErrorDetail(error)
+        emit(RuntimeDiagnostic(
+            kind: .transportFailed,
+            detail: detail,
+            sequence: 0,
+            timestampMS: 0,
+            observation: .transportFailure(RuntimeTransportObservation(
+                code: .brokerUnavailable,
+                detail: detail
+            ))
+        ))
+    }
+
+    private func transportFailed(_ failure: RuntimeTransportFailure) async {
         diagnosticsSnapshotValue.transportFailures += 1
         guard state == .running || state == .reconnecting || state == .starting else { return }
-        emit(.init(kind: .transportFailed, detail: detail))
+        emit(RuntimeDiagnostic(
+            kind: .transportFailed,
+            detail: failure.detail,
+            sequence: 0,
+            timestampMS: 0,
+            observation: .transportFailure(RuntimeTransportObservation(
+                code: failure.code,
+                detail: failure.detail
+            ))
+        ))
         // Established-connection loss is recoverable transport state, not a
         // terminal runtime failure.  Leave the executor in an explicit
         // reconnecting state so the caller can restore the network path and
@@ -1088,12 +1500,14 @@ actor ProtocolExecutor {
             if state == .reconnecting { softRecoveryConsumed = false }
             return
         }
-        state = .reconnecting
+        transition(to: .reconnecting)
         softRecoveryConsumed = false
         transportEpoch &+= 1
         processor.resetTransport()
+        resetTransportPresence()
+        cancelPendingRequestsForTransportReset()
         clearIoTransportState()
-        diagnosticsSnapshotValue.reconnects += 1
+        recordReconnectStart(.transportFailure)
         cancelIngressPump()
         outboundContinuation?.finish()
         outboundTask?.cancel()
@@ -1110,14 +1524,21 @@ actor ProtocolExecutor {
     func failRuntime(
         code: AxolotyError.RuntimeErrorCode,
         detail: String,
-        diagnostic: RuntimeDiagnostic.Kind
+        diagnostic: RuntimeDiagnostic.Kind,
+        observation: RuntimeObservation? = nil
     ) {
         if terminalFailureValue == nil {
             terminalFailureValue = (code, detail)
         }
-        emit(.init(kind: diagnostic, detail: detail))
+        emit(RuntimeDiagnostic(
+            kind: diagnostic,
+            detail: detail,
+            sequence: 0,
+            timestampMS: 0,
+            observation: observation
+        ))
         guard state != .stopping, state != .stopped, state != .closed else { return }
-        state = .failed
+        transition(to: .failed)
         signalTermination()
         transportEpoch &+= 1
         cancelIngressPump()
@@ -1129,8 +1550,47 @@ actor ProtocolExecutor {
         }
     }
 
+    func emitAdmission(
+        _ resource: RuntimeAdmissionResource,
+        outcome: RuntimeAdmissionOutcome = .rejected,
+        capacity: Int,
+        detail: String
+    ) {
+        emit(RuntimeDiagnostic(
+            kind: .capacityExceeded,
+            detail: detail,
+            sequence: 0,
+            timestampMS: 0,
+            observation: .admission(RuntimeAdmissionObservation(
+                resource: resource,
+                outcome: outcome,
+                capacity: capacity
+            ))
+        ))
+    }
+
     func emit(_ diagnostic: RuntimeDiagnostic) {
-        diagnosticContinuation.yield(diagnostic)
+        diagnosticSequence &+= 1
+        let owned = RuntimeDiagnostic(
+            kind: diagnostic.kind,
+            detail: diagnostic.detail,
+            sequence: diagnosticSequence,
+            timestampMS: monotonicNowMS(),
+            observation: diagnostic.observation
+        )
+        diagnosticsSnapshotValue.diagnosticSequence = diagnosticSequence
+        diagnosticsSnapshotValue.diagnosticsEmitted &+= 1
+        let result = diagnosticContinuation.yield(owned)
+        switch result {
+        case .enqueued:
+            break
+        case .dropped:
+            diagnosticsSnapshotValue.diagnosticsDropped &+= 1
+        case .terminated:
+            break
+        @unknown default:
+            break
+        }
     }
 
     /// Appends one copied action for ``conformanceObservation()``, bounded by

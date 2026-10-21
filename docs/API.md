@@ -155,8 +155,27 @@ correlation, and unsupported capability.
 
 `RuntimeDiagnostics` provides bounded counters for ingress saturation, stream
 drops, handler saturation, reconnects, expired requests, malformed frames, and
-transport failures. Diagnostic streams contain owned values and can be
-consumed independently of application event streams.
+transport failures. It also reports current lifecycle, presence, request, and
+capability state without exposing transport handles.
+
+The diagnostics snapshot carries the current typed `lifecycle` transition and
+`capabilities` information, so a consumer that connects after startup does not
+need replayed stream values. `RuntimeDiagnostic` values carry a monotonic
+`sequence`, a runtime `timestampMS`, and an optional typed
+`RuntimeObservation`. The stream observation families are `reconnect`,
+`admission`, `request`, `presence`, and `transportFailure`. Each case owns its
+values. A request
+observation records a correlation and outcome, never the request or response
+payload. A presence observation records identities and counts, never object
+metadata. The free-form `detail` string is for bounded operational context;
+module authors must avoid putting payloads or sensitive metadata in it.
+
+The diagnostic stream is bounded by `RuntimeCapacities.stream` and keeps the
+oldest buffered values. When the buffer is full, a new diagnostic is dropped;
+`diagnosticsDropped` counts these offers, and `sequence` gaps let a consumer
+detect loss. Capturing history, redacting metadata, and presenting
+observations belong to the consumer, not to Core. The contract requires no
+MCP service, file storage, or `axoloty-debug` dependency.
 
 ## Wire and route authority
 
