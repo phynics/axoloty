@@ -520,4 +520,208 @@ extension AxolotyRuntimeTests {
         #expect(await transport.stopObservedCancellation == false)
         #expect(Array((await transport.lifecycle).suffix(2)) == ["deactivate", "stop"])
     }
+
+    @Test("typed diagnostics expose lifecycle, capabilities, and reconnect evidence")
+    func typedDiagnosticsExposeLifecycleAndReconnect() async throws {
+        let runtime = AxolotyRuntime(definition: try makeDefinition(), transport: TestTransport())
+        try await runtime.start()
+
+        let initial = await runtime.diagnosticsSnapshot()
+        #expect(initial.lifecycleState == .running)
+        #expect(initial.lifecycle.from == .starting)
+        #expect(initial.lifecycle.to == .running)
+        #expect(initial.capabilities.wireProfile == .coaty3JSON)
+        #expect(initial.capabilities.protocolCapabilities.isCoatyCore3)
+        #expect(initial.diagnosticCapacity > 0)
+
+        let stream = await runtime.diagnostics()
+        var iterator = stream.makeAsyncIterator()
+        await runtime.reconnect()
+        try await waitUntil("runtime to finish reconnect") {
+            await runtime.state() == .running
+        }
+        let recovered = await runtime.diagnosticsSnapshot()
+        #expect(recovered.lifecycle.from == .reconnecting)
+        #expect(recovered.lifecycle.to == .running)
+
+        var reconnectDiagnostic: RuntimeDiagnostic?
+        for _ in 0..<4 {
+            let value = try await nextValue(&iterator)
+            if value.kind == .reconnected {
+                reconnectDiagnostic = value
+                break
+            }
+        }
+        let reconnected = try #require(reconnectDiagnostic)
+        #expect(reconnected.sequence > initial.diagnosticSequence)
+        #expect(reconnected.timestampMS > 0)
+        guard case .reconnect(let reconnect)? = reconnected.observation else {
+            Issue.record("reconnect diagnostic carried no typed observation")
+            return
+        }
+        #expect(reconnect.cause == .requested)
+        #expect(await runtime.diagnosticsSnapshot().lastReconnect?.cause == .requested)
+        await runtime.stop()
+    }
+
+    @Test("request outcomes are typed, counted, and owned")
+    func requestOutcomesAreTypedAndCounted() async throws {
+        let runtime = AxolotyRuntime(definition: try makeDefinition(), transport: TestTransport())
+        try await runtime.start()
+        let stream = await runtime.diagnostics()
+        var iterator = stream.makeAsyncIterator()
+        let correlation = try #require(UUID16(parsing: "57000000-0000-4000-8000-000000000001"))
+
+        #expect(await runtime.request(.discover(
+            correlationID: correlation,
+            payload: Array("{}".utf8),
+            timeoutMS: 10
+        ), nowMS: 100) == .accepted)
+        var acceptedDiagnostic: RuntimeDiagnostic?
+        for _ in 0..<8 {
+            let diagnostic = try await nextValue(&iterator)
+            if diagnostic.kind == .requestAccepted {
+                acceptedDiagnostic = diagnostic
+                break
+            }
+        }
+        let accepted = try #require(acceptedDiagnostic)
+        #expect(accepted.kind == .requestAccepted)
+        guard case .request(let acceptedObservation)? = accepted.observation else {
+            Issue.record("accepted request carried no typed observation")
+            return
+        }
+        #expect(acceptedObservation.capability == .discover)
+        #expect(acceptedObservation.correlationID == correlation)
+        #expect(acceptedObservation.outcome == .accepted)
+
+        #expect(await runtime.expire(nowMS: 111))
+        var expiredDiagnostic: RuntimeDiagnostic?
+        for _ in 0..<8 {
+            let diagnostic = try await nextValue(&iterator)
+            if diagnostic.kind == .requestExpired {
+                expiredDiagnostic = diagnostic
+                break
+            }
+        }
+        let expired = try #require(expiredDiagnostic)
+        #expect(expired.kind == .requestExpired)
+        guard case .request(let expiredObservation)? = expired.observation else {
+            Issue.record("expired request carried no typed observation")
+            return
+        }
+        #expect(expiredObservation.outcome == .expired)
+
+        let snapshot = await runtime.diagnosticsSnapshot()
+        #expect(snapshot.acceptedRequests == 1)
+        #expect(snapshot.expiredRequests == 1)
+        #expect(snapshot.pendingRequests == 0)
+        #expect(snapshot.requestOutcomes == RuntimeRequestOutcomes(accepted: 1, expired: 1))
+        await runtime.stop()
+    }
+
+    @Test("peer advertisements update bounded presence evidence")
+    func peerAdvertisementsUpdatePresenceEvidence() async throws {
+        let runtime = AxolotyRuntime(definition: try makeDefinition(), transport: TestTransport())
+        try await runtime.start()
+        let stream = await runtime.diagnostics()
+        var iterator = stream.makeAsyncIterator()
+        let sourceID = "58000000-0000-4000-8000-000000000001"
+        let objectID = "58000000-0000-4000-8000-000000000002"
+        let sourceUUID = try #require(UUID16(parsing: sourceID))
+        let objectUUID = try #require(UUID16(parsing: objectID))
+
+        let payloadString = "{\"object\":{\"objectId\":\"\(objectID)\",\"coreType\":\"CoatyObject\",\"objectType\":\"com.coaty.test.PresenceFixture\",\"name\":\"presence\"}}"
+        let receipt = await runtime.receive(.profile(
+            route: "coaty/3/test/ADV:CoatyObject/\(sourceID)",
+            payload: Array(payloadString.utf8),
+            nowMS: 1
+        ))
+        #expect(receipt == .accepted)
+        try await waitUntil("presence change to be recorded") {
+            await runtime.diagnosticsSnapshot().presenceChanges == 1
+        }
+
+        var presenceDiagnostic: RuntimeDiagnostic?
+        for _ in 0..<8 {
+            let diagnostic = try await nextValue(&iterator)
+            if diagnostic.kind == .presenceChanged {
+                presenceDiagnostic = diagnostic
+                break
+            }
+        }
+        let diagnostic = try #require(presenceDiagnostic)
+        #expect(diagnostic.kind == .presenceChanged)
+        guard case .presence(let presence)? = diagnostic.observation else {
+            Issue.record("presence diagnostic carried no typed observation")
+            return
+        }
+        #expect(presence.evidence == .peerAdvertisement)
+        #expect(presence.sourceID == sourceUUID)
+        #expect(presence.objectID == objectUUID)
+        #expect(presence.activeObjects == 1)
+
+        let snapshot = await runtime.diagnosticsSnapshot()
+        #expect(snapshot.activeObjects == 1)
+        #expect(snapshot.lastPresence == presence)
+        #expect(snapshot.presenceUncertain == false)
+        await runtime.stop()
+    }
+
+    @Test("bounded diagnostic delivery drops new values and counts overflow exactly")
+    func boundedDiagnosticDeliveryReportsOverflow() async throws {
+        let definition = try RuntimeBuilder(
+            sourceID: .zero,
+            namespace: "test",
+            capacities: try RuntimeCapacities(stream: 1)
+        ).finish()
+        let runtime = AxolotyRuntime(definition: definition, transport: TestTransport())
+        try await runtime.start()
+        let before = await runtime.diagnosticsSnapshot()
+        let correlation = try #require(UUID16(parsing: "59000000-0000-4000-8000-000000000001"))
+
+        for _ in 0..<2 {
+            #expect(await runtime.request(.discover(
+                correlationID: correlation,
+                payload: [],
+                timeoutMS: 10
+            ), nowMS: 1) == .rejected(.malformedPayload))
+        }
+
+        let snapshot = await runtime.diagnosticsSnapshot()
+        #expect(snapshot.diagnosticsEmitted - before.diagnosticsEmitted == 2)
+        #expect(snapshot.diagnosticSequence - before.diagnosticSequence == 2)
+        #expect(snapshot.diagnosticsDropped - before.diagnosticsDropped == 1)
+        #expect(snapshot.diagnosticCapacity == 1)
+        await runtime.stop()
+    }
+
+    @Test("transport failures preserve their typed runtime error code")
+    func transportFailureDiagnosticPreservesCode() async throws {
+        let transport = TestTransport()
+        let runtime = AxolotyRuntime(definition: try makeDefinition(), transport: transport)
+        try await runtime.start()
+        let stream = await runtime.diagnostics()
+        var iterator = stream.makeAsyncIterator()
+        let expectedCode = AxolotyError.RuntimeErrorCode.subscriptionFailed
+        await transport.fail(
+            AxolotyError.runtime(code: expectedCode, reason: "subscribe failed")
+        )
+
+        var failure: RuntimeDiagnostic?
+        for _ in 0..<4 {
+            let diagnostic = try await nextValue(&iterator)
+            if diagnostic.kind == .transportFailed {
+                failure = diagnostic
+                break
+            }
+        }
+        let observed = try #require(failure)
+        guard case .transportFailure(let transportFailure)? = observed.observation else {
+            Issue.record("transport failure diagnostic carried no typed observation")
+            return
+        }
+        #expect(transportFailure.code == expectedCode)
+        await runtime.stop()
+    }
 }

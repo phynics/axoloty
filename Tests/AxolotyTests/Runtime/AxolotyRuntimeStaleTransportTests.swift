@@ -38,7 +38,12 @@ extension AxolotyRuntimeTests {
             }
 
             let diagnostic = try? await withThrowingTaskGroup(of: RuntimeDiagnostic?.self) { group in
-                group.addTask { await diagnosticsIterator.next() }
+                group.addTask {
+                    while let diagnostic = await diagnosticsIterator.next() {
+                        if diagnostic.kind == .staleTransportFrame { return diagnostic }
+                    }
+                    return nil
+                }
                 group.addTask {
                     try await Task.sleep(for: .milliseconds(100))
                     throw RuntimeTestTimeout.waitingForAdvertiseEvent

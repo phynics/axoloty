@@ -273,7 +273,12 @@ extension ProtocolExecutor {
     }
 
     func failIoObserver(_ id: UInt64) {
-        emit(.init(kind: .capacityExceeded, detail: "typed IO association stream is full"))
+        emitAdmission(
+            .applicationEvents,
+            outcome: .dropped,
+            capacity: definition.capacities.stream,
+            detail: "typed IO association stream is full"
+        )
         failRuntime(code: .capacityExceeded, detail: "strict typed IO association stream is full", diagnostic: .capacityExceeded)
         _ = id
     }
@@ -291,7 +296,14 @@ extension ProtocolExecutor {
         )
         let payload = delivery.payload
         guard activeHandlers < definition.capacities.handlersInFlight else {
-            emitIoDiagnostic("IO actor delivery dropped: handler capacity is full")
+            emitIoDiagnostic(
+                "IO actor delivery dropped: handler capacity is full",
+                observation: .admission(RuntimeAdmissionObservation(
+                    resource: .handlers,
+                    outcome: .dropped,
+                    capacity: definition.capacities.handlersInFlight
+                ))
+            )
             return
         }
         activeHandlers += 1
@@ -313,7 +325,15 @@ extension ProtocolExecutor {
         handlerTasks.removeValue(forKey: handlerID)
     }
 
-    func emitIoDiagnostic(_ detail: String) { emit(.init(kind: .handlerFailed, detail: detail)) }
+    func emitIoDiagnostic(_ detail: String, observation: RuntimeObservation? = nil) {
+        emit(RuntimeDiagnostic(
+            kind: .handlerFailed,
+            detail: detail,
+            sequence: 0,
+            timestampMS: 0,
+            observation: observation
+        ))
+    }
 }
 
 private func ioPublicationReceipt(for outcome: RuntimeReceipt) -> IoPublicationReceipt {

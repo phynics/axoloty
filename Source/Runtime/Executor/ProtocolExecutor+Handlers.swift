@@ -17,12 +17,20 @@ extension ProtocolExecutor {
         let registration = match.element
         guard activeHandlers < definition.capacities.handlersInFlight else {
             diagnosticsSnapshotValue.handlerSaturation += 1
-            emit(.init(kind: .capacityExceeded, detail: "handler supervision capacity is full"))
+            emitAdmission(
+                .handlers,
+                capacity: definition.capacities.handlersInFlight,
+                detail: "handler supervision capacity is full"
+            )
             return
         }
         guard handlerInFlight[registrationIndex, default: 0] < registration.maximumConcurrentInvocations else {
             diagnosticsSnapshotValue.handlerSaturation += 1
-            emit(.init(kind: .capacityExceeded, detail: "handler registration concurrency is full"))
+            emitAdmission(
+                .handlers,
+                capacity: registration.maximumConcurrentInvocations,
+                detail: "handler registration concurrency is full"
+            )
             return
         }
         activeHandlers += 1
