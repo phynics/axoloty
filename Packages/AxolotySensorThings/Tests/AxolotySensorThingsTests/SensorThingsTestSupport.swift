@@ -9,16 +9,21 @@ import Axoloty
 import AxolotySensorThingsModel
 
 actor SensorThingsRecordingTransport: AxolotyRuntimeTransport {
+    nonisolated var capabilities: RuntimeTransportCapabilities { [] }
     private(set) var publications: [RuntimeOutboundMessage] = []
     private(set) var lifecycle: [String] = []
 
-    func start(receive: @escaping @Sendable (RuntimeInboundFrame) -> Void) async throws {
+    func start(
+        receive: @escaping @Sendable (RuntimeInboundFrame) -> Void,
+        lastWill: RuntimeTransportLastWill?
+    ) async throws(AxolotyError) {
+        _ = (receive, lastWill)
         lifecycle.append("start")
     }
 
     func setFailureHandler(_ handler: @escaping @Sendable (RuntimeTransportFailure) -> Void) async {}
 
-    func perform(_ effect: RuntimeTransportEffect) async throws {
+    func perform(_ effect: RuntimeTransportEffect) async throws(AxolotyError) {
         guard case let .publish(publication) = effect else { return }
         publications.append(publication)
     }
@@ -27,11 +32,13 @@ actor SensorThingsRecordingTransport: AxolotyRuntimeTransport {
         lifecycle.append("stop")
     }
 
-    func activateProfileInterest(namespace: String) async throws {
+    func activateProfileInterest(namespace: String) async throws(AxolotyError) {
+        _ = namespace
         lifecycle.append("activate")
     }
 
-    func deactivateProfileInterest(namespace: String) async throws {
+    func deactivateProfileInterest(namespace: String) async throws(AxolotyError) {
+        _ = namespace
         lifecycle.append("deactivate")
     }
 

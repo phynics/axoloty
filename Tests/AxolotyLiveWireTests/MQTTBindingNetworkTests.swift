@@ -37,14 +37,16 @@ struct MQTTBindingNetworkTests {
         do {
             report("starting")
             try await withTimeout("subject MQTTBinding start", timeout: timeout) {
-                try await subject.start { frame in
-                    Task { await subjectInbox.append(frame) }
-                }
+                try await subject.start(
+                    receive: { frame in Task { await subjectInbox.append(frame) } },
+                    lastWill: nil
+                )
             }
             try await withTimeout("peer MQTTBinding start", timeout: timeout) {
-                try await peer.start { frame in
-                    Task { await peerInbox.append(frame) }
-                }
+                try await peer.start(
+                    receive: { frame in Task { await peerInbox.append(frame) } },
+                    lastWill: nil
+                )
             }
             try await withTimeout("subject profile subscriptions", timeout: timeout) {
                 try await subject.activateProfileInterest(namespace: namespace)
@@ -77,7 +79,7 @@ struct MQTTBindingNetworkTests {
             #expect(await subjectInbox.count == beforeUnrelated, "unrelated MQTT routes must be filtered")
             report("receive-filtered", "route=\(unrelatedRoute)")
 
-            let external = OwnedExternalRouteTransition(
+            let external = try OwnedExternalRouteTransition(
                 sourceID: Self.sourceID,
                 actorID: Self.peerID,
                 route: Array(Self.externalRoute.utf8)
@@ -114,9 +116,10 @@ struct MQTTBindingNetworkTests {
                 try await waitForFile("broker restart marker", path: environment["WIRE_MQTT_BINDING_RESTARTED"], timeout: timeout)
                 try? await withTimeout("subject MQTTBinding stop for restart", timeout: timeout) { await subject.stop() }
                 try await withTimeout("subject MQTTBinding restart", timeout: timeout) {
-                    try await subject.start { frame in
-                        Task { await subjectInbox.append(frame) }
-                    }
+                    try await subject.start(
+                        receive: { frame in Task { await subjectInbox.append(frame) } },
+                        lastWill: nil
+                    )
                     try await subject.activateProfileInterest(namespace: namespace)
                 }
                 if let resubscribeReady = environment["WIRE_MQTT_BINDING_RESUBSCRIBE_READY"] {

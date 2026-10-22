@@ -75,6 +75,7 @@ public struct RuntimeDiagnostics: Sendable, Equatable {
     /// Supported capabilities and finite capacities.
     public var capabilities = RuntimeCapabilityInformation(
         protocolCapabilities: .coatyCore3,
+        transportCapabilities: [],
         wireProfile: .coaty3JSON,
         maximumPayloadBytes: 0,
         maximumObjects: 0,

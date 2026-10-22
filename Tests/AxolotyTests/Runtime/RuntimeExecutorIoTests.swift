@@ -227,6 +227,7 @@ private actor InvocationGate {
 }
 
 private actor BlockingPublicationTransport: AxolotyRuntimeTransport {
+    nonisolated var capabilities: RuntimeTransportCapabilities { [] }
     private let blockedCapability: ProtocolCapability
     private let blockedRoute: String?
     private let ioRoute: String?
@@ -245,13 +246,16 @@ private actor BlockingPublicationTransport: AxolotyRuntimeTransport {
         self.ioRoute = ioRoute ?? (blockedCapability == .ioValue ? blockedRoute : nil)
     }
 
-    func start(receive: @escaping @Sendable (RuntimeInboundFrame) -> Void) async throws {}
+    func start(
+        receive: @escaping @Sendable (RuntimeInboundFrame) -> Void,
+        lastWill: RuntimeTransportLastWill?
+    ) async throws(AxolotyError) { _ = (receive, lastWill) }
     func setFailureHandler(_ handler: @escaping @Sendable (RuntimeTransportFailure) -> Void) async {}
-    func activateProfileInterest(namespace: String) async throws {}
-    func deactivateProfileInterest(namespace: String) async throws {}
+    func activateProfileInterest(namespace: String) async throws(AxolotyError) { _ = namespace }
+    func deactivateProfileInterest(namespace: String) async throws(AxolotyError) { _ = namespace }
     func stop() async {}
 
-    func perform(_ effect: RuntimeTransportEffect) async throws {
+    func perform(_ effect: RuntimeTransportEffect) async throws(AxolotyError) {
         guard case let .publish(publication) = effect else { return }
         publications.append(publication)
         let matchesBlockedRoute = blockedRoute.map { publication.route == $0 }
@@ -289,12 +293,16 @@ private actor BlockingPublicationTransport: AxolotyRuntimeTransport {
 }
 
 private actor RecordingPublicationTransport: AxolotyRuntimeTransport {
-    func start(receive: @escaping @Sendable (RuntimeInboundFrame) -> Void) async throws {}
+    nonisolated var capabilities: RuntimeTransportCapabilities { [] }
+    func start(
+        receive: @escaping @Sendable (RuntimeInboundFrame) -> Void,
+        lastWill: RuntimeTransportLastWill?
+    ) async throws(AxolotyError) { _ = (receive, lastWill) }
     func setFailureHandler(_ handler: @escaping @Sendable (RuntimeTransportFailure) -> Void) async {}
-    func perform(_ effect: RuntimeTransportEffect) async throws {}
+    func perform(_ effect: RuntimeTransportEffect) async throws(AxolotyError) { _ = effect }
     func stop() async {}
-    func activateProfileInterest(namespace: String) async throws {}
-    func deactivateProfileInterest(namespace: String) async throws {}
+    func activateProfileInterest(namespace: String) async throws(AxolotyError) { _ = namespace }
+    func deactivateProfileInterest(namespace: String) async throws(AxolotyError) { _ = namespace }
 }
 
 private func runtimeIoSourceMetadata(_ id: String) throws -> Object<IoSourceMetadata> {

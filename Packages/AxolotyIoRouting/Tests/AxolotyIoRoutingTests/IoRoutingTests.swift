@@ -95,10 +95,15 @@ private func objectID(_ value: StaticString) -> ObjectID {
 }
 
 private actor RoutingRecordingTransport: AxolotyRuntimeTransport {
+    nonisolated var capabilities: RuntimeTransportCapabilities { [] }
     private var publications: [[UInt8]] = []
 
-    func start(receive: @escaping @Sendable (RuntimeInboundFrame) -> Void) async throws {}
-    func perform(_ effect: RuntimeTransportEffect) async throws {
+    func start(
+        receive: @escaping @Sendable (RuntimeInboundFrame) -> Void,
+        lastWill: RuntimeTransportLastWill?
+    ) async throws(AxolotyError) { _ = (receive, lastWill) }
+    func setFailureHandler(_ handler: @escaping @Sendable (RuntimeTransportFailure) -> Void) async { _ = handler }
+    func perform(_ effect: RuntimeTransportEffect) async throws(AxolotyError) {
         guard case .publish(let publication) = effect else { return }
         publications.append(publication.payload)
     }

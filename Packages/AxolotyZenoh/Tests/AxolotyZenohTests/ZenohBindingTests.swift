@@ -17,6 +17,8 @@ struct ZenohBindingTests {
         let session = RecordingZenohSession()
         let binding = try makeBinding(session: session)
 
+        #expect(binding.capabilities.contains(.recoveryNotifications))
+        #expect(!binding.capabilities.contains(.lastWill))
         try await binding.start(
             receive: { _ in },
             lastWill: RuntimeTransportLastWill(topic: "will", payload: [1])
@@ -123,7 +125,7 @@ struct ZenohBindingTests {
         await binding.setDiagnostics(counters)
         try await binding.start { _ in }
         var payload: [UInt8] = [0, 1, 2, 255]
-        let message = RuntimeOutboundMessage(route: "axoloty/1/node/ADV/source", payload: payload)
+        let message = try RuntimeOutboundMessage(route: "axoloty/1/node/ADV/source", payload: payload)
         payload[0] = 99
 
         try await binding.perform(.publish(message))
@@ -562,8 +564,8 @@ struct ZenohBindingTests {
         )
     }
 
-    private func transition(_ route: String) -> OwnedExternalRouteTransition {
-        OwnedExternalRouteTransition(sourceID: .zero, actorID: .zero, route: Array(route.utf8))
+    private func transition(_ route: String) throws(ProtocolError) -> OwnedExternalRouteTransition {
+        try OwnedExternalRouteTransition(sourceID: .zero, actorID: .zero, route: Array(route.utf8))
     }
 
     private func classify(_ route: String, with binding: ZenohBinding) -> ProtocolRouteClassification {
@@ -742,7 +744,7 @@ private struct ZenohContractFixture: RuntimeTransportContractFixture, @unchecked
     func publications() async -> [RuntimeOutboundMessage] {
         session.operations.compactMap { operation in
             guard case let .publish(route, payload) = operation else { return nil }
-            return RuntimeOutboundMessage(route: String(decoding: route, as: UTF8.self), payload: payload)
+            return try? RuntimeOutboundMessage(route: String(decoding: route, as: UTF8.self), payload: payload)
         }
     }
 

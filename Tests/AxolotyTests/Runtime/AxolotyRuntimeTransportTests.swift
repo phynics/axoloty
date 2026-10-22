@@ -8,6 +8,52 @@ import AxolotyTestSupport
 import AxolotyWire
 
 extension AxolotyRuntimeTests {
+    @Test("transport publications and wills enforce fixed route and payload limits")
+    func transportMessagesAreBounded() throws {
+        let route = String(repeating: "r", count: WireBufferConfig.maxTopicLength)
+        let payload = [UInt8](repeating: 0, count: WireBufferConfig.maxPayloadSize)
+        _ = try RuntimeOutboundMessage(route: route, payload: payload)
+        _ = try RuntimeTransportLastWill(topic: route, payload: payload)
+
+        #expect(throws: AxolotyError.self) {
+            _ = try RuntimeOutboundMessage(route: "", payload: [])
+        }
+        #expect(throws: AxolotyError.self) {
+            _ = try RuntimeOutboundMessage(
+                route: String(repeating: "r", count: WireBufferConfig.maxTopicLength + 1),
+                payload: []
+            )
+        }
+        #expect(throws: AxolotyError.self) {
+            _ = try RuntimeOutboundMessage(
+                route: "bounded/route",
+                payload: [UInt8](repeating: 0, count: WireBufferConfig.maxPayloadSize + 1)
+            )
+        }
+        #expect(throws: AxolotyError.self) {
+            _ = try RuntimeTransportLastWill(topic: "", payload: [])
+        }
+    }
+
+    @Test("owned external-route transitions enforce fixed protocol capacity")
+    func ownedExternalRouteTransitionsAreBounded() throws {
+        _ = try OwnedExternalRouteTransition(
+            sourceID: .zero,
+            actorID: .zero,
+            route: [UInt8](repeating: 0x61, count: ProtocolBufferConfig.maxRouteBytes)
+        )
+        #expect(throws: ProtocolError.self) {
+            _ = try OwnedExternalRouteTransition(sourceID: .zero, actorID: .zero, route: [])
+        }
+        #expect(throws: ProtocolError.self) {
+            _ = try OwnedExternalRouteTransition(
+                sourceID: .zero,
+                actorID: .zero,
+                route: [UInt8](repeating: 0x61, count: ProtocolBufferConfig.maxRouteBytes + 1)
+            )
+        }
+    }
+
     @Test("external routes accept bounded exact carrier-neutral keys")
     func externalRouteValidationAcceptsExactTopic() throws {
         let route = try ExternalIoRoute("plant/line-7/temperature")

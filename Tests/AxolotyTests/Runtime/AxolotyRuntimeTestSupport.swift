@@ -35,6 +35,9 @@ enum SetupFailureStage: String, CaseIterable, Sendable {
 
 actor TestTransport: AxolotyRuntimeTransport, RuntimeTransportContractFixture {
     nonisolated var transport: any AxolotyRuntimeTransport { self }
+    nonisolated var capabilities: RuntimeTransportCapabilities {
+        [.recoveryNotifications, .activityCounters, .profileInterest, .externalRouteSubscriptions]
+    }
     private var receive: (@Sendable (RuntimeInboundFrame) -> Void)?
     private var failure: (@Sendable (RuntimeTransportFailure) -> Void)?
     private var recovery: (@Sendable () -> Void)?
@@ -62,12 +65,20 @@ actor TestTransport: AxolotyRuntimeTransport, RuntimeTransportContractFixture {
     }
 
     func start(receive: @escaping @Sendable (RuntimeInboundFrame) -> Void) async throws {
+        try await start(receive: receive, lastWill: nil)
+    }
+
+    func start(
+        receive: @escaping @Sendable (RuntimeInboundFrame) -> Void,
+        lastWill: RuntimeTransportLastWill?
+    ) async throws(AxolotyError) {
         self.receive = receive
+        lastWills.append(lastWill)
         contractStartCount += 1
         lifecycle.append("start")
         if failureStage == .start {
             transportDiagnostics?.recordSessionFailure()
-            throw TestTransportFailure()
+            throw AxolotyError.network(error: TestTransportFailure(), reason: "test transport startup failed")
         }
         if contractStartCount > 1 { transportDiagnostics?.recordReconnect() }
         transportDiagnostics?.recordSessionOpen()
@@ -78,14 +89,6 @@ actor TestTransport: AxolotyRuntimeTransport, RuntimeTransportContractFixture {
             startWaiter = continuation
         }
         isWaitingForStart = false
-    }
-
-    func start(
-        receive: @escaping @Sendable (RuntimeInboundFrame) -> Void,
-        lastWill: RuntimeTransportLastWill?
-    ) async throws {
-        lastWills.append(lastWill)
-        try await start(receive: receive)
     }
 
     func setFailureHandler(_ handler: @escaping @Sendable (RuntimeTransportFailure) -> Void) async {
@@ -100,16 +103,16 @@ actor TestTransport: AxolotyRuntimeTransport, RuntimeTransportContractFixture {
         transportDiagnostics = diagnostics
     }
 
-    func perform(_ effect: RuntimeTransportEffect) async throws {
+    func perform(_ effect: RuntimeTransportEffect) async throws(AxolotyError) {
         switch effect {
         case .publish(let message):
             sent.append(message)
             if shouldFailNextPublication {
                 shouldFailNextPublication = false
-                throw TestTransportFailure()
+                throw AxolotyError.network(error: TestTransportFailure(), reason: "test publication failed")
             }
             if failureStage == .advertisement, isAdvertiseRoute(message.route) {
-                throw TestTransportFailure()
+                throw AxolotyError.network(error: TestTransportFailure(), reason: "test advertisement failed")
             }
             delivered.append(message)
             transportDiagnostics?.recordPublishedFrame()
@@ -132,16 +135,18 @@ actor TestTransport: AxolotyRuntimeTransport, RuntimeTransportContractFixture {
         lifecycle.append("stop")
     }
 
-    func activateProfileInterest(namespace: String) async throws {
+    func activateProfileInterest(namespace: String) async throws(AxolotyError) {
         lifecycle.append("activate")
         contractActiveNamespace = namespace
         contractProfileSubscriptions.append(contentsOf: [
             "coaty/3/\(namespace)/*/*",
             "coaty/3/\(namespace)/*/*/*",
         ])
-        if failureStage == .subscriptions { throw TestTransportFailure() }
+        if failureStage == .subscriptions {
+            throw AxolotyError.network(error: TestTransportFailure(), reason: "test profile subscription failed")
+        }
     }
-    func deactivateProfileInterest(namespace: String) async throws {
+    func deactivateProfileInterest(namespace: String) async throws(AxolotyError) {
         lifecycle.append("deactivate")
         contractProfileUnsubscriptions.append(contentsOf: [
             "coaty/3/\(namespace)/*/*",
@@ -226,11 +231,16 @@ actor TestTransport: AxolotyRuntimeTransport, RuntimeTransportContractFixture {
 struct TestTransportFailure: Error, Sendable {}
 
 actor BlockingStartTransport: AxolotyRuntimeTransport {
+    nonisolated var capabilities: RuntimeTransportCapabilities { [] }
     private(set) var didStart = false
     private var didStop = false
     private var startWaiter: CheckedContinuation<Void, Never>?
 
-    func start(receive: @escaping @Sendable (RuntimeInboundFrame) -> Void) async throws {
+    func start(
+        receive: @escaping @Sendable (RuntimeInboundFrame) -> Void,
+        lastWill: RuntimeTransportLastWill?
+    ) async throws(AxolotyError) {
+        _ = (receive, lastWill)
         didStart = true
         await withCheckedContinuation { continuation in
             if didStop {
@@ -241,7 +251,9 @@ actor BlockingStartTransport: AxolotyRuntimeTransport {
         }
     }
 
-    func perform(_ effect: RuntimeTransportEffect) async throws {}
+    func setFailureHandler(_ handler: @escaping @Sendable (RuntimeTransportFailure) -> Void) async { _ = handler }
+
+    func perform(_ effect: RuntimeTransportEffect) async throws(AxolotyError) { _ = effect }
 
     func stop() async {
         didStop = true
@@ -251,15 +263,19 @@ actor BlockingStartTransport: AxolotyRuntimeTransport {
 }
 
 actor DrainingTransport: AxolotyRuntimeTransport {
+    nonisolated var capabilities: RuntimeTransportCapabilities { [] }
     private(set) var sendStarted = false
     private(set) var didStop = false
     private var released = false
     private var sendWaiter: CheckedContinuation<Void, Never>?
 
-    func start(receive: @escaping @Sendable (RuntimeInboundFrame) -> Void) async throws {}
+    func start(
+        receive: @escaping @Sendable (RuntimeInboundFrame) -> Void,
+        lastWill: RuntimeTransportLastWill?
+    ) async throws(AxolotyError) { _ = (receive, lastWill) }
     func setFailureHandler(_ handler: @escaping @Sendable (RuntimeTransportFailure) -> Void) async {}
 
-    func perform(_ effect: RuntimeTransportEffect) async throws {
+    func perform(_ effect: RuntimeTransportEffect) async throws(AxolotyError) {
         switch effect {
         case .publish: break
         default: return
@@ -276,8 +292,8 @@ actor DrainingTransport: AxolotyRuntimeTransport {
     }
 
     func stop() async { didStop = true }
-    func activateProfileInterest(namespace: String) async throws {}
-    func deactivateProfileInterest(namespace: String) async throws {}
+    func activateProfileInterest(namespace: String) async throws(AxolotyError) { _ = namespace }
+    func deactivateProfileInterest(namespace: String) async throws(AxolotyError) { _ = namespace }
 
     func releaseSend() {
         released = true

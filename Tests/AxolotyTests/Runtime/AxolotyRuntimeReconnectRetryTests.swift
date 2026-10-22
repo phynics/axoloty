@@ -8,6 +8,7 @@ import AxolotyTestSupport
 /// first successful start, standing in for a broker that has restarted but is
 /// not yet accepting connections.
 actor RestartingBrokerTransport: AxolotyRuntimeTransport {
+    nonisolated var capabilities: RuntimeTransportCapabilities { [] }
     private var startCount = 0
     private let failedReconnects: Int
 
@@ -15,17 +16,22 @@ actor RestartingBrokerTransport: AxolotyRuntimeTransport {
         self.failedReconnects = failedReconnects
     }
 
-    func start(receive: @escaping @Sendable (RuntimeInboundFrame) -> Void) async throws {
+    func start(
+        receive: @escaping @Sendable (RuntimeInboundFrame) -> Void,
+        lastWill: RuntimeTransportLastWill?
+    ) async throws(AxolotyError) {
+        _ = (receive, lastWill)
         startCount += 1
         // The first start brings the runtime up; the next `failedReconnects`
         // starts are reconnect attempts that lose the race against a broker
         // still coming back.
         if startCount > 1, startCount <= failedReconnects + 1 {
-            throw TestTransportFailure()
+            throw AxolotyError.network(error: TestTransportFailure(), reason: "test reconnect failed")
         }
     }
 
-    func perform(_ effect: RuntimeTransportEffect) async throws {}
+    func setFailureHandler(_ handler: @escaping @Sendable (RuntimeTransportFailure) -> Void) async { _ = handler }
+    func perform(_ effect: RuntimeTransportEffect) async throws(AxolotyError) { _ = effect }
     func stop() async {}
 
     func startAttempts() -> Int { startCount }

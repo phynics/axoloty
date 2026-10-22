@@ -119,6 +119,14 @@ public struct MQTTBindingConfiguration: Sendable, Equatable {
 /// before handing it to ``AxolotyRuntime`` and never parses protocol families.
 // @unchecked: transport state is serialized by NIOLock; the MQTT adapter and delegate are Sendable.
 public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
+    /// Optional transport features implemented by this MQTT adapter.
+    public var capabilities: RuntimeTransportCapabilities {
+        [.lastWill, .activityCounters, .profileInterest, .externalRouteSubscriptions]
+    }
+
+    /// The Coaty Core Profile 3 JSON profile carried by MQTT.
+    public var wireProfile: WireProfile { .coaty3JSON }
+
     private let lock = NIOLock()
     private let client: any RuntimeMQTTClientAdapter
     private let delegate: RuntimeMQTTDelegate
@@ -159,11 +167,6 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
         self.client = client
     }
 
-    /// Starts the broker connection and installs the copied frame callback.
-    public func start(receive: @escaping @Sendable (RuntimeInboundFrame) -> Void) async throws {
-        try await start(receive: receive, lastWill: nil)
-    }
-
     /// Starts the broker connection with an optional lifecycle last will.
     ///
     /// The runtime supplies the will after it has resolved its namespace and
@@ -172,7 +175,7 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
     public func start(
         receive: @escaping @Sendable (RuntimeInboundFrame) -> Void,
         lastWill: RuntimeTransportLastWill?
-    ) async throws {
+    ) async throws(AxolotyError) {
         do {
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
                 let admitted = lock.withLock {
@@ -216,7 +219,7 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
             await client.disconnect()
             delegate.clearReceive()
             delegate.clearFailureObserver()
-            throw error
+            throw error as? AxolotyError ?? AxolotyError.network(error: error, reason: "MQTT connection failed")
         }
     }
 
@@ -243,7 +246,7 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
     /// - Throws: ``AxolotyError/runtime(code:reason:)`` when the binding is not
     ///   started, or an ``AxolotyError`` wrapping the MQTT failure when the
     ///   publication or subscription change fails.
-    public func perform(_ effect: RuntimeTransportEffect) async throws {
+    public func perform(_ effect: RuntimeTransportEffect) async throws(AxolotyError) {
         guard lock.withLock({ started }) else {
             throw AxolotyError.runtime(code: .notStarted, reason: "MQTT binding is not started")
         }
@@ -284,7 +287,7 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
     ///
     /// - Parameter namespace: The runtime's immutable Coaty namespace.
     /// - Throws: ``AxolotyError/network(error:reason:)`` when a subscription fails.
-    public func activateProfileInterest(namespace: String) async throws {
+    public func activateProfileInterest(namespace: String) async throws(AxolotyError) {
         lock.withLock { activeNamespace = namespace }
         do {
             try await client.subscribe(RuntimeTopicBuilder.subscribeAllOneWayTopics(namespace: namespace))
@@ -308,7 +311,7 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
     ///
     /// - Parameter namespace: The namespace previously activated.
     /// - Throws: ``AxolotyError/network(error:reason:)`` when an unsubscribe fails.
-    public func deactivateProfileInterest(namespace: String) async throws {
+    public func deactivateProfileInterest(namespace: String) async throws(AxolotyError) {
         let routes = lock.withLock { () -> [String] in
             transportEpoch &+= 1
             activeNamespace = nil
@@ -417,7 +420,7 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
         return .success((epoch, true))
     }
 
-    private func activateExternalRoute(_ route: [UInt8]) async throws {
+    private func activateExternalRoute(_ route: [UInt8]) async throws(AxolotyError) {
         let topic = String(decoding: route, as: UTF8.self)
         let action: Result<(epoch: UInt64, shouldSubscribe: Bool), AxolotyError> = lock.withLock {
             Self.resolveExternalRouteActivation(
@@ -447,7 +450,7 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
         }
     }
 
-    private func deactivateExternalRoute(_ route: [UInt8]) async throws {
+    private func deactivateExternalRoute(_ route: [UInt8]) async throws(AxolotyError) {
         let topic = String(decoding: route, as: UTF8.self)
         let action = lock.withLock { () -> (epoch: UInt64, shouldUnsubscribe: Bool)? in
             guard let index = externalRoutes.firstIndex(where: { $0.topic == topic }) else { return nil }

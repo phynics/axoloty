@@ -145,6 +145,7 @@ actor ProtocolExecutor {
         self.diagnosticsSnapshotValue.diagnosticCapacity = definition.capacities.stream
         self.diagnosticsSnapshotValue.capabilities = RuntimeCapabilityInformation(
             protocolCapabilities: definition.capacities.protocolCapabilities,
+            transportCapabilities: transport.capabilities,
             wireProfile: wireProfile,
             maximumPayloadBytes: definition.capacities.protocolMaximumPayloadBytes,
             maximumObjects: definition.capacities.protocolMaximumObjects,

@@ -11,6 +11,11 @@ import Foundation
 /// This binding owns publication, subscription lifecycle, and one bounded
 /// receive pump for the façade's per-subscription queues.
 public final class ZenohBinding: AxolotyRuntimeTransport, @unchecked Sendable {
+    /// Optional transport features implemented by this Zenoh adapter.
+    public var capabilities: RuntimeTransportCapabilities {
+        [.recoveryNotifications, .activityCounters, .profileInterest, .externalRouteSubscriptions]
+    }
+
     // The C façade has one process-wide fixed session registry, so serialize
     // calls across binding instances as well as within each session.
     static let sessionRegistryLock = NSLock()
@@ -107,22 +112,8 @@ public final class ZenohBinding: AxolotyRuntimeTransport, @unchecked Sendable {
 
     /// Opens the Zenoh session and starts its bounded receive pump.
     ///
-    /// - Note: The `lastWill` overload intentionally ignores its last-will
-    ///   argument because Zenoh's v1 client profile has no broker last-will.
-    ///
-    /// - Parameter receive: Callback for copied inbound frames.
-    /// - Throws: ``AxolotyError`` when the binding is already started or the
-    ///   Zenoh session cannot open.
-    public func start(
-        receive: @escaping @Sendable (RuntimeInboundFrame) -> Void
-    ) async throws(AxolotyError) {
-        try startLocked(receive: receive)
-    }
-
-    /// Starts the binding and ignores the MQTT-compatible last-will value.
-    ///
-    /// Zenoh's v1 client profile has no broker last-will. The value is accepted
-    /// to satisfy the runtime transport port and is intentionally unused.
+    /// Zenoh's v1 client profile has no broker last-will. The adapter reports
+    /// that absence through ``capabilities`` and ignores this optional value.
     ///
     /// - Parameters:
     ///   - receive: Callback for copied inbound frames.
@@ -133,7 +124,7 @@ public final class ZenohBinding: AxolotyRuntimeTransport, @unchecked Sendable {
         lastWill: RuntimeTransportLastWill?
     ) async throws(AxolotyError) {
         _ = lastWill
-        try await start(receive: receive)
+        try startLocked(receive: receive)
     }
 
     /// Stores the callback for failures reported by the receive pump.

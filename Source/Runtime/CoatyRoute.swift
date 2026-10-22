@@ -12,7 +12,7 @@ import AxolotyWire
 /// This is a host convenience over `TopicBuilder`, the one portable
 /// `coaty/3` topic encoder. Embedded firmware writes routes with
 /// `TopicBuilder` directly into caller-owned storage.
-public enum CoatyRoute {
+package enum CoatyRoute {
     /// Builds the exact Coaty route for a publication routing key.
     ///
     /// The destination buffer is sized from a hand-rolled byte-budget
@@ -33,7 +33,7 @@ public enum CoatyRoute {
     /// - Throws: ``AxolotyError/runtime(code:reason:)`` with
     ///   ``AxolotyError/RuntimeErrorCode/capacityExceeded`` if the computed
     ///   buffer budget is smaller than what the topic actually requires.
-    public static func route(
+    package static func route(
         for key: ProtocolRoutingKey,
         namespace: String,
         eventTypeFilter: [UInt8]? = nil,
@@ -95,7 +95,7 @@ public enum CoatyRoute {
     /// - Parameter value: The UUID to format.
     /// - Returns: The 36-character lowercase hyphenated form, for example
     ///   `0a1b2c3d-4e5f-4061-8293-a4b5c6d7e8f9`.
-    public static func uuidString(_ value: UUID16) -> String {
+    package static func uuidString(_ value: UUID16) -> String {
         var bytes = [UInt8](repeating: 0, count: 36)
         bytes.withUnsafeMutableBufferPointer { output in
             var builder = TopicBuilder(buffer: output.baseAddress!, capacity: output.count)

@@ -227,7 +227,7 @@ extension WireWriter {
             return
         }
         #if canImport(_JSONCore)
-        guard WireReader.isValidJSON(value) else { throw .invalidValue }
+        guard WireReader.isValidJSONValue(value) else { throw .invalidValue }
         try writeByteSlice(value)
         #else
         throw WireEncodeError.invalidValue
@@ -279,7 +279,7 @@ extension WireWriter {
             return
         }
         #if canImport(_JSONCore)
-        guard WireReader.isValidJSON(value) else { throw .invalidValue }
+        guard WireReader.isValidJSONValue(value) else { throw .invalidValue }
         try writeKey(key)
         try writeByteSlice(value)
         #else

@@ -47,6 +47,9 @@ public protocol RuntimeTransportContractFixture: Sendable {
 public func runRuntimeTransportContract(
     using fixture: any RuntimeTransportContractFixture
 ) async throws {
+    #expect(fixture.transport.capabilities.contains(.profileInterest))
+    #expect(fixture.transport.capabilities.contains(.externalRouteSubscriptions))
+    #expect(fixture.transport.capabilities.contains(.activityCounters))
     let received = ContractFrameRecorder()
     let failures = ContractFailureRecorder()
     let diagnostics = RuntimeTransportDiagnostics()
@@ -67,13 +70,13 @@ public func runRuntimeTransportContract(
     ])
 
     let externalRoute = "contract/external/value"
-    let transition = OwnedExternalRouteTransition(sourceID: .zero, actorID: .zero, route: Array(externalRoute.utf8))
+    let transition = try OwnedExternalRouteTransition(sourceID: .zero, actorID: .zero, route: Array(externalRoute.utf8))
     try await fixture.transport.perform(.externalRouteActivated(transition))
     let activatedExternalRoutes = await fixture.externalSubscriptions()
     #expect(activatedExternalRoutes == [externalRoute])
     #expect(diagnostics.snapshot().activeExternalSubscriptions == 1)
 
-    let outbound = RuntimeOutboundMessage(route: "\(profilePrefix)/\(namespace)/ADV/source", payload: [1, 2, 3])
+    let outbound = try RuntimeOutboundMessage(route: "\(profilePrefix)/\(namespace)/ADV/source", payload: [1, 2, 3])
     try await fixture.transport.perform(.publish(outbound))
     let publications = await fixture.publications()
     #expect(publications == [outbound])

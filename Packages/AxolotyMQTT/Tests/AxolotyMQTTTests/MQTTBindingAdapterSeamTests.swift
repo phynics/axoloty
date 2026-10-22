@@ -12,7 +12,7 @@ import Testing
 struct MQTTBindingAdapterSeamTests {
     @Test("identity last will is passed to the MQTT adapter and omitted without one")
     func lifecycleLastWill() async throws {
-        let will = RuntimeTransportLastWill(
+        let will = try RuntimeTransportLastWill(
             topic: "coaty/3/node/DAD/11111111-2222-4333-8444-555555555555",
             payload: Array("{\"objectIds\":[\"11111111-2222-4333-8444-555555555555\"]}".utf8)
         )
@@ -20,6 +20,7 @@ struct MQTTBindingAdapterSeamTests {
         let delegate = RuntimeMQTTDelegate()
         let client = FakeMQTTClient(delegate: delegate, connectsImmediately: true)
         let binding = try makeBinding(client: client, delegate: delegate)
+        #expect(binding.capabilities.contains(.lastWill))
         try await binding.start(receive: { _ in }, lastWill: will)
         #expect(client.lastWill() == will)
         await binding.stop()
@@ -39,7 +40,7 @@ struct MQTTBindingAdapterSeamTests {
         let binding = try makeBinding(client: client, delegate: delegate)
 
         let recorder = FrameRecorder()
-        try await binding.start { recorder.append($0) }
+        try await binding.start(receive: { recorder.append($0) }, lastWill: nil)
         #expect(client.connectCount() == 1)
         await binding.stop()
         #expect(client.disconnectCount() == 1)
@@ -65,7 +66,7 @@ struct MQTTBindingAdapterSeamTests {
         let binding = try makeBinding(client: client, delegate: delegate)
         let recorder = FrameRecorder()
 
-        try await binding.start { recorder.append($0) }
+        try await binding.start(receive: { recorder.append($0) }, lastWill: nil)
         try await binding.activateProfileInterest(namespace: "node")
         let profile = "coaty/3/node/IOV/00000000-0000-4000-8000-000000000001"
         var payload: [UInt8] = [1, 2, 3]
@@ -101,13 +102,13 @@ struct MQTTBindingAdapterSeamTests {
         let counters = RuntimeTransportDiagnostics()
         await binding.setDiagnostics(counters)
         await binding.setFailureHandler { _ in }
-        try await binding.start { _ in }
+        try await binding.start(receive: { _ in }, lastWill: nil)
         try await binding.activateProfileInterest(namespace: "node")
 
         client.emit(topic: "outside/topic", payload: [1])
         client.emit(topic: "coaty/3/node/IOV/00000000-0000-4000-8000-000000000001", payload: [2])
         try await binding.perform(.publish(RuntimeOutboundMessage(route: "out", payload: [3])))
-        let external = transition("outside/topic")
+        let external = try transition("outside/topic")
         try await binding.perform(.externalRouteActivated(external))
         client.emit(topic: "outside/topic", payload: [4])
 
@@ -129,7 +130,7 @@ struct MQTTBindingAdapterSeamTests {
         client.emitFailure(FakeError.connection)
         #expect(counters.snapshot().sessionFailures == 1)
 
-        try await binding.start { _ in }
+        try await binding.start(receive: { _ in }, lastWill: nil)
         #expect(counters.snapshot().sessionOpens == 2)
         #expect(counters.snapshot().reconnects == 1)
         client.emitFailure(FakeError.connection)
@@ -142,7 +143,7 @@ struct MQTTBindingAdapterSeamTests {
         let delegate = RuntimeMQTTDelegate()
         let client = FakeMQTTClient(delegate: delegate, connectsImmediately: true)
         let binding = try makeBinding(client: client, delegate: delegate)
-        try await binding.start { _ in }
+        try await binding.start(receive: { _ in }, lastWill: nil)
 
         client.setPublishError(.publish)
         await expectNetwork {
@@ -169,9 +170,9 @@ struct MQTTBindingAdapterSeamTests {
         let delegate = RuntimeMQTTDelegate()
         let client = FakeMQTTClient(delegate: delegate, connectsImmediately: true)
         let binding = try makeBinding(client: client, delegate: delegate)
-        try await binding.start { _ in }
+        try await binding.start(receive: { _ in }, lastWill: nil)
 
-        let route = transition("external")
+        let route = try transition("external")
         try await binding.perform(.externalRouteActivated(route))
         try await binding.perform(.externalRouteActivated(route))
         #expect(client.subscribeTopics().filter { $0 == "external" }.count == 1)
@@ -202,7 +203,7 @@ struct MQTTBindingAdapterSeamTests {
         let delegate = RuntimeMQTTDelegate()
         let client = FakeMQTTClient(delegate: delegate, connectsImmediately: true)
         let binding = try makeBinding(client: client, delegate: delegate)
-        try await binding.start { _ in }
+        try await binding.start(receive: { _ in }, lastWill: nil)
 
         // The portable route admits MQTT wildcards; MQTT must reject them.
         for route in ["wild/+", "wild/#"] {
@@ -223,7 +224,7 @@ struct MQTTBindingAdapterSeamTests {
         let delegate = RuntimeMQTTDelegate()
         let client = FakeMQTTClient(delegate: delegate, connectsImmediately: true)
         let binding = try makeBinding(client: client, delegate: delegate)
-        try await binding.start { _ in }
+        try await binding.start(receive: { _ in }, lastWill: nil)
         client.blockNextSubscribe()
         let pending = Task {
             try await binding.perform(.externalRouteActivated(transition("stale")))
@@ -249,9 +250,9 @@ struct MQTTBindingAdapterSeamTests {
             connectionTimeoutMS: 1
         )
         do {
-            try await timeoutBinding.start { _ in }
+            try await timeoutBinding.start(receive: { _ in }, lastWill: nil)
             Issue.record("expected start timeout")
-        } catch let error as AxolotyError {
+        } catch let error {
             guard case let .runtime(code, _) = error else {
                 Issue.record("expected runtime timeout, got \(error)")
                 return
@@ -264,7 +265,7 @@ struct MQTTBindingAdapterSeamTests {
         let binding = try makeBinding(client: client, delegate: delegate)
         let failure = ErrorRecorder()
         await binding.setFailureHandler { failure.record($0) }
-        try await binding.start { _ in }
+        try await binding.start(receive: { _ in }, lastWill: nil)
         client.emitFailure(FakeError.connection)
         let transportFailure = failure.value() as? RuntimeTransportFailure
         #expect(transportFailure?.code == .brokerUnavailable)
@@ -280,8 +281,8 @@ struct MQTTBindingAdapterSeamTests {
         return MQTTBinding(configuration: configuration, client: client, delegate: delegate)
     }
 
-    private func transition(_ route: String) -> OwnedExternalRouteTransition {
-        OwnedExternalRouteTransition(sourceID: .zero, actorID: .zero, route: Array(route.utf8))
+    private func transition(_ route: String) throws(ProtocolError) -> OwnedExternalRouteTransition {
+        try OwnedExternalRouteTransition(sourceID: .zero, actorID: .zero, route: Array(route.utf8))
     }
 
     private func expectNetwork(
@@ -396,7 +397,8 @@ final class FakeMQTTClient: RuntimeMQTTClientAdapter, @unchecked Sendable {
 
     func publish(topic: String, payload: [UInt8]) async throws {
         if let error = locked({ publishError }) { throw error }
-        locked { publishedMessagesValue.append(RuntimeOutboundMessage(route: topic, payload: payload)) }
+        let message = try RuntimeOutboundMessage(route: topic, payload: payload)
+        locked { publishedMessagesValue.append(message) }
     }
 
     @MainActor
@@ -461,7 +463,7 @@ private struct MQTTContractFixture: RuntimeTransportContractFixture {
     var transport: any AxolotyRuntimeTransport { binding }
 
     func start(receive: @escaping @Sendable (RuntimeInboundFrame) -> Void) async throws {
-        try await binding.start(receive: receive)
+        try await binding.start(receive: receive, lastWill: nil)
     }
 
     func profileSubscriptions() async -> [String] {
