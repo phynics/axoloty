@@ -98,7 +98,7 @@ format-neutral codec seam, so MQTT applications retain their composition path.
 | Public declarations in the six-product baseline | Intentional stable API | Recorded individually in the JSON baseline. |
 | `Axoloty.CoatyRoute.route` and `uuidString` | Reducible visibility | Package-only helpers; applications use typed operations and the selected transport. |
 | `AxolotyRuntime.receive(_:)` | Reducible visibility | Package-only ingress seam; transports deliver frames through the registered callback. |
-| `BorrowedExternalRouteTransition` constructors | Reducible visibility | Package-only constructors; the processor creates these borrowed transitions from validated routes. |
+| `BorrowedExternalRouteTransition` constructors | Reducible visibility | Internal constructors; the processor creates these borrowed transitions from validated routes. |
 | `WireReader.isValidJSON(_:)` | Obsolete pre-1.0 API | Removed as a duplicate of `isValidJSONValue(_:)`. |
 | `AxolotyRuntimeTransport.start(receive:)` | Obsolete pre-1.0 API | Removed as a duplicate of `start(receive:lastWill:)`. |
 

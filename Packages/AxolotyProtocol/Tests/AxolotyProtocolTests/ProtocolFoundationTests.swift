@@ -1,7 +1,7 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
 import Testing
-import AxolotyProtocol
+@testable import AxolotyProtocol
 import AxolotyObjectModel
 import AxolotyWire
 

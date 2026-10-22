@@ -44,8 +44,9 @@ construction sites.
 - Remove application calls to `AxolotyRuntime.receive(_:)`. The runtime receives
   transport frames through `AxolotyRuntimeTransport.start(receive:lastWill:)`.
 - Replace `WireReader.isValidJSON(_:)` with `WireReader.isValidJSONValue(_:)`.
-- Do not construct `BorrowedExternalRouteTransition` directly. The protocol
-  processor creates borrowed transitions from validated route snapshots.
+- Do not construct `BorrowedExternalRouteTransition` directly. Its internal
+  constructors are reserved for the protocol processor's validated route
+  snapshots.
 - Do not call `CoatyRoute` directly. Publish typed runtime operations and let
   the runtime resolve profile routes.
 

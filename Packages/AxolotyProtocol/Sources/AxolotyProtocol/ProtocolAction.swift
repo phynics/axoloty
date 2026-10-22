@@ -329,7 +329,7 @@ public struct BorrowedExternalRouteTransition {
     public let route: BorrowedProtocolRouteSnapshot
 
     /// Creates a borrowed external-route transition.
-    package init(sourceID: UUID16, actorID: UUID16, route: ByteSlice) {
+    init(sourceID: UUID16, actorID: UUID16, route: ByteSlice) {
         self.sourceID = sourceID
         self.actorID = actorID
         guard let route = BorrowedProtocolRouteSnapshot(slice: route) else {
@@ -339,7 +339,7 @@ public struct BorrowedExternalRouteTransition {
     }
 
     /// Creates a lifecycle transition from a processor-owned route snapshot.
-    package init(sourceID: UUID16, actorID: UUID16, route: BorrowedProtocolRouteSnapshot) {
+    init(sourceID: UUID16, actorID: UUID16, route: BorrowedProtocolRouteSnapshot) {
         self.sourceID = sourceID
         self.actorID = actorID
         self.route = route
