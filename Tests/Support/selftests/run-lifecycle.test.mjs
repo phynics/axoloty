@@ -305,3 +305,18 @@ exit 17
     }
   }
 });
+
+test("network lifecycle containers are unique per scenario in a shared run", () => {
+  const runner = fs.readFileSync(
+    "Tests/Support/WireCompatibility/Lifecycle/Live/run-lifecycle-network.sh",
+    "utf8",
+  );
+
+  for (const container of ["BROKER", "PROBE", "PROXY", "SUBJECT"]) {
+    assert.match(
+      runner,
+      new RegExp(`^${container}="axoloty-lifecycle-${container.toLowerCase()}-\\$SCENARIO-\\$RUN_ID"$`, "m"),
+      `${container} must not reuse another scenario's container name`,
+    );
+  }
+});
