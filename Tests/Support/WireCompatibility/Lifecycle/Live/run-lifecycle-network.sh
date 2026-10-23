@@ -76,10 +76,10 @@ remove_owned_container() {
         return 1
     fi
     if [ "$state" = "running" ]; then
-        # The host Podman API can leave remote `rm -f` stuck in Stopping. Signal
-        # PID 1 through exec, wait for its confirmed exit, then remove the
-        # already-stopped object without asking Podman to stop it again.
-        if runtime_bounded exec "$container_id" kill -TERM 1; then
+        # Separate signaling from removal to avoid remote `rm -f` getting stuck
+        # in Stopping. The runtime can signal a broker that dropped privileges;
+        # an exec process inside that container might lack CAP_KILL.
+        if runtime_bounded kill --signal TERM "$container_id"; then
             :
         else
             local signal_status=$?

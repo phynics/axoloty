@@ -341,13 +341,13 @@ case "$1" in
     done
     printf 'id-%s\\n' "$name"
     ;;
-  exec)
-    if [ "\${3:-}" = "kill" ]; then
-      if [ "\${2:-}" = "id-axoloty-lifecycle-broker-broker-restart-broker-stop-failure-self-test" ]; then
+  kill)
+    if [ "\${2:-}" = "--signal" ]; then
+      if [ "\${4:-}" = "id-axoloty-lifecycle-broker-broker-restart-broker-stop-failure-self-test" ]; then
         echo "injected broker stop failure" >&2
         exit 42
       fi
-      printf '%s\\n' "$2" >> "\${FAKE_RUNTIME_STOPPED}"
+      printf '%s\\n' "$4" >> "\${FAKE_RUNTIME_STOPPED}"
     fi
     ;;
   inspect)
@@ -385,8 +385,8 @@ exit 0
     assert.doesNotMatch(result.stderr ?? "", /Timed out waiting for subject offline transition/);
 
     const runtimeCalls = fs.readFileSync(runtimeLog, "utf8");
-    assert.match(runtimeCalls, /exec id-axoloty-lifecycle-probe-broker-restart-broker-stop-failure-self-test kill -TERM 1/);
-    assert.match(runtimeCalls, /exec id-axoloty-lifecycle-broker-broker-restart-broker-stop-failure-self-test kill -TERM 1/);
+    assert.match(runtimeCalls, /kill --signal TERM id-axoloty-lifecycle-probe-broker-restart-broker-stop-failure-self-test/);
+    assert.match(runtimeCalls, /kill --signal TERM id-axoloty-lifecycle-broker-broker-restart-broker-stop-failure-self-test/);
     assert.equal(
       (runtimeCalls.match(/run -d --name axoloty-lifecycle-broker-broker-restart-broker-stop-failure-self-test/g) ?? []).length,
       1,
@@ -530,16 +530,17 @@ elif args[0] == "exec":
     identifier = args[1]
     if identifier not in state["owned_containers"]:
         status = 125
-    elif args[2:] == ["kill", "-TERM", "1"]:
-        name = state["owned_containers"][identifier]["name"]
-        if name not in state.get("term_ignored_names", []):
-            state["owned_containers"][identifier]["status"] = "exited"
     else:
+        # The broker drops to another UID; an exec process may lack CAP_KILL.
         status = 1
-elif args[:3] == ["kill", "--signal", "KILL"]:
+elif args[:2] == ["kill", "--signal"]:
     identifier = args[3]
     if identifier not in state["owned_containers"]:
         status = 125
+    elif args[2] == "TERM":
+        name = state["owned_containers"][identifier]["name"]
+        if name not in state.get("term_ignored_names", []):
+            state["owned_containers"][identifier]["status"] = "exited"
     else:
         state["owned_containers"][identifier]["status"] = "exited"
 elif args[0] == "wait":
@@ -627,6 +628,8 @@ sys.exit(status)
     assert.match(ownedCleanup.result.stderr, /Timed out waiting for Mosquitto broker readiness/);
     assert.deepEqual(ownedCleanup.state.owned_networks, {});
     assert.deepEqual(ownedCleanup.state.owned_containers, {});
+    assert.ok(ownedCleanup.state.calls.some((call) => call[0] === "kill" && call[1] === "--signal" && call[2] === "TERM" && call[3] === "container-owned-1"));
+    assert.equal(ownedCleanup.state.calls.some((call) => call[0] === "exec" && call[2] === "kill"), false);
     assert.ok(ownedCleanup.state.calls.some((call) => call[0] === "kill" && call[1] === "--signal" && call[2] === "KILL" && call[3] === "container-owned-1"));
     assert.ok(ownedCleanup.state.calls.some((call) => call[0] === "rm" && call[1] === "container-owned-1"));
     assert.ok(ownedCleanup.state.calls.some((call) => call[0] === "network" && call[1] === "rm" && call[2] === "network-owned-1"));
