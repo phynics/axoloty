@@ -113,7 +113,7 @@ help:
 		'make serve-dev     Run the MQTT + MCP development stack' \
 		'make test-decoder-context-sendable  Fail if the former decoder-context Sendable diagnostic returns' \
 		'make test-axoloty-wire-distribution  Validate root and standalone AxolotyWire consumers' \
-		'make test-axoloty-semver-consumer  Build clean semver consumers for both products' \
+		'make test-axoloty-semver-consumer  Resolve, build, link, and run external product consumers' \
 		'make wire-tool   Build the npx-runnable wire-compatibility CLI' \
 		'make benchmark-wire  Run release wire benchmarks (p50/p95 latency + allocations)' \
 		'make benchmark-wire-allocation  Host zero-per-iteration allocation gate for wire decode/route' \
@@ -268,7 +268,8 @@ test-axoloty-wire-distribution: image
 
 test-axoloty-semver-consumer: image
 	CONTAINER_COMMAND_TIMEOUT_SECONDS="$(AXOLOTY_CONTAINER_COMMAND_TIMEOUT_SECONDS)" CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" \
-		CONTAINER_ENV_VARS='AXOLOTY_CONSUMER_REPOSITORY_URL AXOLOTY_CONSUMER_VERSION AXOLOTY_CONSUMER_LOCAL AXOLOTY_CONSUMER_LOCAL_VERSION' \
+		AXOLOTY_CONSUMER_PLATFORM="Linux container image $(IMAGE)" \
+		CONTAINER_ENV_VARS='AXOLOTY_CONSUMER_REPOSITORY_URL AXOLOTY_CONSUMER_VERSION AXOLOTY_CONSUMER_REVISION AXOLOTY_CONSUMER_EVIDENCE_DIR AXOLOTY_CONSUMER_PLATFORM AXOLOTY_CONSUMER_JOBS AXOLOTY_CONSUMER_LOCAL AXOLOTY_CONSUMER_LOCAL_VERSION' \
 		.devcontainer/run.sh sh Tests/Support/checks/check-axoloty-semver-consumer.sh
 
 # Harness self-tests run as the canonical support tier in the pinned
