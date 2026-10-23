@@ -8,6 +8,57 @@ root=$(CDPATH= cd -- "$(dirname -- "$0")/../../.." && pwd)
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 
+# Exercise the production URL gate with command spies. Invalid and canonical
+# URLs must be decided before SwiftPM resolution or any build starts.
+consumer_check="$root/Tests/Support/checks/check-axoloty-semver-consumer.sh"
+spy_bin="$work/bin"
+mkdir -p "$spy_bin"
+cat >"$spy_bin/swift" <<'EOF'
+#!/bin/sh
+echo swift-called >>"$AXOLOTY_CONSUMER_SPY_MARKER"
+exit 90
+EOF
+cp "$spy_bin/swift" "$spy_bin/git"
+chmod +x "$spy_bin/swift" "$spy_bin/git"
+
+localhost_evidence="$work/localhost-evidence"
+localhost_marker="$work/localhost-command-marker"
+if output=$(env PATH="$spy_bin:$PATH" \
+    AXOLOTY_CONSUMER_LOCAL=0 \
+    AXOLOTY_CONSUMER_REVISION=6f34bcc1fa77da35d23303c51cbfc9a96e583d10 \
+    AXOLOTY_CONSUMER_REPOSITORY_URL=https://localhost/axoloty.git \
+    AXOLOTY_CONSUMER_EVIDENCE_DIR="$localhost_evidence" \
+    AXOLOTY_CONSUMER_SPY_MARKER="$localhost_marker" \
+    sh "$consumer_check" 2>&1); then
+    echo "expected localhost consumer URL rejection" >&2
+    exit 1
+fi
+case "$output" in
+    *"non-synthetic consumer validation requires canonical repository URL: https://github.com/phynics/axoloty.git"*) : ;;
+    *) echo "localhost rejection did not identify the canonical repository requirement: $output" >&2; exit 1 ;;
+esac
+[ ! -e "$localhost_marker" ] || { echo "localhost URL reached git or SwiftPM" >&2; exit 1; }
+[ ! -e "$localhost_evidence" ] || { echo "localhost URL created evidence before rejection" >&2; exit 1; }
+
+canonical_evidence="$work/canonical-evidence"
+canonical_marker="$work/canonical-command-marker"
+if output=$(env PATH="$spy_bin:$PATH" \
+    AXOLOTY_CONSUMER_LOCAL=0 \
+    AXOLOTY_CONSUMER_REVISION=6f34bcc1 \
+    AXOLOTY_CONSUMER_REPOSITORY_URL=https://github.com/phynics/axoloty.git \
+    AXOLOTY_CONSUMER_EVIDENCE_DIR="$canonical_evidence" \
+    AXOLOTY_CONSUMER_SPY_MARKER="$canonical_marker" \
+    sh "$consumer_check" 2>&1); then
+    echo "expected short canonical revision rejection before resolution" >&2
+    exit 1
+fi
+case "$output" in
+    *"AXOLOTY_CONSUMER_REVISION must contain 40 hex characters"*) : ;;
+    *) echo "canonical URL did not pass the URL gate: $output" >&2; exit 1 ;;
+esac
+[ ! -e "$canonical_marker" ] || { echo "canonical preflight test reached git or SwiftPM" >&2; exit 1; }
+[ ! -e "$canonical_evidence" ] || { echo "canonical preflight test created evidence before revision validation" >&2; exit 1; }
+
 consumer="$work/consumer"
 mkdir -p "$consumer/Sources/Consumer"
 cat >"$consumer/Package.swift" <<'EOF'
@@ -45,4 +96,4 @@ if axoloty_check_core_pin "$resolved" https://github.com/phynics/axoloty.git 111
     exit 1
 fi
 
-echo "external consumer provenance checks reject paths and mismatched Core pins"
+echo "external consumer provenance checks reject noncanonical URLs, paths, and mismatched Core pins"

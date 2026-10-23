@@ -8,7 +8,8 @@ set -eu
 unset GIT_DIR GIT_WORK_TREE
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/../../.." && pwd)
-url=${AXOLOTY_CONSUMER_REPOSITORY_URL:-https://github.com/phynics/axoloty.git}
+canonical_url=https://github.com/phynics/axoloty.git
+url=${AXOLOTY_CONSUMER_REPOSITORY_URL:-$canonical_url}
 version=${AXOLOTY_CONSUMER_VERSION:-}
 revision=${AXOLOTY_CONSUMER_REVISION:-}
 local_mode=${AXOLOTY_CONSUMER_LOCAL:-0}
@@ -35,12 +36,12 @@ case "$jobs" in
     *) fail "AXOLOTY_CONSUMER_JOBS must be a positive integer: $jobs" ;;
 esac
 
+if [ "$local_mode" != 1 ] && [ "$url" != "$canonical_url" ]; then
+    fail "non-synthetic consumer validation requires canonical repository URL: $canonical_url"
+fi
+
 if [ -n "$revision" ]; then
     [ "$local_mode" = 0 ] || fail "revision mode cannot use AXOLOTY_CONSUMER_LOCAL"
-    case "$url" in
-        https://*|ssh://*|git@*) : ;;
-        *) fail "revision mode requires a public remote URL, not: $url" ;;
-    esac
     case "$revision" in
         *[!0-9a-f]*|'') fail "AXOLOTY_CONSUMER_REVISION must be a lowercase immutable git revision" ;;
     esac

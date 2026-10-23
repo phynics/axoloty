@@ -221,13 +221,13 @@ test("cold semver consumer bounds SwiftPM build parallelism", () => {
   assert.match(script, /axoloty_check_core_pin/);
 });
 
-test("consumer provenance guards reject path dependencies and mismatched revisions", () => {
+test("consumer provenance guards reject noncanonical URLs, path dependencies, and mismatched revisions", () => {
   const result = spawnSync("sh", [path.join(root, "Tests/Support/selftests/check-axoloty-consumer-provenance.sh")], {
     cwd: root,
     encoding: "utf8",
   });
   assert.equal(result.status, 0, result.stderr || result.stdout);
-  assert.match(result.stdout, /reject paths and mismatched Core pins/);
+  assert.match(result.stdout, /reject noncanonical URLs, paths, and mismatched Core pins/);
 });
 
 test("G4 runtime gates select whole suites and their owning Swift packages", () => {
