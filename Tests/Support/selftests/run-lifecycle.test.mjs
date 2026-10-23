@@ -317,33 +317,47 @@ test("broker restart stops when the container runtime cannot stop the broker", (
   const temporary = fs.mkdtempSync(path.join(testingRoot, "wire-stop-failure-"));
   const runtime = path.join(temporary, "fake-runtime");
   const runtimeLog = path.join(temporary, "runtime.log");
+  const stoppedRuntimeIds = path.join(temporary, "stopped-ids.txt");
   const output = path.join(temporary, "artifacts");
   const relativeOutput = path.relative(root, output);
 
   try {
     fs.mkdirSync(output, { recursive: true });
+    fs.writeFileSync(stoppedRuntimeIds, "");
     fs.writeFileSync(runtime, `#!/usr/bin/env bash
 printf '%s\\n' "$*" >> "\${FAKE_RUNTIME_LOG}"
 case "$1" in
   run)
+    name=""
+    previous=""
     for argument in "$@"; do
+      if [ "$previous" = "--name" ]; then name="$argument"; fi
+      previous="$argument"
       case "$argument" in
         /artifacts/*.capture-ready)
           touch "\${FAKE_RUNTIME_OUTPUT}/\${argument##*/}"
           ;;
       esac
     done
+    printf 'id-%s\\n' "$name"
     ;;
   exec)
+    if [ "\${3:-}" = "kill" ]; then
+      if [ "\${2:-}" = "id-axoloty-lifecycle-broker-broker-restart-broker-stop-failure-self-test" ]; then
+        echo "injected broker stop failure" >&2
+        exit 42
+      fi
+      printf '%s\\n' "$2" >> "\${FAKE_RUNTIME_STOPPED}"
+    fi
+    ;;
+  inspect)
+    if grep -qx "\${2:-}" "\${FAKE_RUNTIME_STOPPED}" 2>/dev/null; then printf 'exited\\n'; else printf 'running\\n'; fi
+    ;;
+  wait)
+    printf '0\\n'
     ;;
   logs)
     printf '%s\\n' '{"state":"ready"}'
-    ;;
-  rm)
-    if [ "\${3:-}" = "axoloty-lifecycle-broker-broker-restart-broker-stop-failure-self-test" ]; then
-      echo "injected broker stop failure" >&2
-      exit 42
-    fi
     ;;
 esac
 exit 0
@@ -357,6 +371,7 @@ exit 0
         ...process.env,
         CONTAINER_RUNTIME: runtime,
         FAKE_RUNTIME_LOG: runtimeLog,
+        FAKE_RUNTIME_STOPPED: stoppedRuntimeIds,
         FAKE_RUNTIME_OUTPUT: output,
         WIRE_OUTPUT_DIR: relativeOutput,
         WIRE_RUN_ID: "broker-stop-failure-self-test",
@@ -370,8 +385,8 @@ exit 0
     assert.doesNotMatch(result.stderr ?? "", /Timed out waiting for subject offline transition/);
 
     const runtimeCalls = fs.readFileSync(runtimeLog, "utf8");
-    assert.match(runtimeCalls, /rm -f axoloty-lifecycle-probe-broker-restart-broker-stop-failure-self-test/);
-    assert.match(runtimeCalls, /rm -f axoloty-lifecycle-broker-broker-restart-broker-stop-failure-self-test/);
+    assert.match(runtimeCalls, /exec id-axoloty-lifecycle-probe-broker-restart-broker-stop-failure-self-test kill -TERM 1/);
+    assert.match(runtimeCalls, /exec id-axoloty-lifecycle-broker-broker-restart-broker-stop-failure-self-test kill -TERM 1/);
     assert.equal(
       (runtimeCalls.match(/run -d --name axoloty-lifecycle-broker-broker-restart-broker-stop-failure-self-test/g) ?? []).length,
       1,
@@ -453,6 +468,168 @@ esac
     assert.match(result.stderr ?? "", /capture failed: getaddrinfo ENOTFOUND broker/);
     assert.match(result.stderr ?? "", /Capture process exited .* before subscription readiness/);
     assert.doesNotMatch(result.stderr ?? "", /Timed out waiting for capture subscription/);
+  } finally {
+    fs.rmSync(temporary, { recursive: true, force: true });
+    try {
+      fs.rmdirSync(testingRoot);
+    } catch {
+      // Keep a pre-existing test-output directory intact.
+    }
+  }
+});
+
+test("network lifecycle cleanup removes only immutable IDs created by this run", () => {
+  const root = path.resolve(".");
+  const runner = path.join(root, "Tests/Support/WireCompatibility/Lifecycle/Live/run-lifecycle-network.sh");
+  const testingRoot = path.join(root, ".testing");
+  fs.mkdirSync(testingRoot, { recursive: true });
+  const temporary = fs.mkdtempSync(path.join(testingRoot, "cleanup-ownership-"));
+  const runtime = path.join(temporary, "fake-runtime.py");
+
+  fs.writeFileSync(runtime, `#!/usr/bin/env python3
+import json
+import os
+import sys
+
+state_path = os.environ["FAKE_RUNTIME_STATE"]
+with open(state_path, encoding="utf-8") as source:
+    state = json.load(source)
+args = sys.argv[1:]
+state["calls"].append(args)
+status = 0
+output = ""
+if args[:2] == ["network", "create"]:
+    name = args[2]
+    if name in state["foreign_network_names"]:
+        status, output = 125, "network name already exists\\n"
+    else:
+        identifier = "network-owned-" + str(len(state["owned_networks"]) + 1)
+        state["owned_networks"][identifier] = name
+        output = identifier + "\\n"
+elif args[:2] == ["network", "rm"]:
+    identifier = args[2]
+    if identifier not in state["owned_networks"]:
+        status = 125
+    else:
+        del state["owned_networks"][identifier]
+elif args[0] == "run" and "--name" in args:
+    name = args[args.index("--name") + 1]
+    if name in state["foreign_container_names"]:
+        status, output = 125, "container name already exists\\n"
+    else:
+        identifier = "container-owned-" + str(len(state["owned_containers"]) + 1)
+        state["owned_containers"][identifier] = {"name": name, "status": "running"}
+        output = identifier + "\\n"
+elif args[0] == "inspect":
+    identifier = args[1]
+    if identifier not in state["owned_containers"]:
+        status = 125
+    else:
+        output = state["owned_containers"][identifier]["status"] + "\\n"
+elif args[0] == "exec":
+    identifier = args[1]
+    if identifier not in state["owned_containers"]:
+        status = 125
+    elif args[2:] == ["kill", "-TERM", "1"]:
+        name = state["owned_containers"][identifier]["name"]
+        if name not in state.get("term_ignored_names", []):
+            state["owned_containers"][identifier]["status"] = "exited"
+    else:
+        status = 1
+elif args[:3] == ["kill", "--signal", "KILL"]:
+    identifier = args[3]
+    if identifier not in state["owned_containers"]:
+        status = 125
+    else:
+        state["owned_containers"][identifier]["status"] = "exited"
+elif args[0] == "wait":
+    if args[1] not in state["owned_containers"]:
+        status = 125
+elif args[0] == "logs":
+    if args[1] not in state["owned_containers"]:
+        status = 125
+elif args[0] == "rm":
+    identifier = args[-1]
+    if identifier not in state["owned_containers"] or state["owned_containers"][identifier]["status"] == "running":
+        status = 125
+    else:
+        del state["owned_containers"][identifier]
+
+with open(state_path, "w", encoding="utf-8") as destination:
+    json.dump(state, destination)
+if output:
+    sys.stdout.write(output)
+elif status:
+    sys.stderr.write("fake runtime operation failed\\n")
+sys.exit(status)
+`);
+  fs.chmodSync(runtime, 0o755);
+
+  const initialState = {
+    foreign_network_names: [],
+    foreign_container_names: [],
+    term_ignored_names: [],
+    owned_networks: {},
+    owned_containers: {},
+    calls: [],
+  };
+  function invoke(name, state) {
+    const caseDirectory = path.join(temporary, name);
+    const outputDirectory = path.join(caseDirectory, "output");
+    fs.mkdirSync(outputDirectory, { recursive: true });
+    const statePath = path.join(caseDirectory, "state.json");
+    fs.writeFileSync(statePath, JSON.stringify(state));
+    const result = spawnSync("bash", [runner, "offline-queueing"], {
+      cwd: root,
+      encoding: "utf8",
+      timeout: 10000,
+      env: {
+        ...process.env,
+        CONTAINER_RUNTIME: runtime,
+        FAKE_RUNTIME_STATE: statePath,
+        WIRE_OUTPUT_DIR: path.relative(root, outputDirectory),
+        WIRE_RUN_ID: `ownership-${name}`,
+        WIRE_LIFECYCLE_DEADLINE_SECONDS: "0",
+      },
+    });
+    return { result, state: JSON.parse(fs.readFileSync(statePath, "utf8")) };
+  }
+
+  try {
+    const networkName = "axoloty-lifecycle-offline-queueing-ownership-network-collision";
+    const networkCollision = invoke("network-collision", {
+      ...initialState,
+      foreign_network_names: [networkName],
+    });
+    assert.equal(networkCollision.result.status, 125);
+    assert.deepEqual(networkCollision.state.foreign_network_names, [networkName]);
+    assert.deepEqual(networkCollision.state.owned_networks, {});
+    assert.deepEqual(networkCollision.state.owned_containers, {});
+    assert.equal(networkCollision.state.calls.some((call) => call[0] === "rm" || (call[0] === "network" && call[1] === "rm")), false);
+
+    const containerName = "axoloty-lifecycle-broker-offline-queueing-ownership-container-collision";
+    const containerCollision = invoke("container-collision", {
+      ...initialState,
+      foreign_container_names: [containerName],
+    });
+    assert.equal(containerCollision.result.status, 125);
+    assert.deepEqual(containerCollision.state.foreign_container_names, [containerName]);
+    assert.deepEqual(containerCollision.state.owned_networks, {});
+    assert.deepEqual(containerCollision.state.owned_containers, {});
+    assert.ok(containerCollision.state.calls.some((call) => call[0] === "network" && call[1] === "rm" && call[2] === "network-owned-1"));
+    assert.equal(containerCollision.state.calls.some((call) => call[0] === "rm"), false);
+
+    const ownedCleanup = invoke("owned-cleanup", {
+      ...initialState,
+      term_ignored_names: ["axoloty-lifecycle-broker-offline-queueing-ownership-owned-cleanup"],
+    });
+    assert.notEqual(ownedCleanup.result.status, 0);
+    assert.match(ownedCleanup.result.stderr, /Timed out waiting for Mosquitto broker readiness/);
+    assert.deepEqual(ownedCleanup.state.owned_networks, {});
+    assert.deepEqual(ownedCleanup.state.owned_containers, {});
+    assert.ok(ownedCleanup.state.calls.some((call) => call[0] === "kill" && call[1] === "--signal" && call[2] === "KILL" && call[3] === "container-owned-1"));
+    assert.ok(ownedCleanup.state.calls.some((call) => call[0] === "rm" && call[1] === "container-owned-1"));
+    assert.ok(ownedCleanup.state.calls.some((call) => call[0] === "network" && call[1] === "rm" && call[2] === "network-owned-1"));
   } finally {
     fs.rmSync(temporary, { recursive: true, force: true });
     try {
