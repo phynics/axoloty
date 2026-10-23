@@ -682,3 +682,63 @@ sys.exit(status)
     }
   }
 });
+
+test("hosted broker signal policy retains confinement and is idempotent", () => {
+  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "axoloty-broker-policy-"));
+  try {
+    const policyRoot = path.join(temporary, "profiles");
+    const bin = path.join(temporary, "bin");
+    fs.mkdirSync(path.join(policyRoot, "local"), { recursive: true });
+    fs.mkdirSync(bin);
+    const enabledFile = path.join(temporary, "enabled");
+    const reloadLog = path.join(temporary, "reload.log");
+    const profile = path.join(policyRoot, "mosquitto");
+    const fragment = path.join(policyRoot, "local/mosquitto");
+    fs.writeFileSync(enabledFile, "Y\n");
+    fs.writeFileSync(profile, "profile mosquitto /usr/sbin/mosquitto {\n  include if exists <local/mosquitto>\n}\n");
+    fs.writeFileSync(fragment, "# Existing runner policy\n");
+    fs.writeFileSync(path.join(bin, "sudo"), '#!/bin/sh\n[ "$1" = -n ] || exit 99\nshift\nexec "$@"\n', { mode: 0o755 });
+    fs.writeFileSync(path.join(bin, "apparmor_parser"), '#!/bin/sh\nprintf "%s\\n" "$*" >> "$POLICY_RELOAD_LOG"\nexit "${POLICY_RELOAD_STATUS:-0}"\n', { mode: 0o755 });
+    const script = "Tests/Support/WireCompatibility/Lifecycle/Live/prepare-broker-signal-policy.sh";
+    function invoke(extraEnv = {}) {
+      return spawnSync("bash", [script], {
+        encoding: "utf8",
+        timeout: 5000,
+        env: {
+          ...process.env,
+          PATH: `${bin}:${process.env.PATH}`,
+          APPARMOR_POLICY_ROOT: policyRoot,
+          APPARMOR_ENABLED_FILE: enabledFile,
+          POLICY_RELOAD_LOG: reloadLog,
+          ...extraEnv,
+        },
+      });
+    }
+    for (let repeat = 0; repeat < 2; repeat++) {
+      const result = invoke();
+      assert.equal(result.status, 0, result.stderr);
+    }
+    const policy = fs.readFileSync(fragment, "utf8");
+    assert.match(policy, /^# Existing runner policy/m);
+    assert.equal(policy.split("signal (receive) set=(term,kill) peer=crun,").length - 1, 1);
+    assert.doesNotMatch(policy, /unconfined|complain|signal \(send/);
+    assert.deepEqual(fs.readFileSync(reloadLog, "utf8").trim().split("\n"), [`-r ${profile}`, `-r ${profile}`]);
+    assert.equal(invoke({ POLICY_RELOAD_STATUS: "2" }).status, 2);
+    const beforeInactive = fs.readFileSync(reloadLog, "utf8");
+    fs.writeFileSync(enabledFile, "N\n");
+    assert.equal(invoke().status, 0);
+    assert.equal(fs.readFileSync(reloadLog, "utf8"), beforeInactive);
+    assert.equal(fs.readFileSync(fragment, "utf8"), policy);
+    fs.writeFileSync(enabledFile, "Y\n");
+    fs.writeFileSync(profile, "profile mosquitto /usr/sbin/mosquitto {}\n");
+    const unsupported = invoke();
+    assert.equal(unsupported.status, 1);
+    assert.match(unsupported.stderr, /does not include local\/mosquitto/);
+    assert.equal(fs.readFileSync(reloadLog, "utf8"), beforeInactive);
+    const workflow = fs.readFileSync(".github/workflows/wire-compatibility.yml", "utf8");
+    assert.ok(workflow.indexOf("prepare-broker-signal-policy.sh") < workflow.indexOf("probe-broker-signals.sh"));
+    assert.ok(workflow.indexOf("probe-broker-signals.sh") < workflow.indexOf("Restore SwiftPM dependency cache"));
+  } finally {
+    fs.rmSync(temporary, { recursive: true, force: true });
+  }
+});

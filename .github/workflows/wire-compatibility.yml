@@ -208,6 +208,11 @@ jobs:
         with:
           runtime: podman
 
+      - name: Permit broker shutdown from the rootless runtime
+        if: steps.classify.outputs.protocol == '1' && steps.classify.outputs.exempt == '0'
+        shell: bash
+        run: Tests/Support/WireCompatibility/Lifecycle/Live/prepare-broker-signal-policy.sh
+
       - name: Probe broker shutdown and security profiles
         if: steps.classify.outputs.protocol == '1' && steps.classify.outputs.exempt == '0'
         shell: bash

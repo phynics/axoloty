@@ -18,6 +18,18 @@ offline tests). A timed-out group receives TERM, then KILL, and is boundedly
 reaped; labeled runtime objects are removed only when their run and scenario
 labels match.
 
+Hosted Ubuntu runners can attach their host `mosquitto` AppArmor profile to
+Mosquitto inside a rootless container. The live-wire job prepares a local
+profile addition that permits only TERM and KILL reception from the named
+`crun` peer, then reloads only that profile. All other confinement remains
+enforced. This addresses the captured `profile="mosquitto"`, `peer="crun"`
+signal denials in [run 39969357799](https://github.com/phynics/axoloty/actions/runs/39969357799).
+A bounded, pinned-image broker preflight records UIDs and security labels and
+must prove actual shutdown before subject compilation starts. It fails the
+job if signaling is still denied; it does not substitute for the live matrix.
+Hosts without active AppArmor or a host Mosquitto profile receive no policy
+change. This setup belongs only to the ephemeral CI runner.
+
 Nine of the eleven catalog scenarios are executable, all verified end-to-end
 (not merely syntax-checked). All runners are now containerized — broker,
 capture probe, CoatyJS responder, and Swift test subject each run on an
