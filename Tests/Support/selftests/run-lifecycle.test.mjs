@@ -320,3 +320,64 @@ test("network lifecycle containers are unique per scenario in a shared run", () 
     );
   }
 });
+
+test("network lifecycle capture reports an exited probe before readiness timeout", () => {
+  const root = path.resolve(".");
+  const runner = path.join(
+    root,
+    "Tests/Support/WireCompatibility/Lifecycle/Live/run-lifecycle-network.sh",
+  );
+  const testingRoot = path.join(root, ".testing");
+  fs.mkdirSync(testingRoot, { recursive: true });
+  const temporary = fs.mkdtempSync(path.join(testingRoot, "capture-readiness-"));
+  const runtime = path.join(temporary, "fake-runtime");
+  const output = path.join(temporary, "artifacts");
+
+  fs.writeFileSync(runtime, `#!/usr/bin/env bash
+set -eu
+command="$1"
+shift
+case "$command" in
+  network) exit 0 ;;
+  run) exit 0 ;;
+  exec) exit 0 ;;
+  inspect)
+    printf 'exited\\n'
+    ;;
+  logs)
+    printf 'capture failed: getaddrinfo ENOTFOUND broker\\n' >&2
+    ;;
+  rm) exit 0 ;;
+  *) exit 0 ;;
+esac
+`);
+  fs.chmodSync(runtime, 0o755);
+
+  try {
+    const result = spawnSync("bash", [runner, "reconnect-resubscribe"], {
+      cwd: root,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        CONTAINER_RUNTIME: runtime,
+        WIRE_OUTPUT_DIR: output,
+        WIRE_RUN_ID: "failed-capture-self-test",
+        WIRE_LIFECYCLE_DEADLINE_SECONDS: "1",
+      },
+      timeout: 3000,
+    });
+
+    assert.equal(result.error, undefined, result.error?.stack);
+    assert.notEqual(result.status, 0, `${result.stdout ?? ""}\n${result.stderr ?? ""}`);
+    assert.match(result.stderr ?? "", /capture failed: getaddrinfo ENOTFOUND broker/);
+    assert.match(result.stderr ?? "", /Capture process exited .* before subscription readiness/);
+    assert.doesNotMatch(result.stderr ?? "", /Timed out waiting for capture subscription/);
+  } finally {
+    fs.rmSync(temporary, { recursive: true, force: true });
+    try {
+      fs.rmdirSync(testingRoot);
+    } catch {
+      // Keep a pre-existing test-output directory intact.
+    }
+  }
+});

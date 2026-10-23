@@ -28,7 +28,7 @@ test("nested live-wire Swift commands isolate their module cache", () => {
     assert.ok(swiftCommands.length > 0, `${relativePath} must launch Swift`);
     assert.equal(isolatedCommands.length, swiftCommands.length, relativePath);
     assert.equal(isolatedCompilerCommands.length, swiftCommands.length, relativePath);
-    assert.match(source, /SWIFTPM_MODULECACHE_OVERRIDE=\/tmp\/axoloty-wire-module-cache/);
+    assert.match(source, /SWIFTPM_MODULECACHE_OVERRIDE=.*\/tmp\/axoloty-wire-module-cache/);
   }
 });
 
