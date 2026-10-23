@@ -107,7 +107,7 @@ remove_owned_container() {
         exited|stopped|created) ;;
         *) echo "Owned lifecycle container $container_id did not stop (state=$state)" >&2; return 1 ;;
     esac
-    if ! runtime rm "$container_id" >/dev/null; then
+    if ! runtime_bounded rm "$container_id" >/dev/null; then
         echo "Failed to remove stopped owned lifecycle container $container_id" >&2
         return 1
     fi
@@ -172,7 +172,7 @@ cleanup() {
         "$BROKER_ID|broker-container"; do
         [ -n "${container_id%%|*}" ] || continue
         local id="${container_id%%|*}" log_name="${container_id#*|}"
-        if ! runtime logs "$id" >"$OUT/$log_name-$SCENARIO.log" 2>&1; then
+        if ! runtime_bounded logs "$id" >"$OUT/$log_name-$SCENARIO.log" 2>&1; then
             echo "Failed to capture logs for owned lifecycle container $id" >&2
         fi
         if ! remove_owned_container "$id"; then
@@ -180,7 +180,7 @@ cleanup() {
             cleanup_failed=1
         fi
     done
-    if [ -n "$NETWORK_ID" ] && ! runtime network rm "$NETWORK_ID" >/dev/null; then
+    if [ -n "$NETWORK_ID" ] && ! runtime_bounded network rm "$NETWORK_ID" >/dev/null; then
         echo "Failed to remove owned lifecycle network $NETWORK_ID" >&2
         cleanup_failed=1
     fi

@@ -504,6 +504,14 @@ with open(state_path, encoding="utf-8") as source:
     state = json.load(source)
 args = sys.argv[1:]
 state["calls"].append(args)
+if args[:len(state.get("stall_command", []))] == state.get("stall_command"):
+    import time
+    with open(state_path, "w", encoding="utf-8") as destination:
+        json.dump(state, destination)
+    time.sleep(3)
+    with open(state_path + ".stall-completed", "w", encoding="utf-8") as destination:
+        destination.write("runtime call escaped its deadline")
+    sys.exit(125)
 status = 0
 output = ""
 if args[:2] == ["network", "create"]:
@@ -610,9 +618,10 @@ sys.exit(status)
         WIRE_OUTPUT_DIR: path.relative(root, outputDirectory),
         WIRE_RUN_ID: `ownership-${name}`,
         WIRE_LIFECYCLE_DEADLINE_SECONDS: "0",
+        WIRE_CONTAINER_WAIT_SECONDS: "1",
       },
     });
-    return { result, state: JSON.parse(fs.readFileSync(statePath, "utf8")) };
+    return { result, state: JSON.parse(fs.readFileSync(statePath, "utf8")), stallCompleted: fs.existsSync(statePath + ".stall-completed") };
   }
 
   try {
@@ -652,6 +661,18 @@ sys.exit(status)
     assert.ok(ownedCleanup.state.calls.some((call) => call[0] === "kill" && call[1] === "--signal" && call[2] === "KILL" && call[3] === "container-owned-1"));
     assert.ok(ownedCleanup.state.calls.some((call) => call[0] === "rm" && call[1] === "container-owned-1"));
     assert.ok(ownedCleanup.state.calls.some((call) => call[0] === "network" && call[1] === "rm" && call[2] === "network-owned-1"));
+
+    for (const command of [["logs"], ["rm"], ["network", "rm"]]) {
+      const stalledCleanup = invoke(`stalled-${command.join("-")}`, {
+        ...initialState,
+        stall_command: command,
+      });
+      assert.equal(stalledCleanup.result.error, undefined);
+      assert.notEqual(stalledCleanup.result.status, 0);
+      assert.equal(stalledCleanup.stallCompleted, false, `${command.join(" ")} escaped its timeout`);
+      assert.ok(stalledCleanup.state.calls.some((call) => command.every((argument, index) => call[index] === argument)));
+      assert.match(stalledCleanup.result.stderr, /Failed to (capture logs|remove)/);
+    }
   } finally {
     fs.rmSync(temporary, { recursive: true, force: true });
     try {
