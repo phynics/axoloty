@@ -77,9 +77,14 @@ remove_owned_container() {
     fi
     if [ "$state" = "running" ]; then
         # Separate signaling from removal to avoid remote `rm -f` getting stuck
-        # in Stopping. The runtime can signal a broker that dropped privileges;
-        # an exec process inside that container might lack CAP_KILL.
-        if runtime_bounded kill --signal TERM "$container_id"; then
+        # in Stopping. Signal the broker as its service user: root inside the
+        # container can lack CAP_KILL, and host runtime signaling can fail when
+        # the broker runs under a different UID. Other containers use the runtime.
+        local -a signal_command=(kill --signal TERM "$container_id")
+        if [ "$container_id" = "$BROKER_ID" ]; then
+            signal_command=(exec --user mosquitto "$container_id" kill -TERM 1)
+        fi
+        if runtime_bounded "${signal_command[@]}"; then
             :
         else
             local signal_status=$?
@@ -192,7 +197,7 @@ rm -f "$CAPTURE" "$CAPTURE.post-restart" "$CAPTURE_READY" "$APPLICATION_LOG" "$R
 
 create_runtime_id NETWORK_ID network create "$NETWORK" "${RUNTIME_LABELS[@]}"
 start_broker() {
-    create_runtime_id BROKER_ID run -d --name "$BROKER" --network "$NETWORK_ID" --network-alias "$BROKER_HOST" "${RUNTIME_LABELS[@]}" \
+    create_runtime_id BROKER_ID run -d --name "$BROKER" --user mosquitto --network "$NETWORK_ID" --network-alias "$BROKER_HOST" "${RUNTIME_LABELS[@]}" \
         -v "$LIVE/mosquitto.conf:/etc/mosquitto/wire-compat.conf:ro" \
         "$DEV_IMAGE" mosquitto -c /etc/mosquitto/wire-compat.conf
 }

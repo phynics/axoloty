@@ -344,10 +344,18 @@ case "$1" in
   kill)
     if [ "\${2:-}" = "--signal" ]; then
       if [ "\${4:-}" = "id-axoloty-lifecycle-broker-broker-restart-broker-stop-failure-self-test" ]; then
+        echo "injected crun signal failure" >&2
+        exit 125
+      fi
+      printf '%s\\n' "$4" >> "\${FAKE_RUNTIME_STOPPED}"
+    fi
+    ;;
+  exec)
+    if [ "\${2:-}" = "--user" ] && [ "\${3:-}" = "mosquitto" ]; then
+      if [ "\${4:-}" = "id-axoloty-lifecycle-broker-broker-restart-broker-stop-failure-self-test" ]; then
         echo "injected broker stop failure" >&2
         exit 42
       fi
-      printf '%s\\n' "$4" >> "\${FAKE_RUNTIME_STOPPED}"
     fi
     ;;
   inspect)
@@ -386,7 +394,7 @@ exit 0
 
     const runtimeCalls = fs.readFileSync(runtimeLog, "utf8");
     assert.match(runtimeCalls, /kill --signal TERM id-axoloty-lifecycle-probe-broker-restart-broker-stop-failure-self-test/);
-    assert.match(runtimeCalls, /kill --signal TERM id-axoloty-lifecycle-broker-broker-restart-broker-stop-failure-self-test/);
+    assert.match(runtimeCalls, /exec --user mosquitto id-axoloty-lifecycle-broker-broker-restart-broker-stop-failure-self-test kill -TERM 1/);
     assert.equal(
       (runtimeCalls.match(/run -d --name axoloty-lifecycle-broker-broker-restart-broker-stop-failure-self-test/g) ?? []).length,
       1,
@@ -518,7 +526,8 @@ elif args[0] == "run" and "--name" in args:
         status, output = 125, "container name already exists\\n"
     else:
         identifier = "container-owned-" + str(len(state["owned_containers"]) + 1)
-        state["owned_containers"][identifier] = {"name": name, "status": "running"}
+        user = args[args.index("--user") + 1] if "--user" in args else "0"
+        state["owned_containers"][identifier] = {"name": name, "status": "running", "user": user}
         output = identifier + "\\n"
 elif args[0] == "inspect":
     identifier = args[1]
@@ -527,9 +536,16 @@ elif args[0] == "inspect":
     else:
         output = state["owned_containers"][identifier]["status"] + "\\n"
 elif args[0] == "exec":
-    identifier = args[1]
+    owner_signal = args[1:3] == ["--user", "mosquitto"]
+    identifier = args[3] if owner_signal else args[1]
     if identifier not in state["owned_containers"]:
         status = 125
+    elif owner_signal and args[4:] == ["kill", "-TERM", "1"]:
+        container = state["owned_containers"][identifier]
+        if container["user"] != "mosquitto":
+            status = 125
+        elif container["name"] not in state.get("term_ignored_names", []):
+            container["status"] = "exited"
     else:
         # The broker drops to another UID; an exec process may lack CAP_KILL.
         status = 1
@@ -539,7 +555,10 @@ elif args[:2] == ["kill", "--signal"]:
         status = 125
     elif args[2] == "TERM":
         name = state["owned_containers"][identifier]["name"]
-        if name not in state.get("term_ignored_names", []):
+        if "lifecycle-broker-" in name:
+            # CI's crun cannot signal the broker's non-root UID.
+            status = 125
+        elif name not in state.get("term_ignored_names", []):
             state["owned_containers"][identifier]["status"] = "exited"
     else:
         state["owned_containers"][identifier]["status"] = "exited"
@@ -628,7 +647,7 @@ sys.exit(status)
     assert.match(ownedCleanup.result.stderr, /Timed out waiting for Mosquitto broker readiness/);
     assert.deepEqual(ownedCleanup.state.owned_networks, {});
     assert.deepEqual(ownedCleanup.state.owned_containers, {});
-    assert.ok(ownedCleanup.state.calls.some((call) => call[0] === "kill" && call[1] === "--signal" && call[2] === "TERM" && call[3] === "container-owned-1"));
+    assert.ok(ownedCleanup.state.calls.some((call) => call[0] === "exec" && call[1] === "--user" && call[2] === "mosquitto" && call[3] === "container-owned-1"));
     assert.equal(ownedCleanup.state.calls.some((call) => call[0] === "exec" && call[2] === "kill"), false);
     assert.ok(ownedCleanup.state.calls.some((call) => call[0] === "kill" && call[1] === "--signal" && call[2] === "KILL" && call[3] === "container-owned-1"));
     assert.ok(ownedCleanup.state.calls.some((call) => call[0] === "rm" && call[1] === "container-owned-1"));
