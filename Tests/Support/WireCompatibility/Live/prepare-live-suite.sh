@@ -13,7 +13,7 @@ DEV_IMAGE="${DEV_IMAGE:-localhost/axoloty-dev:latest}"
 JS_IMAGE="${JS_IMAGE:-localhost/coatyswift-wire-coatyjs:2.4.0}"
 BUILD_DIR="${BUILD_DIR:-$ROOT_DIR/.build}"
 SPM_CACHE_DIR="${SPM_CACHE_DIR:-$ROOT_DIR/.swiftpm-cache}"
-SWIFTPM_MODULECACHE_OVERRIDE=/tmp/axoloty-wire-module-cache
+SWIFTPM_MODULECACHE_OVERRIDE="${SWIFTPM_MODULECACHE_OVERRIDE:-/tmp/axoloty-wire-module-cache}"
 
 mkdir -p "$BUILD_DIR" "$SPM_CACHE_DIR"
 if ! runtime image inspect "$DEV_IMAGE" >/dev/null 2>&1; then

@@ -24,8 +24,9 @@ From 1.0:
 - a patch release contains only backward-compatible fixes.
 
 The frozen products listed below are versioned together under the repository
-`VERSION`. Their public API is the set of declarations reachable through each
-published product.
+`VERSION`. Their normal-import public API is the set of declarations reachable
+through each published product. Implementation-only `@_spi` declarations are
+not part of this baseline or the compatibility promise.
 
 ## Frozen 1.0 products
 
@@ -33,6 +34,13 @@ The [1.0 scope](./ROADMAP.md) freezes exactly the six products defined by
 [ADR 0012](./adr/0012-approved-product-and-ownership-contracts.md):
 `Axoloty`, `AxolotyWire`, `AxolotyProtocol`, `AxolotyObjectModel`,
 `AxolotyStaticRuntime`, and `AxolotyMQTT`.
+
+The public declaration inventory and reviewed compatibility baseline are
+[`docs/api/core-1.0-public-symbols.json`](./api/core-1.0-public-symbols.json).
+Run `make api-baseline` to verify the checked-in baseline against SwiftPM symbol
+graphs. After a deliberate public API change, review the regenerated inventory
+with `make api-baseline API_BASELINE_MODE=update` and update the migration and
+release notes. Only the six products above receive this compatibility check.
 
 Everything else is experimental for 1.0: `AxolotyZenoh`, `AxolotyZenohCore`,
 `AxolotyCoatyModels`, `AxolotyIoRouting`, `AxolotySensorThings*`, the `Tools/`

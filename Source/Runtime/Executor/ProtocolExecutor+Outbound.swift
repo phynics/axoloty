@@ -105,7 +105,7 @@ extension ProtocolExecutor {
             namespace: definition.namespace,
             profile: wireProfile
         )
-        return RuntimeTransportLastWill(
+        return try RuntimeTransportLastWill(
             topic: topic,
             payload: try RuntimeLifecyclePayload.deadvertise(identity, profile: wireProfile)
         )

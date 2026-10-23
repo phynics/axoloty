@@ -305,3 +305,440 @@ exit 17
     }
   }
 });
+
+test("broker restart stops when the container runtime cannot stop the broker", () => {
+  const root = path.resolve(".");
+  const runner = path.join(
+    root,
+    "Tests/Support/WireCompatibility/Lifecycle/Live/run-lifecycle-network.sh",
+  );
+  const testingRoot = path.join(root, ".testing");
+  fs.mkdirSync(testingRoot, { recursive: true });
+  const temporary = fs.mkdtempSync(path.join(testingRoot, "wire-stop-failure-"));
+  const runtime = path.join(temporary, "fake-runtime");
+  const runtimeLog = path.join(temporary, "runtime.log");
+  const stoppedRuntimeIds = path.join(temporary, "stopped-ids.txt");
+  const output = path.join(temporary, "artifacts");
+  const relativeOutput = path.relative(root, output);
+
+  try {
+    fs.mkdirSync(output, { recursive: true });
+    fs.writeFileSync(stoppedRuntimeIds, "");
+    fs.writeFileSync(runtime, `#!/usr/bin/env bash
+printf '%s\\n' "$*" >> "\${FAKE_RUNTIME_LOG}"
+case "$1" in
+  run)
+    name=""
+    previous=""
+    for argument in "$@"; do
+      if [ "$previous" = "--name" ]; then name="$argument"; fi
+      previous="$argument"
+      case "$argument" in
+        /artifacts/*.capture-ready)
+          touch "\${FAKE_RUNTIME_OUTPUT}/\${argument##*/}"
+          ;;
+      esac
+    done
+    printf 'id-%s\\n' "$name"
+    ;;
+  kill)
+    if [ "\${2:-}" = "--signal" ]; then
+      if [ "\${4:-}" = "id-axoloty-lifecycle-broker-broker-restart-broker-stop-failure-self-test" ]; then
+        echo "injected crun signal failure" >&2
+        exit 125
+      fi
+      printf '%s\\n' "$4" >> "\${FAKE_RUNTIME_STOPPED}"
+    fi
+    ;;
+  exec)
+    if [ "\${2:-}" = "--user" ] && [ "\${3:-}" = "mosquitto" ]; then
+      if [ "\${4:-}" = "id-axoloty-lifecycle-broker-broker-restart-broker-stop-failure-self-test" ]; then
+        echo "injected broker stop failure" >&2
+        exit 42
+      fi
+    fi
+    ;;
+  inspect)
+    if grep -qx "\${2:-}" "\${FAKE_RUNTIME_STOPPED}" 2>/dev/null; then printf 'exited\\n'; else printf 'running\\n'; fi
+    ;;
+  wait)
+    printf '0\\n'
+    ;;
+  logs)
+    printf '%s\\n' '{"state":"ready"}'
+    ;;
+esac
+exit 0
+`);
+    fs.chmodSync(runtime, 0o755);
+
+    const result = spawnSync("bash", [runner, "broker-restart"], {
+      cwd: root,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        CONTAINER_RUNTIME: runtime,
+        FAKE_RUNTIME_LOG: runtimeLog,
+        FAKE_RUNTIME_STOPPED: stoppedRuntimeIds,
+        FAKE_RUNTIME_OUTPUT: output,
+        WIRE_OUTPUT_DIR: relativeOutput,
+        WIRE_RUN_ID: "broker-stop-failure-self-test",
+        WIRE_LIFECYCLE_DEADLINE_SECONDS: "1",
+      },
+    });
+
+    assert.equal(result.error, undefined, result.error?.stack);
+    assert.equal(result.status, 42, `${result.stdout ?? ""}\\n${result.stderr ?? ""}`);
+    assert.match(result.stderr ?? "", /injected broker stop failure/);
+    assert.doesNotMatch(result.stderr ?? "", /Timed out waiting for subject offline transition/);
+
+    const runtimeCalls = fs.readFileSync(runtimeLog, "utf8");
+    assert.match(runtimeCalls, /kill --signal TERM id-axoloty-lifecycle-probe-broker-restart-broker-stop-failure-self-test/);
+    assert.match(runtimeCalls, /exec --user mosquitto id-axoloty-lifecycle-broker-broker-restart-broker-stop-failure-self-test kill -TERM 1/);
+    assert.equal(
+      (runtimeCalls.match(/run -d --name axoloty-lifecycle-broker-broker-restart-broker-stop-failure-self-test/g) ?? []).length,
+      1,
+      "runner must not restart a broker that failed to stop",
+    );
+  } finally {
+    fs.rmSync(temporary, { recursive: true, force: true });
+    try {
+      fs.rmdirSync(testingRoot);
+    } catch {
+      // Keep a pre-existing test-output directory intact.
+    }
+  }
+});
+
+test("network lifecycle containers are unique per scenario in a shared run", () => {
+  const runner = fs.readFileSync(
+    "Tests/Support/WireCompatibility/Lifecycle/Live/run-lifecycle-network.sh",
+    "utf8",
+  );
+
+  for (const container of ["BROKER", "PROBE", "PROXY", "SUBJECT"]) {
+    assert.match(
+      runner,
+      new RegExp(`^${container}="axoloty-lifecycle-${container.toLowerCase()}-\\$SCENARIO-\\$RUN_ID"$`, "m"),
+      `${container} must not reuse another scenario's container name`,
+    );
+  }
+});
+
+test("network lifecycle capture reports an exited probe before readiness timeout", () => {
+  const root = path.resolve(".");
+  const runner = path.join(
+    root,
+    "Tests/Support/WireCompatibility/Lifecycle/Live/run-lifecycle-network.sh",
+  );
+  const testingRoot = path.join(root, ".testing");
+  fs.mkdirSync(testingRoot, { recursive: true });
+  const temporary = fs.mkdtempSync(path.join(testingRoot, "capture-readiness-"));
+  const runtime = path.join(temporary, "fake-runtime");
+  const output = path.join(temporary, "artifacts");
+
+  fs.writeFileSync(runtime, `#!/usr/bin/env bash
+set -eu
+command="$1"
+shift
+case "$command" in
+  network) exit 0 ;;
+  run) exit 0 ;;
+  exec) exit 0 ;;
+  inspect)
+    printf 'exited\\n'
+    ;;
+  logs)
+    printf 'capture failed: getaddrinfo ENOTFOUND broker\\n' >&2
+    ;;
+  rm) exit 0 ;;
+  *) exit 0 ;;
+esac
+`);
+  fs.chmodSync(runtime, 0o755);
+
+  try {
+    const result = spawnSync("bash", [runner, "reconnect-resubscribe"], {
+      cwd: root,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        CONTAINER_RUNTIME: runtime,
+        WIRE_OUTPUT_DIR: output,
+        WIRE_RUN_ID: "failed-capture-self-test",
+        WIRE_LIFECYCLE_DEADLINE_SECONDS: "1",
+      },
+      timeout: 3000,
+    });
+
+    assert.equal(result.error, undefined, result.error?.stack);
+    assert.notEqual(result.status, 0, `${result.stdout ?? ""}\n${result.stderr ?? ""}`);
+    assert.match(result.stderr ?? "", /capture failed: getaddrinfo ENOTFOUND broker/);
+    assert.match(result.stderr ?? "", /Capture process exited .* before subscription readiness/);
+    assert.doesNotMatch(result.stderr ?? "", /Timed out waiting for capture subscription/);
+  } finally {
+    fs.rmSync(temporary, { recursive: true, force: true });
+    try {
+      fs.rmdirSync(testingRoot);
+    } catch {
+      // Keep a pre-existing test-output directory intact.
+    }
+  }
+});
+
+test("network lifecycle cleanup removes only immutable IDs created by this run", () => {
+  const root = path.resolve(".");
+  const runner = path.join(root, "Tests/Support/WireCompatibility/Lifecycle/Live/run-lifecycle-network.sh");
+  const testingRoot = path.join(root, ".testing");
+  fs.mkdirSync(testingRoot, { recursive: true });
+  const temporary = fs.mkdtempSync(path.join(testingRoot, "cleanup-ownership-"));
+  const runtime = path.join(temporary, "fake-runtime.py");
+
+  fs.writeFileSync(runtime, `#!/usr/bin/env python3
+import json
+import os
+import sys
+
+state_path = os.environ["FAKE_RUNTIME_STATE"]
+with open(state_path, encoding="utf-8") as source:
+    state = json.load(source)
+args = sys.argv[1:]
+state["calls"].append(args)
+if args[:len(state.get("stall_command", []))] == state.get("stall_command"):
+    import time
+    with open(state_path, "w", encoding="utf-8") as destination:
+        json.dump(state, destination)
+    time.sleep(3)
+    with open(state_path + ".stall-completed", "w", encoding="utf-8") as destination:
+        destination.write("runtime call escaped its deadline")
+    sys.exit(125)
+status = 0
+output = ""
+if args[:2] == ["network", "create"]:
+    name = args[2]
+    if name in state["foreign_network_names"]:
+        status, output = 125, "network name already exists\\n"
+    else:
+        identifier = "network-owned-" + str(len(state["owned_networks"]) + 1)
+        state["owned_networks"][identifier] = name
+        output = identifier + "\\n"
+elif args[:2] == ["network", "rm"]:
+    identifier = args[2]
+    if identifier not in state["owned_networks"]:
+        status = 125
+    else:
+        del state["owned_networks"][identifier]
+elif args[0] == "run" and "--name" in args:
+    name = args[args.index("--name") + 1]
+    if name in state["foreign_container_names"]:
+        status, output = 125, "container name already exists\\n"
+    else:
+        identifier = "container-owned-" + str(len(state["owned_containers"]) + 1)
+        user = args[args.index("--user") + 1] if "--user" in args else "0"
+        state["owned_containers"][identifier] = {"name": name, "status": "running", "user": user}
+        output = identifier + "\\n"
+elif args[0] == "inspect":
+    identifier = args[1]
+    if identifier not in state["owned_containers"]:
+        status = 125
+    else:
+        output = state["owned_containers"][identifier]["status"] + "\\n"
+elif args[0] == "exec":
+    owner_signal = args[1:3] == ["--user", "mosquitto"]
+    identifier = args[3] if owner_signal else args[1]
+    if identifier not in state["owned_containers"]:
+        status = 125
+    elif owner_signal and args[4:] == ["kill", "-TERM", "1"]:
+        container = state["owned_containers"][identifier]
+        if container["user"] != "mosquitto":
+            status = 125
+        elif container["name"] not in state.get("term_ignored_names", []):
+            container["status"] = "exited"
+    else:
+        # The broker drops to another UID; an exec process may lack CAP_KILL.
+        status = 1
+elif args[:2] == ["kill", "--signal"]:
+    identifier = args[3]
+    if identifier not in state["owned_containers"]:
+        status = 125
+    elif args[2] == "TERM":
+        name = state["owned_containers"][identifier]["name"]
+        if "lifecycle-broker-" in name:
+            # CI's crun cannot signal the broker's non-root UID.
+            status = 125
+        elif name not in state.get("term_ignored_names", []):
+            state["owned_containers"][identifier]["status"] = "exited"
+    else:
+        state["owned_containers"][identifier]["status"] = "exited"
+elif args[0] == "wait":
+    if args[1] not in state["owned_containers"]:
+        status = 125
+elif args[0] == "logs":
+    if args[1] not in state["owned_containers"]:
+        status = 125
+elif args[0] == "rm":
+    identifier = args[-1]
+    if identifier not in state["owned_containers"] or state["owned_containers"][identifier]["status"] == "running":
+        status = 125
+    else:
+        del state["owned_containers"][identifier]
+
+with open(state_path, "w", encoding="utf-8") as destination:
+    json.dump(state, destination)
+if output:
+    sys.stdout.write(output)
+elif status:
+    sys.stderr.write("fake runtime operation failed\\n")
+sys.exit(status)
+`);
+  fs.chmodSync(runtime, 0o755);
+
+  const initialState = {
+    foreign_network_names: [],
+    foreign_container_names: [],
+    term_ignored_names: [],
+    owned_networks: {},
+    owned_containers: {},
+    calls: [],
+  };
+  function invoke(name, state) {
+    const caseDirectory = path.join(temporary, name);
+    const outputDirectory = path.join(caseDirectory, "output");
+    fs.mkdirSync(outputDirectory, { recursive: true });
+    const statePath = path.join(caseDirectory, "state.json");
+    fs.writeFileSync(statePath, JSON.stringify(state));
+    const result = spawnSync("bash", [runner, "offline-queueing"], {
+      cwd: root,
+      encoding: "utf8",
+      timeout: 10000,
+      env: {
+        ...process.env,
+        CONTAINER_RUNTIME: runtime,
+        FAKE_RUNTIME_STATE: statePath,
+        WIRE_OUTPUT_DIR: path.relative(root, outputDirectory),
+        WIRE_RUN_ID: `ownership-${name}`,
+        WIRE_LIFECYCLE_DEADLINE_SECONDS: "0",
+        WIRE_CONTAINER_WAIT_SECONDS: "1",
+      },
+    });
+    return { result, state: JSON.parse(fs.readFileSync(statePath, "utf8")), stallCompleted: fs.existsSync(statePath + ".stall-completed") };
+  }
+
+  try {
+    const networkName = "axoloty-lifecycle-offline-queueing-ownership-network-collision";
+    const networkCollision = invoke("network-collision", {
+      ...initialState,
+      foreign_network_names: [networkName],
+    });
+    assert.equal(networkCollision.result.status, 125);
+    assert.deepEqual(networkCollision.state.foreign_network_names, [networkName]);
+    assert.deepEqual(networkCollision.state.owned_networks, {});
+    assert.deepEqual(networkCollision.state.owned_containers, {});
+    assert.equal(networkCollision.state.calls.some((call) => call[0] === "rm" || (call[0] === "network" && call[1] === "rm")), false);
+
+    const containerName = "axoloty-lifecycle-broker-offline-queueing-ownership-container-collision";
+    const containerCollision = invoke("container-collision", {
+      ...initialState,
+      foreign_container_names: [containerName],
+    });
+    assert.equal(containerCollision.result.status, 125);
+    assert.deepEqual(containerCollision.state.foreign_container_names, [containerName]);
+    assert.deepEqual(containerCollision.state.owned_networks, {});
+    assert.deepEqual(containerCollision.state.owned_containers, {});
+    assert.ok(containerCollision.state.calls.some((call) => call[0] === "network" && call[1] === "rm" && call[2] === "network-owned-1"));
+    assert.equal(containerCollision.state.calls.some((call) => call[0] === "rm"), false);
+
+    const ownedCleanup = invoke("owned-cleanup", {
+      ...initialState,
+      term_ignored_names: ["axoloty-lifecycle-broker-offline-queueing-ownership-owned-cleanup"],
+    });
+    assert.notEqual(ownedCleanup.result.status, 0);
+    assert.match(ownedCleanup.result.stderr, /Timed out waiting for Mosquitto broker readiness/);
+    assert.deepEqual(ownedCleanup.state.owned_networks, {});
+    assert.deepEqual(ownedCleanup.state.owned_containers, {});
+    assert.ok(ownedCleanup.state.calls.some((call) => call[0] === "exec" && call[1] === "--user" && call[2] === "mosquitto" && call[3] === "container-owned-1"));
+    assert.equal(ownedCleanup.state.calls.some((call) => call[0] === "exec" && call[2] === "kill"), false);
+    assert.ok(ownedCleanup.state.calls.some((call) => call[0] === "kill" && call[1] === "--signal" && call[2] === "KILL" && call[3] === "container-owned-1"));
+    assert.ok(ownedCleanup.state.calls.some((call) => call[0] === "rm" && call[1] === "container-owned-1"));
+    assert.ok(ownedCleanup.state.calls.some((call) => call[0] === "network" && call[1] === "rm" && call[2] === "network-owned-1"));
+
+    for (const command of [["logs"], ["rm"], ["network", "rm"]]) {
+      const stalledCleanup = invoke(`stalled-${command.join("-")}`, {
+        ...initialState,
+        stall_command: command,
+      });
+      assert.equal(stalledCleanup.result.error, undefined);
+      assert.notEqual(stalledCleanup.result.status, 0);
+      assert.equal(stalledCleanup.stallCompleted, false, `${command.join(" ")} escaped its timeout`);
+      assert.ok(stalledCleanup.state.calls.some((call) => command.every((argument, index) => call[index] === argument)));
+      assert.match(stalledCleanup.result.stderr, /Failed to (capture logs|remove)/);
+    }
+  } finally {
+    fs.rmSync(temporary, { recursive: true, force: true });
+    try {
+      fs.rmdirSync(testingRoot);
+    } catch {
+      // Keep a pre-existing test-output directory intact.
+    }
+  }
+});
+
+test("hosted broker signal policy retains confinement and is idempotent", () => {
+  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "axoloty-broker-policy-"));
+  try {
+    const policyRoot = path.join(temporary, "profiles");
+    const bin = path.join(temporary, "bin");
+    fs.mkdirSync(path.join(policyRoot, "local"), { recursive: true });
+    fs.mkdirSync(bin);
+    const enabledFile = path.join(temporary, "enabled");
+    const reloadLog = path.join(temporary, "reload.log");
+    const profile = path.join(policyRoot, "mosquitto");
+    const fragment = path.join(policyRoot, "local/mosquitto");
+    fs.writeFileSync(enabledFile, "Y\n");
+    fs.writeFileSync(profile, "profile mosquitto /usr/sbin/mosquitto {\n  include if exists <local/mosquitto>\n}\n");
+    fs.writeFileSync(fragment, "# Existing runner policy\n");
+    fs.writeFileSync(path.join(bin, "sudo"), '#!/bin/sh\n[ "$1" = -n ] || exit 99\nshift\nexec "$@"\n', { mode: 0o755 });
+    fs.writeFileSync(path.join(bin, "apparmor_parser"), '#!/bin/sh\nprintf "%s\\n" "$*" >> "$POLICY_RELOAD_LOG"\nexit "${POLICY_RELOAD_STATUS:-0}"\n', { mode: 0o755 });
+    const script = "Tests/Support/WireCompatibility/Lifecycle/Live/prepare-broker-signal-policy.sh";
+    function invoke(extraEnv = {}) {
+      return spawnSync("bash", [script], {
+        encoding: "utf8",
+        timeout: 5000,
+        env: {
+          ...process.env,
+          PATH: `${bin}:${process.env.PATH}`,
+          APPARMOR_POLICY_ROOT: policyRoot,
+          APPARMOR_ENABLED_FILE: enabledFile,
+          POLICY_RELOAD_LOG: reloadLog,
+          ...extraEnv,
+        },
+      });
+    }
+    for (let repeat = 0; repeat < 2; repeat++) {
+      const result = invoke();
+      assert.equal(result.status, 0, result.stderr);
+    }
+    const policy = fs.readFileSync(fragment, "utf8");
+    assert.match(policy, /^# Existing runner policy/m);
+    assert.equal(policy.split("signal (receive) set=(term,kill) peer=crun,").length - 1, 1);
+    assert.doesNotMatch(policy, /unconfined|complain|signal \(send/);
+    assert.deepEqual(fs.readFileSync(reloadLog, "utf8").trim().split("\n"), [`-r ${profile}`, `-r ${profile}`]);
+    assert.equal(invoke({ POLICY_RELOAD_STATUS: "2" }).status, 2);
+    const beforeInactive = fs.readFileSync(reloadLog, "utf8");
+    fs.writeFileSync(enabledFile, "N\n");
+    assert.equal(invoke().status, 0);
+    assert.equal(fs.readFileSync(reloadLog, "utf8"), beforeInactive);
+    assert.equal(fs.readFileSync(fragment, "utf8"), policy);
+    fs.writeFileSync(enabledFile, "Y\n");
+    fs.writeFileSync(profile, "profile mosquitto /usr/sbin/mosquitto {}\n");
+    const unsupported = invoke();
+    assert.equal(unsupported.status, 1);
+    assert.match(unsupported.stderr, /does not include local\/mosquitto/);
+    assert.equal(fs.readFileSync(reloadLog, "utf8"), beforeInactive);
+    const workflow = fs.readFileSync(".github/workflows/wire-compatibility.yml", "utf8");
+    assert.ok(workflow.indexOf("prepare-broker-signal-policy.sh") < workflow.indexOf("probe-broker-signals.sh"));
+    assert.ok(workflow.indexOf("probe-broker-signals.sh") < workflow.indexOf("Restore SwiftPM dependency cache"));
+  } finally {
+    fs.rmSync(temporary, { recursive: true, force: true });
+  }
+});

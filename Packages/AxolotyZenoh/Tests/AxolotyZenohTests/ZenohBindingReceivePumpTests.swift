@@ -141,8 +141,8 @@ struct ZenohBindingReceivePumpTests {
         )
     }
 
-    private func transition(_ route: String) -> OwnedExternalRouteTransition {
-        OwnedExternalRouteTransition(sourceID: .zero, actorID: .zero, route: Array(route.utf8))
+    private func transition(_ route: String) throws(ProtocolError) -> OwnedExternalRouteTransition {
+        try OwnedExternalRouteTransition(sourceID: .zero, actorID: .zero, route: Array(route.utf8))
     }
 }
 

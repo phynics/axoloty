@@ -9,6 +9,12 @@ import AxolotyTestBroker
 @testable import AxolotyZenoh
 @testable import AxolotyProtocolTraceTestSupport
 
+extension AxolotyRuntimeTransport {
+    func start(receive: @escaping @Sendable (RuntimeInboundFrame) -> Void) async throws(AxolotyError) {
+        try await start(receive: receive, lastWill: nil)
+    }
+}
+
 private struct InjectedFrameKey: Hashable, Sendable {
     let route: String
     let payload: [UInt8]
@@ -123,12 +129,15 @@ final class MQTTTraceCarrier: RuntimeTraceCarrier, @unchecked Sendable {
         self.broker = broker
     }
 
-    func start(receive: @escaping @Sendable (RuntimeInboundFrame) -> Void) async throws {
-        try await binding.start { [self] frame in
+    func start(
+        receive: @escaping @Sendable (RuntimeInboundFrame) -> Void,
+        lastWill: RuntimeTransportLastWill?
+    ) async throws(AxolotyError) {
+        try await binding.start(receive: { [self] frame in
             let normalized = normalizeTime(frame)
             receive(normalized)
             signal.record(normalized)
-        }
+        }, lastWill: lastWill)
     }
 
     func inject(_ frame: RuntimeInboundFrame, traceID: String, sequence: Int) async throws {
@@ -145,10 +154,13 @@ final class MQTTTraceCarrier: RuntimeTraceCarrier, @unchecked Sendable {
     func setFailureHandler(_ handler: @escaping @Sendable (RuntimeTransportFailure) -> Void) async {
         await binding.setFailureHandler(handler)
     }
+    func setDiagnostics(_ diagnostics: RuntimeTransportDiagnostics) async {
+        await binding.setDiagnostics(diagnostics)
+    }
     func setRecoveryHandler(_ handler: @escaping @Sendable () -> Void) async {
         await binding.setRecoveryHandler(handler)
     }
-    func perform(_ effect: RuntimeTransportEffect) async throws {
+    func perform(_ effect: RuntimeTransportEffect) async throws(AxolotyError) {
         if case .publish = effect, !lock.withLock({ outboundEffectsEnabled }) { return }
         try await binding.perform(effect)
     }
@@ -156,16 +168,17 @@ final class MQTTTraceCarrier: RuntimeTraceCarrier, @unchecked Sendable {
         lock.withLock { outboundEffectsEnabled = enabled }
     }
     func stop() async { await binding.stop() }
-    func activateProfileInterest(namespace: String) async throws {
+    func activateProfileInterest(namespace: String) async throws(AxolotyError) {
         try await binding.activateProfileInterest(namespace: namespace)
     }
-    func deactivateProfileInterest(namespace: String) async throws {
+    func deactivateProfileInterest(namespace: String) async throws(AxolotyError) {
         try await binding.deactivateProfileInterest(namespace: namespace)
     }
     func classifyRoute(_ route: ByteSlice) -> ProtocolRouteClassification {
         binding.classifyRoute(route)
     }
     var wireProfile: WireProfile { binding.wireProfile }
+    var capabilities: RuntimeTransportCapabilities { binding.capabilities }
 
     private func normalizeTime(_ frame: RuntimeInboundFrame) -> RuntimeInboundFrame {
         let key = InjectedFrameKey(frame)
@@ -193,11 +206,14 @@ final class ZenohTraceCarrier: RuntimeTraceCarrier, @unchecked Sendable {
         self.clock = clock
     }
 
-    func start(receive: @escaping @Sendable (RuntimeInboundFrame) -> Void) async throws {
-        try await binding.start { [signal] frame in
+    func start(
+        receive: @escaping @Sendable (RuntimeInboundFrame) -> Void,
+        lastWill: RuntimeTransportLastWill?
+    ) async throws(AxolotyError) {
+        try await binding.start(receive: { [signal] frame in
             receive(frame)
             signal.record(frame)
-        }
+        }, lastWill: lastWill)
     }
 
     func inject(_ frame: RuntimeInboundFrame, traceID: String, sequence: Int) async throws {
@@ -214,10 +230,13 @@ final class ZenohTraceCarrier: RuntimeTraceCarrier, @unchecked Sendable {
     func setFailureHandler(_ handler: @escaping @Sendable (RuntimeTransportFailure) -> Void) async {
         await binding.setFailureHandler(handler)
     }
+    func setDiagnostics(_ diagnostics: RuntimeTransportDiagnostics) async {
+        await binding.setDiagnostics(diagnostics)
+    }
     func setRecoveryHandler(_ handler: @escaping @Sendable () -> Void) async {
         await binding.setRecoveryHandler(handler)
     }
-    func perform(_ effect: RuntimeTransportEffect) async throws {
+    func perform(_ effect: RuntimeTransportEffect) async throws(AxolotyError) {
         if case .publish = effect, !lock.withLock({ outboundEffectsEnabled }) { return }
         try await binding.perform(effect)
     }
@@ -225,16 +244,17 @@ final class ZenohTraceCarrier: RuntimeTraceCarrier, @unchecked Sendable {
         lock.withLock { outboundEffectsEnabled = enabled }
     }
     func stop() async { await binding.stop() }
-    func activateProfileInterest(namespace: String) async throws {
+    func activateProfileInterest(namespace: String) async throws(AxolotyError) {
         try await binding.activateProfileInterest(namespace: namespace)
     }
-    func deactivateProfileInterest(namespace: String) async throws {
+    func deactivateProfileInterest(namespace: String) async throws(AxolotyError) {
         try await binding.deactivateProfileInterest(namespace: namespace)
     }
     func classifyRoute(_ route: ByteSlice) -> ProtocolRouteClassification {
         binding.classifyRoute(route)
     }
     var wireProfile: WireProfile { binding.wireProfile }
+    var capabilities: RuntimeTransportCapabilities { binding.capabilities }
 }
 
 final class TraceFrameClock: @unchecked Sendable {

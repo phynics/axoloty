@@ -110,7 +110,7 @@ public struct RuntimeRequestObservation: Sendable, Equatable {
     public let correlationID: UUID16?
     /// The observed outcome.
     public let outcome: RuntimeRequestOutcome
-    /// The structured rejection, when ``outcome`` is ``rejected``.
+    /// The structured rejection, when `outcome` indicates rejection.
     public let rejection: RuntimeRejection?
 
     /// Creates a request observation.
@@ -188,6 +188,8 @@ public struct RuntimeTransportObservation: Sendable, Equatable {
 public struct RuntimeCapabilityInformation: Sendable, Equatable {
     /// Coaty capabilities accepted by the shared processor.
     public let protocolCapabilities: ProtocolCapabilities
+    /// Optional features provided by the selected transport adapter.
+    public let transportCapabilities: RuntimeTransportCapabilities
     /// The single wire profile used by the binding.
     public let wireProfile: WireProfile
     /// Largest protocol payload accepted by the shared processor.
@@ -200,8 +202,18 @@ public struct RuntimeCapabilityInformation: Sendable, Equatable {
     public let diagnosticCapacity: Int
 
     /// Creates capability information.
+    ///
+    /// - Parameters:
+    ///   - protocolCapabilities: Protocol families accepted by the processor.
+    ///   - transportCapabilities: Optional features provided by the adapter.
+    ///   - wireProfile: The single profile selected by the adapter.
+    ///   - maximumPayloadBytes: Largest accepted protocol payload.
+    ///   - maximumObjects: Maximum active protocol objects.
+    ///   - maximumPendingCorrelations: Maximum pending request correlations.
+    ///   - diagnosticCapacity: Capacity of the bounded diagnostic stream.
     public init(
         protocolCapabilities: ProtocolCapabilities,
+        transportCapabilities: RuntimeTransportCapabilities = [],
         wireProfile: WireProfile,
         maximumPayloadBytes: Int,
         maximumObjects: Int,
@@ -209,6 +221,7 @@ public struct RuntimeCapabilityInformation: Sendable, Equatable {
         diagnosticCapacity: Int
     ) {
         self.protocolCapabilities = protocolCapabilities
+        self.transportCapabilities = transportCapabilities
         self.wireProfile = wireProfile
         self.maximumPayloadBytes = maximumPayloadBytes
         self.maximumObjects = maximumObjects

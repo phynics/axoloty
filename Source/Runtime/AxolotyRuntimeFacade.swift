@@ -31,7 +31,7 @@ extension RuntimeOutboundMessage {
     init(_ publication: OwnedProtocolPublication, namespace: String, profile: WireProfile) throws(AxolotyError) {
         switch publication.target {
         case let .profile(eventTypeFilter, filterKind):
-            self.init(
+            try self.init(
                 route: try CoatyRoute.route(
                     for: publication.routingKey,
                     namespace: namespace,
@@ -48,7 +48,7 @@ extension RuntimeOutboundMessage {
                     reason: "unrelated routes cannot be published"
                 )
             }
-            self.init(route: String(decoding: route, as: UTF8.self), payload: publication.payload)
+            try self.init(route: String(decoding: route, as: UTF8.self), payload: publication.payload)
         }
     }
 }
@@ -61,7 +61,7 @@ struct RuntimeTransportEffectBatch: Sendable {
 
 /// Host runtime facade backed by one private protocol executor.
 ///
-/// The executor owns the only mutable ``ProtocolProcessor`` instance. Inbound
+/// The executor owns the only mutable `ProtocolProcessor` instance. Inbound
 /// transport data is copied before it enters the actor, and normalized actions
 /// are copied before they are dispatched to application handlers.
 public final class AxolotyRuntime: Sendable {
@@ -144,11 +144,11 @@ public final class AxolotyRuntime: Sendable {
     }
 
     /// Submits one owned inbound frame to the bounded ingress queue.
-    public func receive(_ frame: RuntimeInboundFrame) async -> RuntimeReceipt {
+    package func receive(_ frame: RuntimeInboundFrame) async -> RuntimeReceipt {
         await executor.receive(frame)
     }
 
-    /// Submits one owned local operation to ``ProtocolProcessor``.
+    /// Submits one owned local operation to `ProtocolProcessor`.
     public func publish(_ operation: RuntimeOperation, nowMS: UInt32? = nil) async -> RuntimeReceipt {
         await executor.publish(operation, nowMS: nowMS ?? monotonicNowMS())
     }

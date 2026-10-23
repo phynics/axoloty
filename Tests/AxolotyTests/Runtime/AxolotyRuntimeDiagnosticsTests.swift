@@ -150,7 +150,7 @@ extension AxolotyRuntimeTests {
         try await runtime.start()
         #expect(await runtime.state() == .running)
         #expect(await transport.lifecycle == ["start", "activate"])
-        let expectedWill = RuntimeTransportLastWill(
+        let expectedWill = try RuntimeTransportLastWill(
             topic: "coaty/3/test/DAD/00000000-0000-0000-0000-000000000000",
             payload: Array("{\"objectIds\":[\"00000000-0000-0000-0000-000000000000\"]}".utf8)
         )
@@ -523,7 +523,8 @@ extension AxolotyRuntimeTests {
 
     @Test("typed diagnostics expose lifecycle, capabilities, and reconnect evidence")
     func typedDiagnosticsExposeLifecycleAndReconnect() async throws {
-        let runtime = AxolotyRuntime(definition: try makeDefinition(), transport: TestTransport())
+        let transport = TestTransport()
+        let runtime = AxolotyRuntime(definition: try makeDefinition(), transport: transport)
         try await runtime.start()
 
         let initial = await runtime.diagnosticsSnapshot()
@@ -532,6 +533,7 @@ extension AxolotyRuntimeTests {
         #expect(initial.lifecycle.to == .running)
         #expect(initial.capabilities.wireProfile == .coaty3JSON)
         #expect(initial.capabilities.protocolCapabilities.isCoatyCore3)
+        #expect(initial.capabilities.transportCapabilities == transport.capabilities)
         #expect(initial.diagnosticCapacity > 0)
 
         let stream = await runtime.diagnostics()

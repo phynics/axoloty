@@ -119,18 +119,22 @@ struct AxolotyRuntimeIoTests {
 }
 
 private actor IoWireRecordingTransport: AxolotyRuntimeTransport {
+    nonisolated var capabilities: RuntimeTransportCapabilities { [] }
     private var sent: [RuntimeOutboundMessage] = []
 
-    func start(receive: @escaping @Sendable (RuntimeInboundFrame) -> Void) async throws {}
+    func start(
+        receive: @escaping @Sendable (RuntimeInboundFrame) -> Void,
+        lastWill: RuntimeTransportLastWill?
+    ) async throws(AxolotyError) { _ = (receive, lastWill) }
     func setFailureHandler(_ handler: @escaping @Sendable (RuntimeTransportFailure) -> Void) async {}
-    func perform(_ effect: RuntimeTransportEffect) async throws {
+    func perform(_ effect: RuntimeTransportEffect) async throws(AxolotyError) {
         switch effect {
         case .publish(let message): sent.append(message)
         default: break
         }
     }
     func stop() async {}
-    func activateProfileInterest(namespace: String) async throws {}
-    func deactivateProfileInterest(namespace: String) async throws {}
+    func activateProfileInterest(namespace: String) async throws(AxolotyError) { _ = namespace }
+    func deactivateProfileInterest(namespace: String) async throws(AxolotyError) { _ = namespace }
     func publications() -> [RuntimeOutboundMessage] { sent }
 }

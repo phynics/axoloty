@@ -80,10 +80,39 @@ public struct RuntimeOutboundMessage: Sendable, Equatable {
     /// The copied payload.
     public let payload: [UInt8]
 
-    /// Creates an outbound message.
-    public init(route: String, payload: [UInt8]) {
+    /// Creates a bounded outbound message.
+    ///
+    /// - Parameters:
+    ///   - route: A nonempty route no longer than `WireBufferConfig.maxTopicLength` UTF-8 bytes.
+    ///   - payload: A payload no longer than `WireBufferConfig.maxPayloadSize` bytes.
+    /// - Throws: ``AxolotyError/invalidArgument(argument:reason:)`` when a
+    ///   value exceeds the wire bounds or the route is empty.
+    public init(route: String, payload: [UInt8]) throws(AxolotyError) {
+        try validateRuntimeTransportMessage(route: route, payload: payload, routeArgument: "route")
         self.route = route
         self.payload = payload
+    }
+}
+
+func validateRuntimeTransportMessage(
+    route: String,
+    payload: [UInt8],
+    routeArgument: String
+) throws(AxolotyError) {
+    guard !route.isEmpty else {
+        throw AxolotyError.invalidArgument(argument: routeArgument, reason: "must not be empty")
+    }
+    guard route.utf8.count <= WireBufferConfig.maxTopicLength else {
+        throw AxolotyError.invalidArgument(
+            argument: routeArgument,
+            reason: "must not exceed \(WireBufferConfig.maxTopicLength) UTF-8 bytes"
+        )
+    }
+    guard payload.count <= WireBufferConfig.maxPayloadSize else {
+        throw AxolotyError.invalidArgument(
+            argument: "payload",
+            reason: "must not exceed \(WireBufferConfig.maxPayloadSize) bytes"
+        )
     }
 }
 

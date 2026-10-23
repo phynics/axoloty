@@ -278,20 +278,25 @@ struct ProfileStaticTraceReplayAdapter: TraceReplayAdapter {
 }
 
 private final class HostTraceTransport: RuntimeTraceCarrier, @unchecked Sendable {
+    var capabilities: RuntimeTransportCapabilities { [] }
     private let lock = NSLock()
     private var receive: (@Sendable (RuntimeInboundFrame) -> Void)?
 
-    func start(receive: @escaping @Sendable (RuntimeInboundFrame) -> Void) async throws {
+    func start(
+        receive: @escaping @Sendable (RuntimeInboundFrame) -> Void,
+        lastWill: RuntimeTransportLastWill?
+    ) async throws(AxolotyError) {
+        _ = lastWill
         lock.withLock { self.receive = receive }
     }
     func setFailureHandler(_ handler: @escaping @Sendable (RuntimeTransportFailure) -> Void) async {}
-    func activateProfileInterest(namespace: String) async throws {}
-    func deactivateProfileInterest(namespace: String) async throws {}
+    func activateProfileInterest(namespace: String) async throws(AxolotyError) { _ = namespace }
+    func deactivateProfileInterest(namespace: String) async throws(AxolotyError) { _ = namespace }
     func stop() async {
         lock.withLock { receive = nil }
     }
 
-    func perform(_ effect: RuntimeTransportEffect) async throws {
+    func perform(_ effect: RuntimeTransportEffect) async throws(AxolotyError) {
         _ = effect
     }
 

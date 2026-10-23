@@ -39,10 +39,16 @@ struct InProcessBrokerBindingTests {
 
         do {
             try await withTimeout("subject MQTTBinding start", timeout: timeout) {
-                try await subject.start { frame in Task { await subjectInbox.append(frame) } }
+                try await subject.start(
+                    receive: { frame in Task { await subjectInbox.append(frame) } },
+                    lastWill: nil
+                )
             }
             try await withTimeout("peer MQTTBinding start", timeout: timeout) {
-                try await peer.start { frame in Task { await peerInbox.append(frame) } }
+                try await peer.start(
+                    receive: { frame in Task { await peerInbox.append(frame) } },
+                    lastWill: nil
+                )
             }
             try await withTimeout("subject profile subscriptions", timeout: timeout) {
                 try await subject.activateProfileInterest(namespace: namespace)
@@ -72,7 +78,7 @@ struct InProcessBrokerBindingTests {
             try await Task.sleep(for: .milliseconds(250))
             #expect(await subjectInbox.count == beforeUnrelated, "unrelated MQTT routes must be filtered")
 
-            let external = OwnedExternalRouteTransition(
+            let external = try OwnedExternalRouteTransition(
                 sourceID: Self.sourceID,
                 actorID: Self.peerID,
                 route: Array(Self.externalRoute.utf8)
@@ -110,11 +116,17 @@ struct InProcessBrokerBindingTests {
             broker = replacement
             try replacement.start()
             try await withTimeout("peer MQTTBinding restart", timeout: timeout) {
-                try await peer.start { frame in Task { await peerInbox.append(frame) } }
+                try await peer.start(
+                    receive: { frame in Task { await peerInbox.append(frame) } },
+                    lastWill: nil
+                )
                 try await peer.activateProfileInterest(namespace: namespace)
             }
             try await withTimeout("subject MQTTBinding restart", timeout: timeout) {
-                try await subject.start { frame in Task { await subjectInbox.append(frame) } }
+                try await subject.start(
+                    receive: { frame in Task { await subjectInbox.append(frame) } },
+                    lastWill: nil
+                )
                 try await subject.activateProfileInterest(namespace: namespace)
             }
             let resumedRoute = "coaty/3/\(namespace)/ADV:Identity/\(Self.peerIDString)"
@@ -156,18 +168,21 @@ struct InProcessBrokerBindingTests {
         }
 
         try await withTimeout("observer MQTTBinding start", timeout: timeout) {
-            try await observer.start { frame in Task { await observerInbox.append(frame) } }
+            try await observer.start(
+                receive: { frame in Task { await observerInbox.append(frame) } },
+                lastWill: nil
+            )
         }
         let established = Set(broker.connections().map(\.id))
         try await withTimeout("MQTTBinding start with a last will", timeout: timeout) {
             try await doomed.start(
                 receive: { _ in },
-                lastWill: RuntimeTransportLastWill(topic: willRoute, payload: willPayload)
+                lastWill: try RuntimeTransportLastWill(topic: willRoute, payload: willPayload)
             )
         }
         let doomedID = try #require(broker.connections().map(\.id).first { !established.contains($0) })
 
-        let transition = OwnedExternalRouteTransition(
+        let transition = try OwnedExternalRouteTransition(
             sourceID: Self.sourceID,
             actorID: Self.peerID,
             route: Array(willRoute.utf8)

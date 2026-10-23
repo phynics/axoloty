@@ -88,7 +88,7 @@ DOC_HOSTING_BASE_PATH ?=
 	wire-tool clean serve-mqtt serve-mcp serve-dev \
 	benchmark-wire benchmark-wire-allocation benchmark-static-io-ownership-allocation benchmark-wire-bounds \
 	check-embedded-core-consumer check-embedded-cutover \
-	check-budget-manifest
+	check-budget-manifest api-baseline
 
 # Quote user-provided values before placing them in a shell assignment. The
 # resulting value is still passed to run.sh as one argv element.
@@ -125,6 +125,7 @@ help:
 		'make ci            Run the consolidated pull-request checks' \
 		'make shell         Open a shell in the Linux container' \
 		'make docs          Generate DocC API documentation into the active build cache' \
+		'make api-baseline  Check the Core 1.0 public-symbol inventory (API_BASELINE_MODE=update to regenerate)' \
 		'make clean         Remove build artifacts' \
 		'' \
 		'BUILD_DIR and SPM_CACHE_DIR can point at different local cache directories' \
@@ -300,6 +301,10 @@ docs: resolve
 	DOC_HOSTING_BASE_PATH="$(DOC_HOSTING_BASE_PATH)" CONTAINER_ENV_VARS=DOC_HOSTING_BASE_PATH \
 		$(call run_container,$(AXOLOTY_CONTAINER_COMMAND_TIMEOUT_SECONDS)) sh .github/scripts/build-docs.sh
 	@echo "docs: mirrored .build/docc -> .build-output/docc (repo-local, survives reboot)"
+
+api-baseline: image
+	CONTAINER_COMMAND_TIMEOUT_SECONDS="$(AXOLOTY_CONTAINER_COMMAND_TIMEOUT_SECONDS)" CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" BUILD_DIR="$(BUILD_DIR)" SPM_CACHE_DIR="$(SPM_CACHE_DIR)" \
+		.devcontainer/run.sh sh Tests/Support/checks/generate-core-api-baseline.sh "$(if $(API_BASELINE_MODE),$(API_BASELINE_MODE),check)"
 
 lint: image
 	CONTAINER_COMMAND_TIMEOUT_SECONDS="$(AXOLOTY_CONTAINER_COMMAND_TIMEOUT_SECONDS)" CONTAINER_RUNTIME="$(CONTAINER_RUNTIME)" IMAGE="$(IMAGE)" .devcontainer/run.sh swiftlint lint --no-cache --config .swiftlint.yml

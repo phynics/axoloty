@@ -26,6 +26,35 @@ public struct RuntimeTransportFailure: Error, Equatable, Sendable {
     }
 }
 
+/// Optional features supported by a transport adapter.
+///
+/// Failure reporting, route classification, and ordered effects are required
+/// by ``AxolotyRuntimeTransport``. This set reports only features that an
+/// adapter may omit. The value must remain unchanged for the lifetime of one
+/// transport instance.
+public struct RuntimeTransportCapabilities: OptionSet, Sendable {
+    /// The adapter can install a broker-owned last-will publication.
+    public static let lastWill = Self(rawValue: 1 << 0)
+    /// The adapter reports recovery after a recoverable transport failure.
+    public static let recoveryNotifications = Self(rawValue: 1 << 1)
+    /// The adapter records receive, publish, session, and subscription counters.
+    public static let activityCounters = Self(rawValue: 1 << 2)
+    /// The adapter manages bounded namespace-wide profile subscriptions.
+    public static let profileInterest = Self(rawValue: 1 << 3)
+    /// The adapter manages exact external-route subscriptions.
+    public static let externalRouteSubscriptions = Self(rawValue: 1 << 4)
+
+    /// The encoded optional-feature set.
+    public let rawValue: UInt8
+
+    /// Creates a transport capability set from its bit representation.
+    ///
+    /// - Parameter rawValue: Bits for the optional transport features.
+    public init(rawValue: UInt8) {
+        self.rawValue = rawValue
+    }
+}
+
 /// An owned MQTT-compatible last-will publication supplied at transport start.
 ///
 /// The runtime builds this message from its lifecycle identity. A transport
@@ -37,12 +66,15 @@ public struct RuntimeTransportLastWill: Sendable, Equatable {
     /// The copied payload published by the broker.
     public let payload: [UInt8]
 
-    /// Creates a transport last-will publication.
+    /// Creates a bounded transport last-will publication.
     ///
     /// - Parameters:
-    ///   - topic: Exact destination route.
-    ///   - payload: Owned payload bytes.
-    public init(topic: String, payload: [UInt8]) {
+    ///   - topic: A nonempty route within the wire route limit.
+    ///   - payload: Owned payload bytes within the wire payload limit.
+    /// - Throws: ``AxolotyError/invalidArgument(argument:reason:)`` when a
+    ///   value exceeds the wire bounds or the topic is empty.
+    public init(topic: String, payload: [UInt8]) throws(AxolotyError) {
+        try validateRuntimeTransportMessage(route: topic, payload: payload, routeArgument: "topic")
         self.topic = topic
         self.payload = payload
     }
@@ -50,95 +82,111 @@ public struct RuntimeTransportLastWill: Sendable, Equatable {
 
 /// A transport boundary for the host runtime.
 ///
-/// Implementations own networking and invoke `receive` only with copied data.
-/// The runtime never exposes borrowed wire views through this protocol.
+/// Implementations own networking and invoke `receive` only with copied,
+/// bounded frame data. The runtime never exposes borrowed wire views through
+/// this protocol. Runtime effects arrive serially and are bounded by the
+/// runtime's reported payload capacity and `WireBufferConfig.maxTopicLength`.
 public protocol AxolotyRuntimeTransport: AnyObject, Sendable {
-    /// Starts the transport and installs the owned-frame receive callback.
-    func start(receive: @escaping @Sendable (RuntimeInboundFrame) -> Void) async throws
-    /// Starts the transport and optionally installs a lifecycle last will.
-    func start(
-        receive: @escaping @Sendable (RuntimeInboundFrame) -> Void,
-        lastWill: RuntimeTransportLastWill?
-    ) async throws
-    /// Installs a callback for failures after startup has completed.
-    ///
-    /// The callback is invoked with an owned ``RuntimeTransportFailure`` and
-    /// may be called from a transport event-loop thread.
-    /// Implementations must wrap foreign failures before invoking it and must not
-    /// retain borrowed protocol data in this callback.
-    ///
-    /// - Parameter handler: Callback invoked with each post-start failure.
-    func setFailureHandler(_ handler: @escaping @Sendable (RuntimeTransportFailure) -> Void) async
-    /// Installs a callback when a transport that reported a recoverable failure is ready again.
-    ///
-    /// The runtime uses this signal to resume without stopping or restarting a
-    /// transport that recovered its existing session.
-    ///
-    /// - Parameter handler: Callback invoked after the failure episode recovers.
-    func setRecoveryHandler(_ handler: @escaping @Sendable () -> Void) async
-    /// Installs the runtime-owned bounded sink for transport activity counters.
-    ///
-    /// Adapters may update the sink synchronously from their serialized or
-    /// synchronized paths. Transports that do not report counters may ignore it.
-    ///
-    /// - Parameter diagnostics: Shared fixed-size counter sink.
-    func setDiagnostics(_ diagnostics: RuntimeTransportDiagnostics) async
-    /// Applies one owned transport effect in protocol action order.
-    ///
-    /// - Parameter effect: A finished publication, or an exact external-route
-    ///   lifecycle effect. Routes arrive resolved; the transport supplies no
-    ///   profile knowledge to address them.
-    /// - Throws: A transport error when the effect cannot be applied.
-    func perform(_ effect: RuntimeTransportEffect) async throws
-    /// Stops the transport and releases its callbacks.
-    func stop() async
-
-    /// Activates interest in the profile namespace before identity is advertised.
-    ///
-    /// - Parameter namespace: The runtime's immutable Coaty namespace.
-    /// - Throws: A transport error when the interest cannot be declared.
-    func activateProfileInterest(namespace: String) async throws
-    /// Deactivates interest in the profile namespace during graceful shutdown.
-    ///
-    /// - Parameter namespace: The namespace previously activated.
-    /// - Throws: A transport error when the interest cannot be removed.
-    func deactivateProfileInterest(namespace: String) async throws
-    /// Classifies an association route using binding-owned knowledge.
-    ///
-    /// The borrowed route is valid only for this synchronous call. The
-    /// transport must not retain it or impose a profile-wide route grammar.
-    func classifyRoute(_ route: ByteSlice) -> ProtocolRouteClassification
+    /// The immutable optional features supported by this adapter.
+    var capabilities: RuntimeTransportCapabilities { get }
     /// The single wire profile this binding carries.
     ///
     /// Each binding selects exactly one profile at composition time; the
-    /// runtime never negotiates or switches profiles per message. The
-    /// profile determines the route prefix the runtime synthesizes and the
-    /// ``WireCodec`` the shared processor reads and writes.
+    /// runtime never negotiates or switches profiles per message.
     var wireProfile: WireProfile { get }
-}
 
-public extension AxolotyRuntimeTransport {
-    /// Starts the transport with an optional lifecycle last will.
+    /// Starts the transport and installs the owned-frame receive callback.
     ///
-    /// Existing adapters that do not support a broker last will can continue
-    /// implementing ``start(receive:)``; the default implementation ignores
-    /// this message and preserves that behavior.
+    /// Callbacks may arrive on transport-owned threads. The adapter must copy
+    /// and bound every route and payload before invoking `receive`. If
+    /// ``RuntimeTransportCapabilities/lastWill`` is absent, the adapter must
+    /// ignore `lastWill`.
     ///
     /// - Parameters:
     ///   - receive: Callback for copied inbound frames.
     ///   - lastWill: Optional publication for an unclean disconnect.
-    /// - Throws: The transport's startup error.
+    /// - Throws: ``AxolotyError`` when startup fails.
     func start(
         receive: @escaping @Sendable (RuntimeInboundFrame) -> Void,
         lastWill: RuntimeTransportLastWill?
-    ) async throws {
-        try await start(receive: receive)
-    }
+    ) async throws(AxolotyError)
 
-    /// Does nothing for transports that do not report asynchronous failures.
+    /// Installs a callback for failures after startup has completed.
     ///
-    /// - Parameter handler: Failure callback supplied by the runtime.
-    func setFailureHandler(_ handler: @escaping @Sendable (RuntimeTransportFailure) -> Void) async { _ = handler }
+    /// The callback is invoked with an owned ``RuntimeTransportFailure`` and
+    /// may be called from a transport event-loop thread. Every adapter must
+    /// report post-start failures through this callback. Wrap foreign errors
+    /// before invoking it and do not retain borrowed protocol data.
+    ///
+    /// - Parameter handler: Callback invoked with each post-start failure.
+    func setFailureHandler(_ handler: @escaping @Sendable (RuntimeTransportFailure) -> Void) async
+
+    /// Installs a callback when a transport that reported a recoverable failure is ready again.
+    ///
+    /// Implementations that advertise
+    /// ``RuntimeTransportCapabilities/recoveryNotifications`` must invoke this
+    /// callback after recovery. Other adapters may ignore it.
+    ///
+    /// - Parameter handler: Callback invoked after the failure episode recovers.
+    func setRecoveryHandler(_ handler: @escaping @Sendable () -> Void) async
+
+    /// Installs the runtime-owned bounded sink for transport activity counters.
+    ///
+    /// Adapters that advertise ``RuntimeTransportCapabilities/activityCounters``
+    /// update the sink from their serialized or synchronized paths. Other
+    /// adapters may ignore it.
+    ///
+    /// - Parameter diagnostics: Shared fixed-size counter sink.
+    func setDiagnostics(_ diagnostics: RuntimeTransportDiagnostics) async
+
+    /// Applies one owned transport effect in protocol action order.
+    ///
+    /// - Parameter effect: A finished publication, or an exact external-route
+    ///   lifecycle effect. Routes arrive resolved; the transport supplies no
+    ///   profile knowledge to address them. Adapters that do not advertise
+    ///   ``RuntimeTransportCapabilities/externalRouteSubscriptions`` must reject
+    ///   external-route effects with an unsupported-capability error. The
+    ///   runtime awaits each effect before offering the next one; adapters must
+    ///   preserve that order when applying effects to their carrier.
+    /// - Throws: ``AxolotyError`` when the effect cannot be applied.
+    func perform(_ effect: RuntimeTransportEffect) async throws(AxolotyError)
+
+    /// Stops the transport and releases its callbacks.
+    ///
+    /// This operation is idempotent. After it returns, the adapter must not
+    /// invoke a callback installed by the runtime.
+    func stop() async
+
+    /// Activates interest in the profile namespace before identity is advertised.
+    ///
+    /// Adapters that do not advertise
+    /// ``RuntimeTransportCapabilities/profileInterest`` may ignore this call.
+    ///
+    /// - Parameter namespace: The runtime's immutable Coaty namespace.
+    /// - Throws: ``AxolotyError`` when the interest cannot be declared.
+    func activateProfileInterest(namespace: String) async throws(AxolotyError)
+
+    /// Deactivates interest in the profile namespace during graceful shutdown.
+    ///
+    /// Adapters that do not advertise
+    /// ``RuntimeTransportCapabilities/profileInterest`` may ignore this call.
+    ///
+    /// - Parameter namespace: The namespace previously activated.
+    /// - Throws: ``AxolotyError`` when the interest cannot be removed.
+    func deactivateProfileInterest(namespace: String) async throws(AxolotyError)
+
+    /// Classifies an association route using binding-owned knowledge.
+    ///
+    /// The borrowed route is valid only for this synchronous call. The
+    /// transport must not retain it or impose a profile-wide route grammar.
+    /// The default classifies every nonempty route as Coaty traffic. Adapters
+    /// that advertise ``RuntimeTransportCapabilities/externalRouteSubscriptions``
+    /// must classify their active external routes as
+    /// `ProtocolRouteClassification.external`.
+    func classifyRoute(_ route: ByteSlice) -> ProtocolRouteClassification
+}
+
+public extension AxolotyRuntimeTransport {
     /// Does nothing for transports that do not report asynchronous recovery.
     ///
     /// - Parameter handler: Recovery callback supplied by the runtime.
@@ -147,14 +195,18 @@ public extension AxolotyRuntimeTransport {
     ///
     /// - Parameter diagnostics: Runtime-owned counter sink.
     func setDiagnostics(_ diagnostics: RuntimeTransportDiagnostics) async { _ = diagnostics }
-    /// Does nothing for transports without separate profile interest.
+    /// Does nothing for transports without separately managed profile interest.
     ///
     /// - Parameter namespace: The runtime's Coaty namespace, unused.
-    func activateProfileInterest(namespace: String) async throws {}
-    /// Does nothing for transports without separate profile interest.
+    func activateProfileInterest(namespace: String) async throws(AxolotyError) {}
+    /// Does nothing for transports without separately managed profile interest.
     ///
     /// - Parameter namespace: The runtime's Coaty namespace, unused.
-    func deactivateProfileInterest(namespace: String) async throws {}
+    func deactivateProfileInterest(namespace: String) async throws(AxolotyError) {}
+
+    /// Uses the sealed `coaty/3` JSON profile for a binding that does not
+    /// override its wire selection.
+    var wireProfile: WireProfile { .coaty3JSON }
     /// Classifies every nonempty route as Coaty traffic.
     ///
     /// - Parameter route: A borrowed association route.
@@ -163,10 +215,4 @@ public extension AxolotyRuntimeTransport {
     func classifyRoute(_ route: ByteSlice) -> ProtocolRouteClassification {
         route.length == 0 ? .unrelated : .coaty
     }
-    /// Defaults to the sealed `coaty/3` JSON profile.
-    ///
-    /// MQTT and every adapter written before profiles existed keep the
-    /// original wire contract. Only a binding that declares another profile
-    /// (for example the Zenoh binding's `axoloty/1` CBOR) overrides this.
-    var wireProfile: WireProfile { .coaty3JSON }
 }

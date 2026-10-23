@@ -437,9 +437,6 @@ public struct WireReader: ~Sendable {
     }
 
     #if canImport(_JSONCore)
-    /// Returns whether the complete input is one JSON value.
-    public static func isValidJSON(_ bytes: ByteSlice) -> Bool { isValidJSONValue(bytes) }
-
     /// Returns whether the complete input is one JSON value, including scalars.
     public static func isValidJSONValue(_ bytes: ByteSlice) -> Bool {
         bytes.withBytes { pointer, count in

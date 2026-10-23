@@ -1,7 +1,21 @@
-# Axoloty 0.9.0 API documentation
+# Axoloty API
 
-The current released API is Axoloty 0.9.0. The body below describes the active
-0.8 development API and does not change the released version.
+This document describes the current host and portable APIs. The exact public
+declarations selected for Core 1.0 are recorded in the
+[Core API audit](./api/core-1.0-surface.md) and its generated
+[symbol baseline](./api/core-1.0-public-symbols.json). `VERSION` remains the
+release authority; this audit does not change the current 0.9.0 version.
+The current released API is Axoloty 0.9.0.
+
+## Core 1.0 surface
+
+The stability contract covers `Axoloty`, `AxolotyWire`, `AxolotyProtocol`,
+`AxolotyObjectModel`, `AxolotyStaticRuntime`, and `AxolotyMQTT`. The inventory
+lists each reachable public declaration and classifies every included
+declaration as intentional stable API. Implementation-only Swift SPI imports
+are not part of the normal-import baseline. Visibility reductions and obsolete
+pre-1.0 declarations are recorded in the audit and in the
+[pre-1.0 migration note](./migration/pre-1.0-to-1.0.md).
 
 ## Package boundaries
 
@@ -55,6 +69,45 @@ The public lifecycle states are `initialized`, `starting`, `running`,
 `reconnecting`, `stopping`, `stopped`, and `failed`. `run()` owns a normal
 long-lived lifecycle loop; `start()` and `stop()` are useful for callers that
 own their surrounding task.
+
+## Host transport interface
+
+`AxolotyRuntimeTransport` is the adapter interface between the host runtime and
+its carrier. Implementations report one immutable `wireProfile` and
+`RuntimeTransportCapabilities`, install receive and failure callbacks in
+`start(receive:lastWill:)`, apply effects with `perform(_:)`, and release
+callbacks when idempotent `stop()` returns. No installed callback may run after
+`stop()` returns. The pre-1.0 `start(receive:)` overload is removed.
+
+The adapter must report every post-start failure through the required failure
+handler. A recoverable failure may use the optional recovery callback when the
+adapter reports `.recoveryNotifications`. Synchronous startup, effect, and
+profile-interest failures use `AxolotyError`.
+
+The runtime awaits each effect before it offers the next. Adapters must preserve
+that order when applying effects to their carrier. Publication routes are
+already resolved. `RuntimeOutboundMessage` and
+`RuntimeTransportLastWill` reject empty routes, routes longer than
+`WireBufferConfig.maxTopicLength`, and payloads longer than
+`WireBufferConfig.maxPayloadSize`. `OwnedExternalRouteTransition` rejects
+routes outside the protocol's fixed route capacity. Adapters that do not
+report `.externalRouteSubscriptions` reject external-route effects.
+
+| Capability | Meaning |
+|---|---|
+| `.lastWill` | Installs the broker-owned last will passed to `start`. |
+| `.recoveryNotifications` | Calls the recovery callback after a reported recoverable failure. |
+| `.activityCounters` | Updates the runtime-owned transport counter sink. |
+| `.profileInterest` | Manages bounded namespace profile subscriptions. |
+| `.externalRouteSubscriptions` | Manages exact external-route subscriptions. |
+
+The default route classifier treats every nonempty route as Coaty traffic. An
+adapter that advertises `.externalRouteSubscriptions` classifies active exact
+external routes as `.external`. The runtime includes the capability set in
+`RuntimeCapabilityInformation`, alongside
+protocol capabilities, the selected wire profile, and finite capacities.
+Adapters must copy and bound inbound route and payload bytes before invoking
+the receive callback. No borrowed wire view crosses the transport seam.
 
 ## Operations and events
 

@@ -329,7 +329,7 @@ public struct BorrowedExternalRouteTransition {
     public let route: BorrowedProtocolRouteSnapshot
 
     /// Creates a borrowed external-route transition.
-    public init(sourceID: UUID16, actorID: UUID16, route: ByteSlice) {
+    init(sourceID: UUID16, actorID: UUID16, route: ByteSlice) {
         self.sourceID = sourceID
         self.actorID = actorID
         guard let route = BorrowedProtocolRouteSnapshot(slice: route) else {
@@ -339,7 +339,7 @@ public struct BorrowedExternalRouteTransition {
     }
 
     /// Creates a lifecycle transition from a processor-owned route snapshot.
-    public init(sourceID: UUID16, actorID: UUID16, route: BorrowedProtocolRouteSnapshot) {
+    init(sourceID: UUID16, actorID: UUID16, route: BorrowedProtocolRouteSnapshot) {
         self.sourceID = sourceID
         self.actorID = actorID
         self.route = route
@@ -347,7 +347,11 @@ public struct BorrowedExternalRouteTransition {
 
     /// Copies the transition before crossing an ownership boundary.
     public borrowing func owned() -> OwnedExternalRouteTransition {
-        OwnedExternalRouteTransition(sourceID: sourceID, actorID: actorID, route: route.owned())
+        OwnedExternalRouteTransition(
+            validatedSourceID: sourceID,
+            actorID: actorID,
+            route: route.owned()
+        )
     }
 }
 
@@ -360,8 +364,25 @@ public struct OwnedExternalRouteTransition: Sendable, Equatable {
     /// The copied exact external route.
     public let route: [UInt8]
 
-    /// Creates an owned external-route transition.
-    public init(sourceID: UUID16, actorID: UUID16, route: [UInt8]) {
+    /// Creates an owned external-route transition with a bounded route.
+    ///
+    /// - Parameters:
+    ///   - sourceID: The source endpoint identity.
+    ///   - actorID: The actor endpoint identity.
+    ///   - route: A nonempty route within ``ProtocolBufferConfig/maxRouteBytes``.
+    /// - Throws: ``ProtocolError`` when the route is empty or exceeds the
+    ///   processor's fixed route capacity.
+    public init(sourceID: UUID16, actorID: UUID16, route: [UInt8]) throws(ProtocolError) {
+        guard !route.isEmpty else {
+            throw ProtocolError(.malformedFrame)
+        }
+        guard route.count <= ProtocolBufferConfig.maxRouteBytes else {
+            throw ProtocolError(.capacityExceeded, detail: UInt16(route.count))
+        }
+        self.init(validatedSourceID: sourceID, actorID: actorID, route: route)
+    }
+
+    init(validatedSourceID sourceID: UUID16, actorID: UUID16, route: [UInt8]) {
         self.sourceID = sourceID
         self.actorID = actorID
         self.route = route

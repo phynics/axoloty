@@ -11,6 +11,7 @@ import AxolotyWire
 /// asked to send (simulating a connection drop mid-send) and accepts every
 /// publish after that.
 actor FailOnceOnPublishTransport: AxolotyRuntimeTransport {
+    nonisolated var capabilities: RuntimeTransportCapabilities { [] }
     private var receive: (@Sendable (RuntimeInboundFrame) -> Void)?
     private var failure: (@Sendable (RuntimeTransportFailure) -> Void)?
     private(set) var sent: [RuntimeOutboundMessage] = []
@@ -20,7 +21,11 @@ actor FailOnceOnPublishTransport: AxolotyRuntimeTransport {
         self.shouldFailNextPublish = failFirstPublish
     }
 
-    func start(receive: @escaping @Sendable (RuntimeInboundFrame) -> Void) async throws {
+    func start(
+        receive: @escaping @Sendable (RuntimeInboundFrame) -> Void,
+        lastWill: RuntimeTransportLastWill?
+    ) async throws(AxolotyError) {
+        _ = lastWill
         self.receive = receive
     }
 
@@ -28,18 +33,18 @@ actor FailOnceOnPublishTransport: AxolotyRuntimeTransport {
         failure = handler
     }
 
-    func perform(_ effect: RuntimeTransportEffect) async throws {
+    func perform(_ effect: RuntimeTransportEffect) async throws(AxolotyError) {
         guard case .publish(let publication) = effect else { return }
         if shouldFailNextPublish {
             shouldFailNextPublish = false
-            throw TestTransportFailure()
+            throw AxolotyError.network(error: TestTransportFailure(), reason: "test publication failed")
         }
         sent.append(publication)
     }
 
     func stop() async { receive = nil }
-    func activateProfileInterest(namespace: String) async throws {}
-    func deactivateProfileInterest(namespace: String) async throws {}
+    func activateProfileInterest(namespace: String) async throws(AxolotyError) { _ = namespace }
+    func deactivateProfileInterest(namespace: String) async throws(AxolotyError) { _ = namespace }
 
     func sentCount() -> Int { sent.count }
     func sentPayloads() -> [[UInt8]] { sent.map(\.payload) }

@@ -18,6 +18,18 @@ offline tests). A timed-out group receives TERM, then KILL, and is boundedly
 reaped; labeled runtime objects are removed only when their run and scenario
 labels match.
 
+Hosted Ubuntu runners can attach their host `mosquitto` AppArmor profile to
+Mosquitto inside a rootless container. The live-wire job prepares a local
+profile addition that permits only TERM and KILL reception from the named
+`crun` peer, then reloads only that profile. All other confinement remains
+enforced. This addresses the captured `profile="mosquitto"`, `peer="crun"`
+signal denials in [run 39969357799](https://github.com/phynics/axoloty/actions/runs/39969357799).
+A bounded, pinned-image broker preflight records UIDs and security labels and
+must prove actual shutdown before subject compilation starts. It fails the
+job if signaling is still denied; it does not substitute for the live matrix.
+Hosts without active AppArmor or a host Mosquitto profile receive no policy
+change. This setup belongs only to the ephemeral CI runner.
+
 Nine of the eleven catalog scenarios are executable, all verified end-to-end
 (not merely syntax-checked). All runners are now containerized — broker,
 capture probe, CoatyJS responder, and Swift test subject each run on an
@@ -86,7 +98,9 @@ run by `run-lifecycle-network.sh` (via the same
   reporting `sessionPresent=false`.
 - `broker-restart`: no proxy — the Mosquitto process itself is stopped and
   restarted, and the subject must reconnect and decode the post-restart
-  CoatyJS probe. This scenario initially failed and exposed a real defect
+  CoatyJS probe. The runner fails immediately if it cannot stop either the
+  capture probe or broker, before it waits for the subject's offline state.
+  This scenario initially failed and exposed a real defect
   (fixed alongside this harness): `MQTTNIOClient`'s failed connect attempts
   never rescheduled auto-reconnect, because only established-then-closed
   connections fire mqtt-nio's close listener, so one refused attempt against
