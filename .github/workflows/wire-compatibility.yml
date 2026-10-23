@@ -208,6 +208,23 @@ jobs:
         with:
           runtime: podman
 
+      - name: Probe broker shutdown and security profiles
+        if: steps.classify.outputs.protocol == '1' && steps.classify.outputs.exempt == '0'
+        shell: bash
+        run: |
+          mkdir -p "$WIRE_CI_EVIDENCE_ROOT"
+          status=0
+          CONTAINER_RUNTIME=podman Tests/Support/WireCompatibility/Lifecycle/Live/probe-broker-signals.sh \
+            >"$WIRE_CI_EVIDENCE_ROOT/broker-signal-probe.log" 2>&1 || status=$?
+          cat "$WIRE_CI_EVIDENCE_ROOT/broker-signal-probe.log"
+          if [ "$status" -ne 0 ]; then
+            # Read the runner's kernel denials; do not alter its security policy.
+            sudo -n journalctl -k --since '-5 minutes' --no-pager \
+              >"$WIRE_CI_EVIDENCE_ROOT/broker-signal-kernel.log" 2>&1 || true
+            grep -E 'apparmor=|DENIED|audit' "$WIRE_CI_EVIDENCE_ROOT/broker-signal-kernel.log" | tail -40 || true
+          fi
+          exit "$status"
+
       - name: Restore SwiftPM dependency cache
         if: steps.classify.outputs.protocol == '1' && steps.classify.outputs.exempt == '0'
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
