@@ -86,7 +86,9 @@ run by `run-lifecycle-network.sh` (via the same
   reporting `sessionPresent=false`.
 - `broker-restart`: no proxy — the Mosquitto process itself is stopped and
   restarted, and the subject must reconnect and decode the post-restart
-  CoatyJS probe. This scenario initially failed and exposed a real defect
+  CoatyJS probe. The runner fails immediately if it cannot stop either the
+  capture probe or broker, before it waits for the subject's offline state.
+  This scenario initially failed and exposed a real defect
   (fixed alongside this harness): `MQTTNIOClient`'s failed connect attempts
   never rescheduled auto-reconnect, because only established-then-closed
   connections fire mqtt-nio's close listener, so one refused attempt against

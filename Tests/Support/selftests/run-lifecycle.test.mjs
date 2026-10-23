@@ -306,6 +306,87 @@ exit 17
   }
 });
 
+test("broker restart stops when the container runtime cannot stop the broker", () => {
+  const root = path.resolve(".");
+  const runner = path.join(
+    root,
+    "Tests/Support/WireCompatibility/Lifecycle/Live/run-lifecycle-network.sh",
+  );
+  const testingRoot = path.join(root, ".testing");
+  fs.mkdirSync(testingRoot, { recursive: true });
+  const temporary = fs.mkdtempSync(path.join(testingRoot, "wire-stop-failure-"));
+  const runtime = path.join(temporary, "fake-runtime");
+  const runtimeLog = path.join(temporary, "runtime.log");
+  const output = path.join(temporary, "artifacts");
+  const relativeOutput = path.relative(root, output);
+
+  try {
+    fs.mkdirSync(output, { recursive: true });
+    fs.writeFileSync(runtime, `#!/usr/bin/env bash
+printf '%s\\n' "$*" >> "\${FAKE_RUNTIME_LOG}"
+case "$1" in
+  run)
+    for argument in "$@"; do
+      case "$argument" in
+        /artifacts/*.capture-ready)
+          touch "\${FAKE_RUNTIME_OUTPUT}/\${argument##*/}"
+          ;;
+      esac
+    done
+    ;;
+  exec)
+    ;;
+  logs)
+    printf '%s\\n' '{"state":"ready"}'
+    ;;
+  rm)
+    if [ "\${3:-}" = "axoloty-lifecycle-broker-broker-restart-broker-stop-failure-self-test" ]; then
+      echo "injected broker stop failure" >&2
+      exit 42
+    fi
+    ;;
+esac
+exit 0
+`);
+    fs.chmodSync(runtime, 0o755);
+
+    const result = spawnSync("bash", [runner, "broker-restart"], {
+      cwd: root,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        CONTAINER_RUNTIME: runtime,
+        FAKE_RUNTIME_LOG: runtimeLog,
+        FAKE_RUNTIME_OUTPUT: output,
+        WIRE_OUTPUT_DIR: relativeOutput,
+        WIRE_RUN_ID: "broker-stop-failure-self-test",
+        WIRE_LIFECYCLE_DEADLINE_SECONDS: "1",
+      },
+    });
+
+    assert.equal(result.error, undefined, result.error?.stack);
+    assert.equal(result.status, 42, `${result.stdout ?? ""}\\n${result.stderr ?? ""}`);
+    assert.match(result.stderr ?? "", /injected broker stop failure/);
+    assert.doesNotMatch(result.stderr ?? "", /Timed out waiting for subject offline transition/);
+
+    const runtimeCalls = fs.readFileSync(runtimeLog, "utf8");
+    assert.match(runtimeCalls, /rm -f axoloty-lifecycle-probe-broker-restart-broker-stop-failure-self-test/);
+    assert.match(runtimeCalls, /rm -f axoloty-lifecycle-broker-broker-restart-broker-stop-failure-self-test/);
+    assert.equal(
+      (runtimeCalls.match(/run -d --name axoloty-lifecycle-broker-broker-restart-broker-stop-failure-self-test/g) ?? []).length,
+      1,
+      "runner must not restart a broker that failed to stop",
+    );
+  } finally {
+    fs.rmSync(temporary, { recursive: true, force: true });
+    try {
+      fs.rmdirSync(testingRoot);
+    } catch {
+      // Keep a pre-existing test-output directory intact.
+    }
+  }
+});
+
 test("network lifecycle containers are unique per scenario in a shared run", () => {
   const runner = fs.readFileSync(
     "Tests/Support/WireCompatibility/Lifecycle/Live/run-lifecycle-network.sh",

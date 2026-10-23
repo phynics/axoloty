@@ -141,8 +141,10 @@ proxy_control() {
     runtime run --rm --network "$NETWORK" "${RUNTIME_LABELS[@]}" -v "$ROOT/Tests/Support/WireCompatibility/tool:/tool:ro,Z" --entrypoint node "$JS_IMAGE" "$TOOL" proxy-control --host "$PROXY_HOST" --port 18884 --command "$1"
 }
 if [ "$SCENARIO" = "broker-restart" ]; then
-    runtime rm -f "$PROBE" >/dev/null || true
-    runtime rm -f "$BROKER" >/dev/null || true
+    # These stops create the network failure under test. Continuing after a
+    # failed stop would make the later reconnect wait meaningless.
+    runtime rm -f "$PROBE" >/dev/null
+    runtime rm -f "$BROKER" >/dev/null
     wait_for "subject offline transition" "subject_reported offline"
     start_broker
     wait_for "Mosquitto restart" broker_ready
