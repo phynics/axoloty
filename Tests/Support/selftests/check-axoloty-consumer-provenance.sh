@@ -124,4 +124,20 @@ if axoloty_check_core_pin "$resolved" https://github.com/phynics/axoloty.git 111
     exit 1
 fi
 
+
+wire_log="$work/wire-build.log"
+printf '[51 / 58] AxolotyWire\n[63 / 63] WireConsumer-product\n' >"$wire_log"
+axoloty_check_wire_build_isolation "$wire_log"
+for host_line in '[42 / 58] NIOCore' '[11/20] CNIOBoringSSL' '[7/20] _NIOBase64-product' '[4/5] MQTTNIO-product' '[1/2] Compiling Logging Logger.swift' 'Compiling ErrorKit Error.swift'; do
+    printf '%s\n' "$host_line" >"$wire_log"
+    if axoloty_check_wire_build_isolation "$wire_log" >/dev/null 2>&1; then
+        echo "expected host-module rejection: $host_line" >&2
+        exit 1
+    fi
+done
+if axoloty_check_wire_build_isolation "$work/missing-log" >/dev/null 2>&1; then
+    echo "expected missing Wire build-log rejection" >&2
+    exit 1
+fi
+
 echo "external consumer provenance checks reject noncanonical URLs, paths, and mismatched Core pins"

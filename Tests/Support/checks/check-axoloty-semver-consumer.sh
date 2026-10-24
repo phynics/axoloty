@@ -274,9 +274,9 @@ for configuration in debug release; do
             fail "$configuration build failed for $target"
         fi
     done
-    if grep -Eq 'Compiling (MQTTNIO|NIO|NIOCore|NIOPosix|NIOSSL|Logging|ErrorKit) ' "$evidence/build-$configuration-WireConsumer.log"; then
+    if ! axoloty_check_wire_build_isolation "$evidence/build-$configuration-WireConsumer.log"; then
         cat "$evidence/build-$configuration-WireConsumer.log" >&2
-        fail "Wire-only target built host runtime targets"
+        exit 1
     fi
     for executable in WireConsumer PortableConsumer MQTTConsumer TransportSPIConsumer; do
         log="$evidence/run-$configuration-$executable.log"

@@ -28,3 +28,18 @@ if len(matches) != 1 or matches[0].get("state", {}).get("revision") != sys.argv[
     raise SystemExit("resolved Core pin does not match the requested URL and revision")
 PY
 }
+
+axoloty_check_wire_build_isolation() {
+    wire_build_log=$1
+    [ -r "$wire_build_log" ] || {
+        echo "error: Wire consumer build log is unavailable" >&2
+        return 1
+    }
+    # SwiftPM's legacy renderer prints "Compiling Module"; Swift Build's
+    # renderer prints "[completed / total] Module" (including Unicode spaces).
+    host_module='(MQTTNIO|_?NIO[A-Za-z0-9_]*|CNIO[A-Za-z0-9_]*|Logging|ErrorKit)'
+    if grep -Eq "Compiling[[:space:]]+$host_module([[:space:]]|$)|^\[[^]]+\][[:space:]]+$host_module([[:space:]-]|$)" "$wire_build_log"; then
+        echo "error: Wire-only consumer built host runtime targets" >&2
+        return 1
+    fi
+}
