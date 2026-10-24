@@ -1,0 +1,1399 @@
+Name: Axoloty
+Manifest display name: Axoloty
+Path: /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate
+Tools version: 6.4
+Dependencies:
+    Type:
+        sourceControl
+    Identity:
+        mqtt-nio
+    Url: https://github.com/swift-server-community/mqtt-nio.git
+    Requirement:
+        Range:
+            Lower bound:
+                2.13.0
+            Upper bound:
+                3.0.0
+
+    Type:
+        sourceControl
+    Identity:
+        swift-nio
+    Url: https://github.com/apple/swift-nio.git
+    Requirement:
+        Range:
+            Lower bound:
+                2.101.2
+            Upper bound:
+                3.0.0
+
+    Type:
+        sourceControl
+    Identity:
+        swift-nio-ssl
+    Url: https://github.com/apple/swift-nio-ssl.git
+    Requirement:
+        Range:
+            Lower bound:
+                2.37.1
+            Upper bound:
+                3.0.0
+
+    Type:
+        sourceControl
+    Identity:
+        swift-nio-transport-services
+    Url: https://github.com/apple/swift-nio-transport-services.git
+    Requirement:
+        Range:
+            Lower bound:
+                1.28.0
+            Upper bound:
+                2.0.0
+
+    Type:
+        sourceControl
+    Identity:
+        errorkit
+    Url: https://github.com/FlineDev/ErrorKit.git
+    Requirement:
+        Exact:
+            1.2.1
+
+    Type:
+        sourceControl
+    Identity:
+        swift-json
+    Url: https://github.com/phynics/swift-json.git
+    Requirement:
+        Exact:
+            2.5.3
+
+    Type:
+        sourceControl
+    Identity:
+        swift-docc-plugin
+    Url: https://github.com/swiftlang/swift-docc-plugin.git
+    Requirement:
+        Range:
+            Lower bound:
+                1.5.0
+            Upper bound:
+                2.0.0
+
+    Type:
+        sourceControl
+    Identity:
+        swift-syntax
+    Url: https://github.com/swiftlang/swift-syntax.git
+    Requirement:
+        Exact:
+            604.0.0
+
+Default localization: en
+Platforms:
+    Name: macos
+    Version: 26.0
+
+    Name: ios
+    Version: 26.0
+
+Products:
+    Name: AxolotyZenoh
+    Type:
+        Library:
+            automatic
+    Targets:
+        AxolotyZenoh
+
+    Name: Axoloty
+    Type:
+        Library:
+            automatic
+    Targets:
+        Axoloty
+
+    Name: AxolotyWire
+    Type:
+        Library:
+            automatic
+    Targets:
+        AxolotyWire
+
+    Name: AxolotyProtocol
+    Type:
+        Library:
+            automatic
+    Targets:
+        AxolotyProtocol
+
+    Name: AxolotyObjectModel
+    Type:
+        Library:
+            automatic
+    Targets:
+        AxolotyObjectModel
+
+    Name: AxolotyCoatyModels
+    Type:
+        Library:
+            automatic
+    Targets:
+        AxolotyCoatyModels
+
+    Name: AxolotyMQTT
+    Type:
+        Library:
+            automatic
+    Targets:
+        AxolotyMQTT
+
+    Name: AxolotyIoRouting
+    Type:
+        Library:
+            automatic
+    Targets:
+        AxolotyIoRouting
+
+    Name: AxolotySensorThingsModel
+    Type:
+        Library:
+            automatic
+    Targets:
+        AxolotySensorThingsModel
+
+    Name: AxolotySensorThings
+    Type:
+        Library:
+            automatic
+    Targets:
+        AxolotySensorThings
+
+    Name: AxolotyStaticRuntime
+    Type:
+        Library:
+            automatic
+    Targets:
+        AxolotyStaticRuntime
+
+    Name: AxolotyTransportContractTestSupport
+    Type:
+        Library:
+            automatic
+    Targets:
+        AxolotyTransportContractTestSupport
+
+    Name: AxolotyProtocolTraceTestSupport
+    Type:
+        Library:
+            automatic
+    Targets:
+        AxolotyProtocolTraceTestSupport
+
+    Name: AxolotyTestBroker
+    Type:
+        Library:
+            automatic
+    Targets:
+        AxolotyTestBroker
+
+    Name: WireBenchmark
+    Type:
+        Executable: nil
+    Targets:
+        WireBenchmark
+
+    Name: WireAllocation
+    Type:
+        Executable: nil
+    Targets:
+        WireAllocation
+
+    Name: StaticIoOwnershipAllocation
+    Type:
+        Executable: nil
+    Targets:
+        StaticIoOwnershipAllocation
+
+    Name: SensorThingsConsumer
+    Type:
+        Executable: nil
+    Targets:
+        SensorThingsConsumer
+
+    Name: IoRoutingConsumer
+    Type:
+        Executable: nil
+    Targets:
+        IoRoutingConsumer
+
+    Name: CommunicationConsumer
+    Type:
+        Executable: nil
+    Targets:
+        CommunicationConsumer
+
+    Name: AxolotyWireConsumer
+    Type:
+        Executable: nil
+    Targets:
+        AxolotyWireConsumer
+
+    Name: AxolotyConsumer
+    Type:
+        Executable: nil
+    Targets:
+        AxolotyConsumer
+
+    Name: AxolotyStaticRuntimeMacrosImplementation
+    Type:
+        Macro: nil
+    Targets:
+        AxolotyStaticRuntimeMacrosImplementation
+
+Targets:
+    Name: WireBenchmark
+    Type: executable
+    C99name: WireBenchmark
+    Module type: SwiftTarget
+    Path: Benchmarks/WireBenchmark
+    Sources:
+        main.swift
+    Target dependencies:
+        AxolotyWire
+        AxolotyProtocol
+    Product memberships:
+        WireBenchmark
+
+    Name: WireAllocation
+    Type: executable
+    C99name: WireAllocation
+    Module type: SwiftTarget
+    Path: Benchmarks/WireAllocation
+    Sources:
+        main.swift
+    Target dependencies:
+        AxolotyWire
+        AxolotyProtocol
+    Product memberships:
+        WireAllocation
+
+    Name: StaticIoOwnershipAllocation
+    Type: executable
+    C99name: StaticIoOwnershipAllocation
+    Module type: SwiftTarget
+    Path: Packages/AxolotyStaticRuntime/Benchmarks/StaticIoOwnershipAllocation
+    Sources:
+        main.swift
+    Target dependencies:
+        AxolotyStaticRuntime
+        AxolotyProtocol
+        AxolotyWire
+    Product memberships:
+        StaticIoOwnershipAllocation
+
+    Name: SensorThingsConsumer
+    Type: executable
+    C99name: SensorThingsConsumer
+    Module type: SwiftTarget
+    Path: Benchmarks/Consumers/SensorThingsConsumer
+    Sources:
+        main.swift
+    Target dependencies:
+        AxolotySensorThingsModel
+        AxolotySensorThings
+    Product memberships:
+        SensorThingsConsumer
+
+    Name: IoRoutingConsumer
+    Type: executable
+    C99name: IoRoutingConsumer
+    Module type: SwiftTarget
+    Path: Benchmarks/Consumers/IoRoutingConsumer
+    Sources:
+        main.swift
+    Target dependencies:
+        AxolotyIoRouting
+    Product memberships:
+        IoRoutingConsumer
+
+    Name: CommunicationConsumer
+    Type: executable
+    C99name: CommunicationConsumer
+    Module type: SwiftTarget
+    Path: Benchmarks/Consumers/CommunicationConsumer
+    Sources:
+        main.swift
+    Target dependencies:
+        Axoloty
+    Product memberships:
+        CommunicationConsumer
+
+    Name: CZenohC
+    Type: system-target
+    C99name: CZenohC
+    Module type: SystemLibraryTarget
+    Path: Packages/AxolotyZenoh/Sources/CZenohC
+    Sources:
+    Product memberships:
+        AxolotyZenoh
+
+    Name: CAxolotyZenoh
+    Type: library
+    C99name: CAxolotyZenoh
+    Module type: ClangTarget
+    Path: Packages/AxolotyZenoh/Sources/CAxolotyZenoh
+    Sources:
+        axoloty_zenoh_session.c
+    Target dependencies:
+        CZenohC
+    Product memberships:
+        AxolotyZenoh
+
+    Name: AxolotyZenohCore
+    Type: library
+    C99name: AxolotyZenohCore
+    Module type: SwiftTarget
+    Path: Packages/AxolotyZenoh/Sources/AxolotyZenohCore
+    Sources:
+        ZenohConfiguration.swift
+        ZenohFrame.swift
+        ZenohFrameStorage.swift
+        ZenohResult.swift
+        ZenohSession.swift
+    Target dependencies:
+        CAxolotyZenoh
+        AxolotyWire
+    Product memberships:
+        AxolotyZenoh
+
+    Name: AxolotyZenoh
+    Type: library
+    C99name: AxolotyZenoh
+    Module type: SwiftTarget
+    Path: Packages/AxolotyZenoh/Sources/AxolotyZenoh
+    Sources:
+        ZenohBinding.swift
+        ZenohBindingConfiguration.swift
+        ZenohBindingReceivePump.swift
+        ZenohBindingRouteClassification.swift
+        ZenohBindingSupport.swift
+        ZenohFacadeSession.swift
+    Target dependencies:
+        AxolotyZenohCore
+        Axoloty
+        AxolotyProtocol
+        AxolotyWire
+    Product memberships:
+        AxolotyZenoh
+
+    Name: AxolotyWireTests
+    Type: test
+    C99name: AxolotyWireTests
+    Module type: SwiftTarget
+    Path: Packages/AxolotyWire/Tests/AxolotyWireTests
+    Sources:
+        AxolotyWireModuleTests.swift
+        BorrowedMessageTests.swift
+        CBORBoundsTests.swift
+        CBORCodecTests.swift
+        OwnedRawCBORBoundaryTests.swift
+        OwnedRawJSONBoundaryTests.swift
+        ParserWorkspaceTests.swift
+        TopicLayoutConformanceTests.swift
+        WireBoundsTests.swift
+        WireCodecParityTests.swift
+        WireCodecTests.swift
+        WireDTOBoundaryTests.swift
+        WireFieldIndexStorageTests.swift
+        WireProfileRouteTests.swift
+        WireReaderInPlaceIndexTests.swift
+        WireReaderKeyTests.swift
+        WireTestReflection.swift
+    Target dependencies:
+        AxolotyWire
+
+    Name: AxolotyWireConsumer
+    Type: executable
+    C99name: AxolotyWireConsumer
+    Module type: SwiftTarget
+    Path: Benchmarks/Consumers/AxolotyWireConsumer
+    Sources:
+        main.swift
+    Target dependencies:
+        AxolotyWire
+    Product memberships:
+        AxolotyWireConsumer
+
+    Name: AxolotyWire
+    Type: library
+    C99name: AxolotyWire
+    Module type: SwiftTarget
+    Path: Packages/AxolotyWire/Sources/AxolotyWire
+    Sources:
+        BorrowedMessage.swift
+        ByteSlice.swift
+        CBORReader.swift
+        CBORWriter.swift
+        JSONTokenizerResult.swift
+        OwnedWireData.swift
+        OwnedWireDataValidation.swift
+        TopicBuilder.swift
+        TopicView.swift
+        UUID16.swift
+        WireBufferConfig.swift
+        WireCodable.swift
+        WireCodec.swift
+        WireDTOs+Responses.swift
+        WireDTOs.swift
+        WireDecodeError.swift
+        WireEvents.swift
+        WireParserWorkspace.swift
+        WireProfile.swift
+        WireReader+Tokenizer.swift
+        WireReader.swift
+        WireValueReader.swift
+        WireWriter+CBORLexical.swift
+        WireWriter.swift
+    Product dependencies:
+        IkigaJSONCore
+    Product memberships:
+        AxolotyZenoh
+        Axoloty
+        AxolotyWire
+        AxolotyProtocol
+        AxolotyObjectModel
+        AxolotyCoatyModels
+        AxolotyMQTT
+        AxolotyIoRouting
+        AxolotySensorThingsModel
+        AxolotySensorThings
+        AxolotyStaticRuntime
+        AxolotyTransportContractTestSupport
+        AxolotyProtocolTraceTestSupport
+        WireBenchmark
+        WireAllocation
+        StaticIoOwnershipAllocation
+        SensorThingsConsumer
+        IoRoutingConsumer
+        CommunicationConsumer
+        AxolotyWireConsumer
+        AxolotyConsumer
+
+    Name: AxolotyTransportContractTestSupport
+    Type: library
+    C99name: AxolotyTransportContractTestSupport
+    Module type: SwiftTarget
+    Path: Packages/AxolotyTransportContractTestSupport/Sources/AxolotyTransportContractTestSupport
+    Sources:
+        RuntimeTransportContract.swift
+    Target dependencies:
+        Axoloty
+        AxolotyProtocol
+    Product memberships:
+        AxolotyTransportContractTestSupport
+
+    Name: AxolotyTests
+    Type: test
+    C99name: AxolotyTests
+    Module type: SwiftTarget
+    Path: Tests/AxolotyTests
+    Sources:
+        AsyncWaitingTests.swift
+        Infrastructure/ErrorKitPolicyTests.swift
+        Infrastructure/TopicBuilderTests.swift
+        ProtocolTrace/ProtocolTraceTests.swift
+        ProtocolTrace/WireCBORTraceParityTests.swift
+        Runtime/AxolotyRuntimeConformanceBufferTests.swift
+        Runtime/AxolotyRuntimeDefinitionTests.swift
+        Runtime/AxolotyRuntimeDiagnosticsTests.swift
+        Runtime/AxolotyRuntimeEventsTests.swift
+        Runtime/AxolotyRuntimeHandlersTests.swift
+        Runtime/AxolotyRuntimeIoTests.swift
+        Runtime/AxolotyRuntimeOperationsTests.swift
+        Runtime/AxolotyRuntimeOutboundReplayTests.swift
+        Runtime/AxolotyRuntimePublicAPIContractTests.swift
+        Runtime/AxolotyRuntimeReconnectRetryTests.swift
+        Runtime/AxolotyRuntimeRecoveryCharacterizationTests.swift
+        Runtime/AxolotyRuntimeResponseTimingTests.swift
+        Runtime/AxolotyRuntimeStaleTransportTests.swift
+        Runtime/AxolotyRuntimeTestSupport.swift
+        Runtime/AxolotyRuntimeTests.swift
+        Runtime/AxolotyRuntimeTransportTests.swift
+        Runtime/CoatyRouteCapacityTests.swift
+        Runtime/CoatyRouteTests.swift
+        Runtime/RuntimeExecutorIoTests.swift
+        Runtime/RuntimeTransportContractTests.swift
+        Runtime/RuntimeTypedIoStateTests.swift
+        Runtime/RuntimeWirePayloadTests.swift
+        WireCompatibility/GoldenCorpusTests.swift
+        WireCompatibility/WireCaptureContractTests.swift
+        WireCompatibility/WireCaptureFixture.swift
+        WireCompatibility/WireCaptureFixtureTests.swift
+        WireTestReflection.swift
+    Resources:
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Fixtures/coatyjs-2.4.0/coatyjs-advertise.jsonl
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Fixtures/coatyjs-2.4.0/coatyjs-call-return.jsonl
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Fixtures/coatyjs-2.4.0/coatyjs-channel.jsonl
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Fixtures/coatyjs-2.4.0/coatyjs-deadvertise.jsonl
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Fixtures/coatyjs-2.4.0/coatyjs-discover-resolve.jsonl
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Fixtures/coatyjs-2.4.0/coatyjs-graceful-deadvertise.jsonl
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Fixtures/coatyjs-2.4.0/coatyjs-last-will.jsonl
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Fixtures/coatyjs-2.4.0/coatyjs-qos-0.jsonl
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Fixtures/coatyjs-2.4.0/coatyjs-query-retrieve.jsonl
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Fixtures/coatyjs-2.4.0/coatyjs-update-complete.jsonl
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Fixtures/coatyswift-2.4.0/advertise.jsonl
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Fixtures/coatyswift-2.4.0/advertise.manifest.json
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Fixtures/coatyswift-2.4.0/deadvertise.jsonl
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Fixtures/coatyswift-2.4.0/deadvertise.manifest.json
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Fixtures/coatyswift-2.4.0/discover-resolve.jsonl
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Fixtures/coatyswift-2.4.0/discover-resolve.manifest.json
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Golden/advertise-full.cbor
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Golden/advertise-full.json
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Golden/advertise-minimal.cbor
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Golden/advertise-minimal.json
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Golden/advertise-object-uuid.cbor
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Golden/advertise-object-uuid.json
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Golden/associate-full.cbor
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Golden/associate-full.json
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Golden/associate-minimal.cbor
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Golden/associate-minimal.json
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Golden/associate-rate-zero.cbor
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Golden/associate-rate-zero.json
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Golden/call-empty.cbor
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Golden/call-empty.json
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Golden/call-full.cbor
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Golden/call-full.json
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Golden/channel-empty.cbor
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Golden/channel-empty.json
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Golden/channel-full.cbor
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Golden/channel-full.json
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Golden/channel-minimal.cbor
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Golden/channel-minimal.json
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Golden/complete-empty.cbor
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Golden/complete-empty.json
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Golden/complete-full.cbor
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Golden/complete-full.json
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Golden/deadvertise-multiple.cbor
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Golden/deadvertise-multiple.json
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Golden/deadvertise-single.cbor
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Golden/deadvertise-single.json
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Golden/discover-empty.cbor
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Golden/discover-empty.json
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Golden/discover-full.cbor
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Golden/discover-full.json
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Golden/iostate-minimal.cbor
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Golden/iostate-minimal.json
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Golden/iostate-rate-zero.cbor
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Golden/iostate-rate-zero.json
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Golden/iostate-rate.cbor
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Golden/iostate-rate.json
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Golden/iovalue-array.cbor
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Golden/iovalue-array.json
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Golden/iovalue-bytes.cbor
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Golden/iovalue-bytes.json
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Golden/iovalue-float-double.cbor
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Golden/iovalue-float-double.json
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Golden/iovalue-float-single.cbor
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Golden/iovalue-float-single.json
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Golden/iovalue-integer-wide.cbor
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Golden/iovalue-integer-wide.json
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Golden/iovalue-negative.cbor
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Golden/iovalue-negative.json
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Golden/iovalue-null.cbor
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Golden/iovalue-null.json
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Golden/iovalue-object.cbor
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Golden/iovalue-object.json
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Golden/manifest.json
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Golden/query-empty.cbor
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Golden/query-empty.json
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Golden/query-full.cbor
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Golden/query-full.json
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Golden/resolve-full.cbor
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Golden/resolve-full.json
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Golden/resolve-minimal.cbor
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Golden/resolve-minimal.json
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Golden/retrieve-full.cbor
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Golden/retrieve-full.json
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Golden/retrieve-minimal.cbor
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Golden/retrieve-minimal.json
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Golden/return-empty.cbor
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Golden/return-empty.json
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Golden/return-full.cbor
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Golden/return-full.json
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Golden/update-full.cbor
+        Rule:
+            Process:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Tests/AxolotyTests/WireCompatibility/Golden/update-full.json
+    Target dependencies:
+        Axoloty
+        AxolotyWire
+        AxolotyProtocol
+        AxolotyStaticRuntime
+        AxolotyTestSupport
+        AxolotyTransportContractTestSupport
+        AxolotyProtocolTraceTestSupport
+    Product dependencies:
+        ErrorKit
+
+    Name: AxolotyTestSupport
+    Type: library
+    C99name: AxolotyTestSupport
+    Module type: SwiftTarget
+    Path: Tests/AxolotyTestSupport
+    Sources:
+        AsyncWaiting.swift
+
+    Name: AxolotyTestBrokerTests
+    Type: test
+    C99name: AxolotyTestBrokerTests
+    Module type: SwiftTarget
+    Path: Tests/AxolotyTestBrokerTests
+    Sources:
+        TestMQTTBrokerTests.swift
+    Target dependencies:
+        AxolotyTestBroker
+    Product dependencies:
+        MQTTNIO
+        NIOCore
+        NIOPosix
+        NIOConcurrencyHelpers
+
+    Name: AxolotyTestBroker
+    Type: library
+    C99name: AxolotyTestBroker
+    Module type: SwiftTarget
+    Path: Packages/AxolotyTestBroker/Sources/AxolotyTestBroker
+    Sources:
+        BrokerConnectionHandler.swift
+        MQTTPacket.swift
+        MQTTPacketEncoder.swift
+        MQTTTopicMatcher.swift
+        TestMQTTBroker.swift
+    Product dependencies:
+        NIOCore
+        NIOPosix
+        NIOConcurrencyHelpers
+    Product memberships:
+        AxolotyTestBroker
+
+    Name: AxolotyStaticRuntimeTests
+    Type: test
+    C99name: AxolotyStaticRuntimeTests
+    Module type: SwiftTarget
+    Path: Packages/AxolotyStaticRuntime/Tests/AxolotyStaticRuntimeTests
+    Sources:
+        StaticIoActorMacroExpansionTests.swift
+        StaticIoActorMacroTests.swift
+        StaticRuntimeTests.swift
+        StaticTypedIoTests.swift
+    Target dependencies:
+        AxolotyStaticRuntime
+        AxolotyProtocol
+        AxolotyObjectModel
+        AxolotyWire
+        AxolotyStaticRuntimeMacrosImplementation
+    Product dependencies:
+        SwiftSyntaxMacrosTestSupport
+
+    Name: AxolotyStaticRuntimeMacrosImplementation
+    Type: macro
+    C99name: AxolotyStaticRuntimeMacrosImplementation
+    Module type: SwiftTarget
+    Path: Packages/AxolotyStaticRuntime/Sources/AxolotyStaticRuntimeMacrosImplementation
+    Sources:
+        Plugin.swift
+        StaticIoActorMacro.swift
+    Product dependencies:
+        SwiftCompilerPlugin
+        SwiftDiagnostics
+        SwiftSyntax
+        SwiftSyntaxBuilder
+        SwiftSyntaxMacros
+    Product memberships:
+        AxolotyStaticRuntime
+        AxolotyProtocolTraceTestSupport
+        StaticIoOwnershipAllocation
+        AxolotyStaticRuntimeMacrosImplementation
+
+    Name: AxolotyStaticRuntime
+    Type: library
+    C99name: AxolotyStaticRuntime
+    Module type: SwiftTarget
+    Path: Packages/AxolotyStaticRuntime/Sources/AxolotyStaticRuntime
+    Sources:
+        StaticIoActor.swift
+        StaticIoRegistry.swift
+        StaticIoRuntime.swift
+        StaticRuntime.swift
+    Target dependencies:
+        AxolotyProtocol
+        AxolotyObjectModel
+        AxolotyWire
+        AxolotyStaticRuntimeMacrosImplementation
+    Product memberships:
+        AxolotyStaticRuntime
+        AxolotyProtocolTraceTestSupport
+        StaticIoOwnershipAllocation
+
+    Name: AxolotySensorThingsTests
+    Type: test
+    C99name: AxolotySensorThingsTests
+    Module type: SwiftTarget
+    Path: Packages/AxolotySensorThings/Tests/AxolotySensorThingsTests
+    Sources:
+        SensorThingsCatalogueTests.swift
+        SensorThingsDirectObservationTests.swift
+        SensorThingsRegistryTests.swift
+        SensorThingsSmokeTests.swift
+        SensorThingsSourceWorkflowTests.swift
+        SensorThingsTestSupport.swift
+    Target dependencies:
+        AxolotySensorThingsModel
+        AxolotySensorThings
+        Axoloty
+        AxolotyObjectModel
+        AxolotyProtocol
+        AxolotyWire
+
+    Name: AxolotySensorThingsModel
+    Type: library
+    C99name: AxolotySensorThingsModel
+    Module type: SwiftTarget
+    Path: Packages/AxolotySensorThings/Sources/AxolotySensorThingsModel
+    Sources:
+        SensorThingsJSON.swift
+        SensorThingsSchemas.swift
+    Target dependencies:
+        AxolotyObjectModel
+        AxolotyWire
+    Product memberships:
+        AxolotySensorThingsModel
+        AxolotySensorThings
+        SensorThingsConsumer
+
+    Name: AxolotySensorThings
+    Type: library
+    C99name: AxolotySensorThings
+    Module type: SwiftTarget
+    Path: Packages/AxolotySensorThings/Sources/AxolotySensorThings
+    Sources:
+        SensorThingsCatalogue.swift
+        SensorThingsRegistry.swift
+        SensorThingsRuntime.swift
+    Target dependencies:
+        Axoloty
+        AxolotySensorThingsModel
+        AxolotyObjectModel
+        AxolotyProtocol
+        AxolotyWire
+    Product memberships:
+        AxolotySensorThings
+        SensorThingsConsumer
+
+    Name: AxolotyProtocolTraceTestSupport
+    Type: library
+    C99name: AxolotyProtocolTraceTestSupport
+    Module type: SwiftTarget
+    Path: Packages/AxolotyProtocolTraceTestSupport/Sources/AxolotyProtocolTraceTestSupport
+    Sources:
+        ProtocolTrace.swift
+        ProtocolTraceCorpus.swift
+        ProtocolTraceResources.swift
+        ProtocolTraceRuntimeReplay.swift
+        TracePayloadCBOR.swift
+    Resources:
+        Rule:
+            Copy:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Packages/AxolotyProtocolTraceTestSupport/Sources/AxolotyProtocolTraceTestSupport/Fixtures/family-seeds.json
+        Rule:
+            Copy:
+        Path:
+            /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate/Packages/AxolotyProtocolTraceTestSupport/Sources/AxolotyProtocolTraceTestSupport/trace.schema.json
+    Target dependencies:
+        Axoloty
+        AxolotyObjectModel
+        AxolotyProtocol
+        AxolotyStaticRuntime
+        AxolotyWire
+    Product memberships:
+        AxolotyProtocolTraceTestSupport
+
+    Name: AxolotyProtocolTests
+    Type: test
+    C99name: AxolotyProtocolTests
+    Module type: SwiftTarget
+    Path: Packages/AxolotyProtocol/Tests/AxolotyProtocolTests
+    Sources:
+        IoValueContractTests.swift
+        ProtocolFoundationTests.swift
+        ProtocolProcessorAssociationTests.swift
+        ProtocolProcessorObjectLifecycleTests.swift
+        ProtocolProcessorRecoveryCharacterizationTests.swift
+        ProtocolProcessorRequestLedgerTests.swift
+        ProtocolProcessorStateCapacityTests.swift
+        ProtocolProcessorTestSupport.swift
+        ProtocolProcessorTests.swift
+    Target dependencies:
+        AxolotyProtocol
+        AxolotyWire
+
+    Name: AxolotyProtocol
+    Type: library
+    C99name: AxolotyProtocol
+    Module type: SwiftTarget
+    Path: Packages/AxolotyProtocol/Sources/AxolotyProtocol
+    Sources:
+        CoatyCore3.swift
+        CoatyFilterAdapter.swift
+        InlineOwnedProtocolActionSink.swift
+        IoContracts.swift
+        IoEndpointDefinitions.swift
+        IoPublicationStateMachine.swift
+        IoScalarValues.swift
+        ProtocolAction.swift
+        ProtocolActionSink.swift
+        ProtocolBufferConfig.swift
+        ProtocolCapacityError.swift
+        ProtocolError.swift
+        ProtocolFrame.swift
+        ProtocolHandlerTable.swift
+        ProtocolLocalOperation.swift
+        ProtocolProcessor.swift
+        ProtocolRouteClassifier.swift
+        ProtocolStateSnapshot.swift
+        ProtocolSubscriptionRegistry.swift
+    Target dependencies:
+        AxolotyWire
+        AxolotyObjectModel
+    Product memberships:
+        AxolotyZenoh
+        Axoloty
+        AxolotyProtocol
+        AxolotyMQTT
+        AxolotyIoRouting
+        AxolotySensorThings
+        AxolotyStaticRuntime
+        AxolotyTransportContractTestSupport
+        AxolotyProtocolTraceTestSupport
+        WireBenchmark
+        WireAllocation
+        StaticIoOwnershipAllocation
+        SensorThingsConsumer
+        IoRoutingConsumer
+        CommunicationConsumer
+        AxolotyConsumer
+
+    Name: AxolotyObjectModelTests
+    Type: test
+    C99name: AxolotyObjectModelTests
+    Module type: SwiftTarget
+    Path: Packages/AxolotyObjectModel/Tests/AxolotyObjectModelTests
+    Sources:
+        ObjectFoundationTests.swift
+        ObjectPredicateCapacityTests.swift
+        ObjectPredicateCodingTests.swift
+        ObjectPredicateComparisonTests.swift
+        ObjectPredicateMatchingTests.swift
+        ObjectPredicateTestSupport.swift
+        ObjectPredicateTraversalTests.swift
+    Target dependencies:
+        AxolotyObjectModel
+        AxolotyWire
+
+    Name: AxolotyObjectModel
+    Type: library
+    C99name: AxolotyObjectModel
+    Module type: SwiftTarget
+    Path: Packages/AxolotyObjectModel/Sources/AxolotyObjectModel
+    Sources:
+        BoundedDynamicObject.swift
+        JSONValue.swift
+        ObjectEnvelope.swift
+        ObjectPredicate.swift
+        ObjectPredicateContracts.swift
+        ObjectPredicateDecimal.swift
+        ObjectPredicateMatcher.swift
+        ObjectSchema.swift
+        ObjectSchemaRegistry.swift
+        Primitives.swift
+        TypedObject.swift
+    Target dependencies:
+        AxolotyWire
+    Product memberships:
+        AxolotyZenoh
+        Axoloty
+        AxolotyProtocol
+        AxolotyObjectModel
+        AxolotyCoatyModels
+        AxolotyMQTT
+        AxolotyIoRouting
+        AxolotySensorThingsModel
+        AxolotySensorThings
+        AxolotyStaticRuntime
+        AxolotyTransportContractTestSupport
+        AxolotyProtocolTraceTestSupport
+        WireBenchmark
+        WireAllocation
+        StaticIoOwnershipAllocation
+        SensorThingsConsumer
+        IoRoutingConsumer
+        CommunicationConsumer
+        AxolotyConsumer
+
+    Name: AxolotyMQTTTests
+    Type: test
+    C99name: AxolotyMQTTTests
+    Module type: SwiftTarget
+    Path: Packages/AxolotyMQTT/Tests/AxolotyMQTTTests
+    Sources:
+        MQTTBindingAdapterSeamTests.swift
+        MQTTBindingExternalRouteTests.swift
+        MQTTBindingOperationTimeoutTests.swift
+        MQTTBindingTests.swift
+    Target dependencies:
+        AxolotyMQTT
+        Axoloty
+        AxolotyProtocol
+        AxolotyWire
+        AxolotyTransportContractTestSupport
+
+    Name: AxolotyMQTT
+    Type: library
+    C99name: AxolotyMQTT
+    Module type: SwiftTarget
+    Path: Packages/AxolotyMQTT/Sources/AxolotyMQTT
+    Sources:
+        MQTTBinding.swift
+        RuntimeMQTTClient.swift
+    Target dependencies:
+        Axoloty
+        AxolotyProtocol
+        AxolotyWire
+    Product dependencies:
+        MQTTNIO
+        NIO
+        NIOConcurrencyHelpers
+        NIOSSL
+        NIOTransportServices
+    Product memberships:
+        AxolotyMQTT
+
+    Name: AxolotyLiveWireTests
+    Type: test
+    C99name: AxolotyLiveWireTests
+    Module type: SwiftTarget
+    Path: Tests/AxolotyLiveWireTests
+    Sources:
+        EmbeddedHostInteroperabilityTests.swift
+        IO/AxolotyIoAssociateTests.swift
+        InProcessBrokerBindingTests.swift
+        Lifecycle/AxolotyLifecycleSubjectTests.swift
+        MQTTBindingNetworkTests.swift
+        Reverse/AxolotyAdvertiseConsumerTests.swift
+        Reverse/AxolotyAdvertiseProducerTests.swift
+        Reverse/AxolotyCallReturnConsumerTests.swift
+        Reverse/AxolotyCoreConsumerTests.swift
+        Reverse/AxolotyCoreProducerTests.swift
+        Reverse/AxolotyCoreRequestConsumerTests.swift
+        Reverse/AxolotyUpdateCompleteConsumerTests.swift
+        Reverse/ModernConsumerSupport.swift
+    Target dependencies:
+        AxolotyMQTT
+        Axoloty
+        AxolotyWire
+        AxolotyProtocol
+        AxolotyTestSupport
+        AxolotyTestBroker
+
+    Name: AxolotyIoRoutingTests
+    Type: test
+    C99name: AxolotyIoRoutingTests
+    Module type: SwiftTarget
+    Path: Packages/AxolotyIoRouting/Tests/AxolotyIoRoutingTests
+    Sources:
+        IoRoutingTests.swift
+    Target dependencies:
+        AxolotyIoRouting
+        Axoloty
+        AxolotyProtocol
+        AxolotyObjectModel
+        AxolotyWire
+
+    Name: AxolotyIoRouting
+    Type: library
+    C99name: AxolotyIoRouting
+    Module type: SwiftTarget
+    Path: Packages/AxolotyIoRouting/Sources/AxolotyIoRouting
+    Sources:
+        AxolotyIoRouting.swift
+    Target dependencies:
+        Axoloty
+        AxolotyProtocol
+        AxolotyObjectModel
+        AxolotyWire
+    Product memberships:
+        AxolotyIoRouting
+        IoRoutingConsumer
+
+    Name: AxolotyConsumer
+    Type: executable
+    C99name: AxolotyConsumer
+    Module type: SwiftTarget
+    Path: Benchmarks/Consumers/AxolotyConsumer
+    Sources:
+        main.swift
+    Target dependencies:
+        Axoloty
+    Product memberships:
+        AxolotyConsumer
+
+    Name: AxolotyCoatyModelsTests
+    Type: test
+    C99name: AxolotyCoatyModelsTests
+    Module type: SwiftTarget
+    Path: Packages/AxolotyCoatyModels/Tests/AxolotyCoatyModelsTests
+    Sources:
+        CoatyModelsTests.swift
+    Target dependencies:
+        AxolotyCoatyModels
+        AxolotyObjectModel
+        AxolotyWire
+
+    Name: AxolotyCoatyModels
+    Type: library
+    C99name: AxolotyCoatyModels
+    Module type: SwiftTarget
+    Path: Packages/AxolotyCoatyModels/Sources/AxolotyCoatyModels
+    Sources:
+        CoatyModels.swift
+    Target dependencies:
+        AxolotyObjectModel
+    Product memberships:
+        AxolotyCoatyModels
+
+    Name: Axoloty
+    Type: library
+    C99name: Axoloty
+    Module type: SwiftTarget
+    Path: Source
+    Sources:
+        Common/AxolotyError.swift
+        Runtime/AxolotyRuntime.swift
+        Runtime/AxolotyRuntimeConfiguration.swift
+        Runtime/AxolotyRuntimeDefinition+IO.swift
+        Runtime/AxolotyRuntimeDefinition.swift
+        Runtime/AxolotyRuntimeDiagnostics.swift
+        Runtime/AxolotyRuntimeEvents.swift
+        Runtime/AxolotyRuntimeFacade.swift
+        Runtime/AxolotyRuntimeHandlers.swift
+        Runtime/AxolotyRuntimeObservations.swift
+        Runtime/AxolotyRuntimeOperations.swift
+        Runtime/AxolotyRuntimeTransport.swift
+        Runtime/AxolotyRuntimeTransportCounters.swift
+        Runtime/CoatyRoute.swift
+        Runtime/Executor/ProtocolExecutor+Conformance.swift
+        Runtime/Executor/ProtocolExecutor+Handlers.swift
+        Runtime/Executor/ProtocolExecutor+Outbound.swift
+        Runtime/IO/ExternalIoRoute.swift
+        Runtime/IO/RuntimeIO.swift
+        Runtime/IO/RuntimeTypedIoState.swift
+        Runtime/RuntimeLifecyclePayload.swift
+        Runtime/RuntimeModules.swift
+        Runtime/RuntimeSupport.swift
+        Runtime/RuntimeWirePayload.swift
+    Target dependencies:
+        AxolotyWire
+        AxolotyProtocol
+        AxolotyObjectModel
+    Product dependencies:
+        ErrorKit
+    Product memberships:
+        AxolotyZenoh
+        Axoloty
+        AxolotyMQTT
+        AxolotyIoRouting
+        AxolotySensorThings
+        AxolotyTransportContractTestSupport
+        AxolotyProtocolTraceTestSupport
+        SensorThingsConsumer
+        IoRoutingConsumer
+        CommunicationConsumer
+        AxolotyConsumer
+
+Swift languages versions:
+    6
+
+
