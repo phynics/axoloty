@@ -1,0 +1,33 @@
+--- a/Package.swift
++++ b/Package.swift
+@@ -13,6 +13,10 @@
+     ],
+     products: [
+         .library(
++            name: "AxolotyZenoh",
++            targets: ["AxolotyZenoh"]
++        ),
++        .library(
+             name: "Axoloty",
+             targets: ["Axoloty"]
+         ),
+@@ -85,6 +89,19 @@
+         .package(url: "https://github.com/swiftlang/swift-syntax.git", exact: "604.0.0"),
+     ],
+     targets: [
++        .systemLibrary(name: "CZenohC", path: "Packages/AxolotyZenoh/Sources/CZenohC", pkgConfig: "zenohc"),
++        .target(
++            name: "CAxolotyZenoh", dependencies: ["CZenohC"],
++            path: "Packages/AxolotyZenoh/Sources/CAxolotyZenoh", publicHeadersPath: "include"
++        ),
++        .target(
++            name: "AxolotyZenohCore", dependencies: ["CAxolotyZenoh", "AxolotyWire"],
++            path: "Packages/AxolotyZenoh/Sources/AxolotyZenohCore"
++        ),
++        .target(
++            name: "AxolotyZenoh", dependencies: ["AxolotyZenohCore", "Axoloty", "AxolotyProtocol", "AxolotyWire"],
++            path: "Packages/AxolotyZenoh/Sources/AxolotyZenoh"
++        ),
+         .macro(
+             name: "AxolotyStaticRuntimeMacrosImplementation",
+             dependencies: [

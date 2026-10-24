@@ -16,6 +16,7 @@ local_mode=${AXOLOTY_CONSUMER_LOCAL:-0}
 jobs=${AXOLOTY_CONSUMER_JOBS:-2}
 evidence=${AXOLOTY_CONSUMER_EVIDENCE_DIR:-}
 platform=${AXOLOTY_CONSUMER_PLATFORM:-unspecified}
+scope=${AXOLOTY_CONSUMER_SCOPE:-all}
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 empty_gitconfig="$work/empty-gitconfig"
@@ -34,6 +35,11 @@ fail() {
 case "$jobs" in
     [1-9]|[1-9][0-9]*) : ;;
     *) fail "AXOLOTY_CONSUMER_JOBS must be a positive integer: $jobs" ;;
+esac
+
+case "$scope" in
+    all|core-wire) : ;;
+    *) fail "AXOLOTY_CONSUMER_SCOPE must be all or core-wire: $scope" ;;
 esac
 
 if [ "$local_mode" != 1 ] && [ "$url" != "$canonical_url" ]; then
@@ -116,7 +122,8 @@ consumer_swiftpm() {
 
 consumer="$work/consumer"
 mkdir -p "$consumer/Sources/WireConsumer" "$consumer/Sources/PortableConsumer" \
-    "$consumer/Sources/MQTTConsumer" "$consumer/Sources/TransportSPIConsumer"
+    "$consumer/Sources/CoreConsumer" "$consumer/Sources/MQTTConsumer" \
+    "$consumer/Sources/TransportSPIConsumer"
 if [ -n "$revision" ]; then
     package_requirement=".package(url: \"$url\", revision: \"$revision\")"
 else
@@ -132,6 +139,9 @@ let package = Package(
     targets: [
         .executableTarget(name: "WireConsumer", dependencies: [
             .product(name: "AxolotyWire", package: "axoloty"),
+        ]),
+        .executableTarget(name: "CoreConsumer", dependencies: [
+            .product(name: "Axoloty", package: "axoloty"),
         ]),
         .executableTarget(name: "PortableConsumer", dependencies: [
             .product(name: "AxolotyProtocol", package: "axoloty"),
@@ -174,6 +184,14 @@ guard runtime.maximumPayloadBytes == 2048, classification == .coaty else {
     fatalError("portable products did not initialize")
 }
 print("AXOLOTY_PORTABLE_CONSUMER_OK")
+EOF
+cat >"$consumer/Sources/CoreConsumer/main.swift" <<'EOF'
+import Axoloty
+
+let identity = try RuntimeIdentity(id: .zero, name: "core-consumer")
+var builder = try RuntimeBuilder(identity: identity, namespace: "consumer")
+_ = try builder.finish()
+print("AXOLOTY_CORE_CONSUMER_OK")
 EOF
 cat >"$consumer/Sources/MQTTConsumer/main.swift" <<'EOF'
 import Axoloty
@@ -267,7 +285,13 @@ if [ -n "$revision" ]; then
 fi
 
 for configuration in debug release; do
-    for target in WireConsumer PortableConsumer MQTTConsumer TransportSPIConsumer; do
+    targets="WireConsumer CoreConsumer PortableConsumer MQTTConsumer TransportSPIConsumer"
+    executables="WireConsumer CoreConsumer PortableConsumer MQTTConsumer TransportSPIConsumer"
+    if [ "$scope" = core-wire ]; then
+        targets="WireConsumer CoreConsumer"
+        executables="WireConsumer CoreConsumer"
+    fi
+    for target in $targets; do
         log="$evidence/build-$configuration-$target.log"
         if ! consumer_swiftpm build --jobs "$jobs" --configuration "$configuration" --target "$target" >"$log" 2>&1; then
             cat "$log" >&2
@@ -278,7 +302,7 @@ for configuration in debug release; do
         cat "$evidence/build-$configuration-WireConsumer.log" >&2
         exit 1
     fi
-    for executable in WireConsumer PortableConsumer MQTTConsumer TransportSPIConsumer; do
+    for executable in $executables; do
         log="$evidence/run-$configuration-$executable.log"
         if ! consumer_swiftpm run --jobs "$jobs" --configuration "$configuration" "$executable" >"$log" 2>&1; then
             cat "$log" >&2
@@ -286,9 +310,12 @@ for configuration in debug release; do
         fi
     done
     grep -Fqx AXOLOTY_WIRE_CONSUMER_OK "$evidence/run-$configuration-WireConsumer.log" || fail "Wire consumer execution marker missing"
-    grep -Fqx AXOLOTY_PORTABLE_CONSUMER_OK "$evidence/run-$configuration-PortableConsumer.log" || fail "portable consumer execution marker missing"
-    grep -Fqx AXOLOTY_MQTT_CONSUMER_LINKED "$evidence/run-$configuration-MQTTConsumer.log" || fail "MQTT consumer execution marker missing"
-    grep -Eq '^AXOLOTY_TRANSPORT_SPI_BEHAVIOR_OK effects=[1-9][0-9]*$' "$evidence/run-$configuration-TransportSPIConsumer.log" || fail "transport SPI behavior marker missing"
+    grep -Fqx AXOLOTY_CORE_CONSUMER_OK "$evidence/run-$configuration-CoreConsumer.log" || fail "Core consumer execution marker missing"
+    if [ "$scope" = all ]; then
+        grep -Fqx AXOLOTY_PORTABLE_CONSUMER_OK "$evidence/run-$configuration-PortableConsumer.log" || fail "portable consumer execution marker missing"
+        grep -Fqx AXOLOTY_MQTT_CONSUMER_LINKED "$evidence/run-$configuration-MQTTConsumer.log" || fail "MQTT consumer execution marker missing"
+        grep -Eq '^AXOLOTY_TRANSPORT_SPI_BEHAVIOR_OK effects=[1-9][0-9]*$' "$evidence/run-$configuration-TransportSPIConsumer.log" || fail "transport SPI behavior marker missing"
+    fi
 done
 
 resolved_revision=$(python3 - "$evidence/Package.resolved" "$url" <<'PY'

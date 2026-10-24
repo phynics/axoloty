@@ -208,10 +208,13 @@ test("cold semver consumer gates allow a full dual-configuration build", () => {
 test("cold semver consumer bounds SwiftPM build parallelism", () => {
   const script = fs.readFileSync(path.join(root, "Tests/Support/checks/check-axoloty-semver-consumer.sh"), "utf8");
   assert.match(script, /jobs=\$\{AXOLOTY_CONSUMER_JOBS:-2\}/);
-  for (const target of ["PortableConsumer", "MQTTConsumer", "TransportSPIConsumer"]) {
+  for (const target of ["CoreConsumer", "PortableConsumer", "MQTTConsumer", "TransportSPIConsumer"]) {
     assert.ok(script.includes(target), `consumer target ${target} is declared`);
   }
-  assert.match(script, /for target in WireConsumer PortableConsumer MQTTConsumer TransportSPIConsumer/);
+  assert.match(script, /all\|core-wire/);
+  assert.match(script, /targets="WireConsumer CoreConsumer"/);
+  assert.match(script, /executables="WireConsumer CoreConsumer"/);
+  assert.match(script, /for target in \$targets/);
   assert.match(script, /consumer_swiftpm build --jobs "\$jobs" --configuration "\$configuration" --target "\$target"/);
   assert.match(script, /revision:/);
   assert.match(script, /\$revision/);

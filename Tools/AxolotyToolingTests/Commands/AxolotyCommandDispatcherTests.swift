@@ -431,7 +431,7 @@ func canonicalExecutorSerializesIndependentNodes() {
     let dispatcher = AxolotyCommandDispatcher(
         commandRunner: runner,
         fileSystem: StubFileSystem(paths: []),
-        environment: projectEnvironment
+        environment: projectEnvironment.merging(["AXOLOTY_CHECK_CONCURRENCY": "1"]) { _, value in value }
     )
 
     let result = dispatcher.run(arguments: ["check"])
