@@ -26,34 +26,57 @@ candidate-manifest delta; apply it to the pinned base to recover that manifest.
 
 ## Reproduce on Linux
 
-Use the repository's pinned image and private build/cache directories. The
-following checks the candidate default build and then the selected Core product
-with the same empty native environment:
+Use the repository's pinned image and private build/cache directories. This
+command checks native absence, then runs both candidate builds. It retains
+separate stdout, stderr, and exit-code files under the host `BUILD_DIR`; the
+default build is expected to fail, so the wrapper records its status and
+continues to the explicit Core build:
 
 ```sh
 flock /tmp/axoloty-batch2-382c4846/verification.lock \
   env CONTAINER_RUNTIME="$(command -v podman)" IMAGE=axoloty-dev \
   BUILD_DIR=/tmp/axoloty-1001-build SPM_CACHE_DIR=/tmp/axoloty-1001-spm \
-  .devcontainer/run.sh sh -c '
-    if pkg-config --exists zenohc; then
-      echo "Zenoh unexpectedly installed" >&2; exit 1
-    fi
-    cd /workspace/.testing/runs/optional-zenoh-1001/rerun-candidate
-    env -u PKG_CONFIG_PATH swift build \
-      --scratch-path /workspace/.build/optional-zenoh-1001/replay-default \
-      --cache-path /workspace/.swiftpm-cache --disable-automatic-resolution
+  BUILD_LOCK=0 .devcontainer/run.sh bash -euo pipefail -c '
+    candidate=/workspace/.testing/runs/optional-zenoh-1001/rerun-candidate
+    out=/workspace/.build/optional-zenoh-1001/candidate-replay
+    mkdir -p "$out"
+    cd "$candidate"
+    {
+      env | sort | rg "^(PKG_CONFIG_PATH|PKG_CONFIG_LIBDIR|CPATH|C_INCLUDE_PATH|LIBRARY_PATH|LD_LIBRARY_PATH)=" || true
+      if pkg-config --exists zenohc; then echo "unexpected zenohc" >&2; exit 90; else echo "pkg-config cannot resolve zenohc"; fi
+      test ! -e /usr/include/zenoh.h && test ! -e /usr/local/include/zenoh.h
+      echo "no zenoh.h under /usr/include or /usr/local/include"
+      if find /usr/lib /usr/local/lib -maxdepth 5 \( -iname zenohc.pc -o -iname "libzenohc.so*" -o -iname libzenohc.a \) -print -quit | rg -q .; then exit 91; fi
+      echo "no zenohc.pc or libzenohc under /usr/lib or /usr/local/lib"
+      if ldconfig -p 2>/dev/null | rg -qi libzenohc; then exit 92; fi
+      echo "ldconfig has no libzenohc entry"
+    } >"$out/native-absence.stdout" 2>"$out/native-absence.stderr"
+    run_build() {
+      name=$1; shift
+      set +e
+      env -u PKG_CONFIG_PATH -u PKG_CONFIG_LIBDIR -u CPATH -u C_INCLUDE_PATH -u LIBRARY_PATH -u LD_LIBRARY_PATH swift build --cache-path /workspace/.swiftpm-cache --scratch-path "$out/$name-scratch" --disable-automatic-resolution "$@" >"$out/$name.stdout" 2>"$out/$name.stderr"
+      status=$?
+      set -e
+      printf '%s\n' "$status" >"$out/$name.exit"
+    }
+    run_build default
+    run_build explicit-core --product Axoloty
+    test "$(cat "$out/default.exit")" -ne 0
+    test "$(cat "$out/explicit-core.exit")" -eq 0
   '
 ```
 
 The default build is expected to fail in `CAxolotyZenoh` with `zenoh.h` not
-found. Replace the `swift build` command with
-`swift build --product Axoloty` and a different scratch path to verify that
-explicit product selection builds Core without native Zenoh. Graph snapshots
+found; the explicit `Axoloty` build should pass without native Zenoh. Graph snapshots
 from SwiftPM 6.4 are in [`root-dependencies.txt`](root-dependencies.txt),
 [`candidate-dependencies.txt`](candidate-dependencies.txt), and
 [`candidate-target-graph.txt`](candidate-target-graph.txt). The root package
 dependency list is unchanged; the candidate graph adds only the four local
-targets shown in the patch, and the default build reaches the C façade.
+targets shown in the patch, and the default build reaches the C façade. For
+review-round captures and exact artifact hashes, see
+[`review-round1-evidence.md`](review-round1-evidence.md). A rerun against an
+existing SwiftPM cache is a cached rerun, not a fresh original execution;
+preserve that distinction in any new evidence index.
 
 ## Public consumer checks
 

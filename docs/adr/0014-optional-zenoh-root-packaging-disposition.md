@@ -46,7 +46,7 @@ dependency and target graphs.
 | Public root URL `Axoloty` consumer, Linux, no native Zenoh | Pass | Fresh resolution at commit `0c74f3ae2328a8dc1528088f7b7d3be24f7cf241`; debug and release builds and linked executions passed. |
 | Public root URL `AxolotyWire` consumer, Linux, no native Zenoh | Pass | Same fresh consumer; debug and release builds and linked executions passed. Wire-only logs contain no host runtime target compilation. |
 | Experimental checkout consumer selecting `AxolotyZenoh`, Linux, pinned native Zenoh | Pass | `zenoh-offline-package` provisioned `zenoh-c 1.10.0` and passed; external probe linked and ran. `ldd` resolved `libzenohc.so` from the provisioned `unpacked/lib` directory. |
-| Canonical Core verification, Linux, no Zenoh provisioning | CI tier passed; `make verify` rerun pending | `make test-tier TIER=ci` passed all 66 nodes. The retained `make verify` run exposed a tooling fixture that expected serial execution without setting `AXOLOTY_CHECK_CONCURRENCY=1`; the fixture now selects serial mode explicitly, and its focused test passed. The candidate is never in the production graph. |
+| Canonical Core verification, Linux, no Zenoh provisioning | Pass, 66/66 | `make verify` passed at source head `8e9f287bce1c0a696abdbd2420226dd3e034a640` with `AXOLOTY_CHECK_CONCURRENCY=1` in pinned `axoloty-dev` (image input hash `a5c9e1b623c71ba7316e29fcdfcedfca6109c966b269ebd4dc3713b374577292`). The run metadata and scheduler report are retained under `/tmp/axoloty-batch2-382c4846/`; see the spike evidence index for paths and hashes. This verifies the source at that head, not the later documentation-only review fix. The candidate is never in the production graph. |
 | macOS best-effort | Untested | No macOS run was performed for this disposition. |
 
 The native positive uses the pinned Linux x86_64 archive
@@ -61,6 +61,10 @@ The public Core and Wire consumer resolution downloads the root package graph,
 which includes declared SwiftPM dependencies used by other products. This
 fetch does not cause native Zenoh compilation or linking. Selecting only
 `AxolotyWire` continues to avoid host target compilation.
+
+The review-round evidence index records retained candidate-build output and
+the exact-head canonical verification artifacts:
+[`review-round1-evidence.md`](../../Spikes/OptionalZenohPackaging/review-round1-evidence.md).
 
 ## Consequences
 
