@@ -51,7 +51,13 @@ The host MQTT consumer constructs the public `RuntimeBuilder`, immutable
 definition, and `MQTTBinding`. It does not connect to a broker. The transport
 SPI consumer supplies its own in-memory implementation of the public runtime
 transport protocol, starts and stops a runtime, and verifies that startup
-effects reached the adapter. It uses no repository test support.
+effects reached the adapter. It also reads the public diagnostics snapshot,
+checks the running and stopped lifecycle plus declared capabilities and finite
+stream capacity, then submits an empty public `discover` request. The consumer
+asserts the typed malformed-payload rejection, the changed diagnostic counters,
+and the matching owned request observation from the diagnostics stream. Stream
+consumption has an explicit cancellation-backed deadline. The consumer uses no
+repository test support.
 
 Firmware uses a separate boundary. A firmware consumer checks out Axoloty and
 sets `AXOLOTY_SOURCE_DIR` to that checkout. It prepares its own consumer space

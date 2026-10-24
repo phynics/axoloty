@@ -210,6 +210,44 @@ import AxolotyProtocol
 import AxolotyWire
 import Foundation
 
+enum ConsumerFailure: Error {
+    case diagnosticsEnded
+    case diagnosticsTimedOut
+    case diagnosticsCancelled
+    case diagnosticsFailed
+}
+
+func nextRejectedDiagnostic(
+    from stream: AsyncStream<RuntimeDiagnostic>
+) async throws(ConsumerFailure) -> RuntimeDiagnostic {
+    do {
+        return try await withThrowingTaskGroup(of: RuntimeDiagnostic.self) { group in
+            defer { group.cancelAll() }
+            group.addTask {
+                for await diagnostic in stream where diagnostic.kind == .requestRejected {
+                    return diagnostic
+                }
+                throw ConsumerFailure.diagnosticsEnded
+            }
+            group.addTask {
+                try await Task.sleep(for: .seconds(5))
+                throw ConsumerFailure.diagnosticsTimedOut
+            }
+
+            guard let diagnostic = try await group.next() else {
+                throw ConsumerFailure.diagnosticsEnded
+            }
+            return diagnostic
+        }
+    } catch let failure as ConsumerFailure {
+        throw failure
+    } catch is CancellationError {
+        throw ConsumerFailure.diagnosticsCancelled
+    } catch {
+        throw ConsumerFailure.diagnosticsFailed
+    }
+}
+
 final class RecordingTransport: AxolotyRuntimeTransport, @unchecked Sendable {
     let capabilities: RuntimeTransportCapabilities = []
     let wireProfile: WireProfile = .coaty3JSON
@@ -258,13 +296,56 @@ enum Consumer {
         let runtime = AxolotyRuntime(definition: definition, transport: transport)
         try await runtime.start()
         let started = await runtime.lifecycleState() == .running
+        let initialDiagnostics = await runtime.diagnosticsSnapshot()
+        let diagnosticStream = await runtime.diagnostics()
+        let initialCapabilities = initialDiagnostics.capabilities
+        let initialDiagnosticsValid = initialDiagnostics.lifecycleState == .running
+            && initialCapabilities.wireProfile == .coaty3JSON
+            && initialCapabilities.protocolCapabilities.isCoatyCore3
+            && initialCapabilities.transportCapabilities == transport.capabilities
+            && initialDiagnostics.diagnosticCapacity > 0
+            && initialDiagnostics.diagnosticCapacity == initialCapabilities.diagnosticCapacity
+            && initialCapabilities.maximumPayloadBytes > 0
+            && initialCapabilities.maximumObjects > 0
+            && initialCapabilities.maximumPendingCorrelations > 0
+
+        guard let correlationID = UUID16(parsing: "57000000-0000-4000-8000-000000000001") else {
+            throw ConsumerFailure.diagnosticsEnded
+        }
+        let beforeRejectedRequest = await runtime.diagnosticsSnapshot()
+        let receipt = await runtime.request(.discover(
+            correlationID: correlationID,
+            payload: [],
+            timeoutMS: 10
+        ), nowMS: 1)
+        let afterRejectedRequest = await runtime.diagnosticsSnapshot()
+        let rejectedDiagnostic = try await nextRejectedDiagnostic(from: diagnosticStream)
+        let rejectionMatches = receipt == .rejected(.malformedPayload)
+            && afterRejectedRequest.rejectedRequests == beforeRejectedRequest.rejectedRequests + 1
+            && afterRejectedRequest.diagnosticsEmitted > beforeRejectedRequest.diagnosticsEmitted
+            && afterRejectedRequest.diagnosticSequence > beforeRejectedRequest.diagnosticSequence
+            && rejectedDiagnostic.kind == .requestRejected
+            && rejectedDiagnostic.sequence > beforeRejectedRequest.diagnosticSequence
+        if case .request(let observation)? = rejectedDiagnostic.observation {
+            guard observation.correlationID == correlationID,
+                  observation.outcome == .rejected,
+                  observation.rejection == .malformedPayload else {
+                throw ConsumerFailure.diagnosticsEnded
+            }
+        } else {
+            throw ConsumerFailure.diagnosticsEnded
+        }
         let (transportStarted, effects) = transport.snapshot()
         await runtime.stop()
+        let finalDiagnostics = await runtime.diagnosticsSnapshot()
         let stopped = await runtime.lifecycleState() == .stopped
-        guard started, transportStarted, effects > 0, stopped else {
+        guard started, initialDiagnosticsValid, rejectionMatches,
+              transportStarted, effects > 0, stopped,
+              finalDiagnostics.lifecycleState == .stopped else {
             fatalError("public transport SPI lifecycle or effect delivery failed")
         }
         print("AXOLOTY_TRANSPORT_SPI_BEHAVIOR_OK effects=\(effects)")
+        print("AXOLOTY_DIAGNOSTIC_CONSUMER_BEHAVIOR_OK rejection=malformedPayload sequence=\(rejectedDiagnostic.sequence)")
     }
 }
 EOF
@@ -315,6 +396,7 @@ for configuration in debug release; do
         grep -Fqx AXOLOTY_PORTABLE_CONSUMER_OK "$evidence/run-$configuration-PortableConsumer.log" || fail "portable consumer execution marker missing"
         grep -Fqx AXOLOTY_MQTT_CONSUMER_LINKED "$evidence/run-$configuration-MQTTConsumer.log" || fail "MQTT consumer execution marker missing"
         grep -Eq '^AXOLOTY_TRANSPORT_SPI_BEHAVIOR_OK effects=[1-9][0-9]*$' "$evidence/run-$configuration-TransportSPIConsumer.log" || fail "transport SPI behavior marker missing"
+        grep -Eq '^AXOLOTY_DIAGNOSTIC_CONSUMER_BEHAVIOR_OK rejection=malformedPayload sequence=[1-9][0-9]*$' "$evidence/run-$configuration-TransportSPIConsumer.log" || fail "diagnostic consumer behavior marker missing"
     fi
 done
 
