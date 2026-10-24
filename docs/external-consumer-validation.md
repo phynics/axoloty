@@ -1,122 +1,67 @@
-# External package consumer validation
+# External consumer validation
 
-## Result
+## Supported acquisition boundaries
 
-Axoloty supports two distinct wire-consumer topologies. The root package
-publishes an `AxolotyWire` product for consumers that already use the root
-package. The standalone `Packages/AxolotyWire` package is the supported
-acquisition boundary when independent package resolution is required.
+Applications consume the stable products from the public root package URL. A
+consumer selects the products it needs with SwiftPM target dependencies; it
+does not use a local path override or a sibling checkout. The root package is
+the acquisition unit for all six stable products:
 
-`Tests/Support/checks/check-axoloty-wire-distribution.sh` validates both modes by
-checking resolution separately from target build/link/runtime behavior.
-`Tests/Support/checks/check-axoloty-semver-consumer.sh` additionally validates the
-published root-package product topology with a `from:` semantic-version
-requirement. By default, that gate creates a temporary bare `file://` remote
-and synthetic semver tag so pre-release checkpoints test the stable version
-topology. Set `AXOLOTY_CONSUMER_LOCAL=0` together with
-`AXOLOTY_CONSUMER_REPOSITORY_URL` and `AXOLOTY_CONSUMER_VERSION` to validate a
-published release.
+| Product | Consumer exercised |
+|---|---|
+| `AxolotyWire` | Focused Wire-only executable |
+| `AxolotyProtocol` | Portable product consumer and transport SPI consumer |
+| `AxolotyObjectModel` | Portable product consumer |
+| `AxolotyStaticRuntime` | Portable product consumer |
+| `Axoloty` | MQTT composition and transport SPI consumers |
+| `AxolotyMQTT` | Host MQTT composition consumer |
 
-The wire boundary pins `phynics/swift-json` exactly at `2.5.3`; that release
-is published from commit `ec81216be5bbe2f02f45831d05256de2af452be8`, so
-the checked-in root `Package.resolved` can be regenerated remotely.
+`make test-axoloty-semver-consumer` resolves the root URL into a fresh temporary
+consumer. Set `AXOLOTY_CONSUMER_REVISION` to a full immutable 40-character git
+revision and explicitly set `AXOLOTY_CONSUMER_LOCAL=0` for revision-based
+validation, or set `AXOLOTY_CONSUMER_VERSION` for a published semantic
+version. The check builds and runs every consumer in
+debug and release configurations. `AXOLOTY_CONSUMER_EVIDENCE_DIR` retains the
+manifest, resolution, build and run logs, toolchain, platform, and provenance
+outside the temporary consumer directory. Without that override, evidence is
+retained under `.build/external-consumer-evidence/`.
 
-## Axoloty consumer
+The Make target defaults `AXOLOTY_CONSUMER_LOCAL=1` for pre-release use.
+`AXOLOTY_CONSUMER_LOCAL=1` is a synthetic fixture. It creates a
+temporary `file://` remote, synthetic tag, and URL rewrite for the pinned
+`swift-json` revision. Its result is fixture evidence only; it does not prove
+public remote acquisition. Do not combine local mode with revision mode.
 
-**Package dependency:**
-```swift
-.package(path: "/path/to/axoloty")
-// Target:
-.product(name: "Axoloty", package: "workspace")
-```
+The Wire-only target uses the root URL and builds and links without compiling
+host runtime targets. SwiftPM resolves the root package graph before selecting
+that target, so resolution may fetch host dependencies. That package-level
+resolution is not host product linkage. The checker records both the resolved
+graph and the target build log, and rejects host-target compilation in the
+Wire-only build.
 
-**Minimal usage:**
-```swift
-import Axoloty
-let identity = Identity(name: "external-consumer")
-let error = AxolotyError.runtime(code: .notStarted, reason: "anchor")
-```
+The host MQTT consumer constructs the public `RuntimeBuilder`, immutable
+definition, and `MQTTBinding`. It does not connect to a broker. The transport
+SPI consumer supplies its own in-memory implementation of the public runtime
+transport protocol, starts and stops a runtime, and verifies that startup
+effects reached the adapter. It uses no repository test support.
 
-**Build results:**
-- Debug build: ✅ passed
-- Release build: ✅ passed
-- Runtime: ✅ `AXOLOTY_EXTERNAL_CONSUMER_OK: Identity external consumer anchor`
+Firmware uses a separate boundary. A firmware consumer checks out Axoloty and
+sets `AXOLOTY_SOURCE_DIR` to that checkout. It prepares its own consumer space
+with `axoloty-tool embedded consumer prepare` and
+[`docs/embedded-consumer-contract.json`](embedded-consumer-contract.json).
+That contract does not copy portable source or expose the repository's root
+build directory or tests. The Core Embedded Swift gate remains the authority
+for the portable source boundary; it is hardware-free and does not validate a
+firmware product or board.
 
-## Root-package AxolotyWire consumer
+## Platform matrix
 
-**Package dependency:**
-```swift
-.package(path: "/path/to/axoloty")
-// Target:
-.product(name: "AxolotyWire", package: "workspace")
-```
+| Platform | Status | Evidence boundary |
+|---|---|---|
+| Linux | Validated | Pinned development container; remote consumer resolution, debug/release linked execution, and the hardware-free Core Embedded Swift gate |
+| macOS | Best effort | The manual macOS oracle procedure is available in [testing](testing.md#manual-macos-oracle); current consumer evidence is Linux-only |
+| iOS | Experimental, unvalidated | No dedicated simulator or device consumer validation is claimed; see the [support matrix](SUPPORT_MATRIX.md#platforms) |
 
-**Minimal usage:**
-```swift
-import AxolotyWire
-let reader = WireReader(bytes: base, length: count)
-let object = reader.readRaw("object")
-```
-
-**Build results:**
-- Debug build: ✅ passed
-- Release build: ✅ passed
-- Runtime: ✅ `AXOLOTY_WIRE_EXTERNAL_CONSUMER_OK: found`
-
-**Topology:** SwiftPM resolves the root package's complete dependency graph
-before selecting the wire product. Building this target does not compile or
-link host runtime targets, but resolution still includes the root host graph.
-
-## Standalone AxolotyWire consumer
-
-**Package dependency:**
-```swift
-.package(path: "/path/to/axoloty/Packages/AxolotyWire")
-// Target:
-.product(name: "AxolotyWire", package: "AxolotyWire")
-```
-
-**Minimal usage:**
-```swift
-import AxolotyWire
-print(UUID16.zero)
-```
-
-**Build results:**
-- Debug build: ✅ passed
-- Linked executable: ✅ passed
-- Runtime: ✅ `AXOLOTY_WIRE_STANDALONE_CONSUMER_OK`
-
-**Dependency closure:**
-```
-AxolotyWire -> swift-json/IkigaJSONCore (default-enabled CoatyJSON trait)
-```
-The standalone package declares the `CoatyJSON` trait default-enabled and gates
-its `IkigaJSONCore` product on it; `--disable-default-traits` drops the product
-and the `_JSONCore` module for a CBOR-only consumer. The standalone package may
-resolve `swift-nio` as a transitive dependency of
-`swift-json`, but it must not build or link NIO targets. Host-only packages
-(MQTTNIO, NIOSSL, NIOTransportServices, swift-log, ErrorKit, and the host
-`IkigaJSON` product) are absent. The target is Foundation-free and isolated
-from the host runtime, rather than dependency-free at package resolution.
-
-## Product and module names
-
-| Product | Package | Module | Correct |
-|---|---|---|---|
-| `Axoloty` | `workspace` (path) / `Axoloty` (URL) | `Axoloty` | ✅ |
-| `AxolotyWire` (root product) | `axoloty` | `AxolotyWire` | ✅ |
-| `AxolotyWire` (standalone) | `AxolotyWire` | `AxolotyWire` | ✅ |
-
-## Platform validation
-
-- **Linux (containerized):** ✅ Validated — both consumers build and run.
-- **macOS:** Best effort. The consumer runs recorded here used Linux only;
-  no macOS CI validates them. The package declares macOS 26.0+ and uses
-  NIOTransportServices (Network.framework) on Apple platforms. Follow the
-  [manual macOS oracle procedure](./testing.md#manual-macos-oracle) and record
-  results for the consumer's configuration.
-- **iOS:** Best effort, with no dedicated device/simulator tests or CI.
-  `Package.swift` declares iOS 26.0+ and selects the shared Apple code path.
-  Dedicated iOS validation remains absent from the
-  [platform evidence](./SUPPORT_MATRIX.md#platforms).
+Do not treat a successful Linux run as platform evidence for macOS or iOS.
+Ordinary consumer validation and Core Embedded Swift checks never probe,
+reserve, flash, or request hardware access.

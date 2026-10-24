@@ -208,8 +208,26 @@ test("cold semver consumer gates allow a full dual-configuration build", () => {
 test("cold semver consumer bounds SwiftPM build parallelism", () => {
   const script = fs.readFileSync(path.join(root, "Tests/Support/checks/check-axoloty-semver-consumer.sh"), "utf8");
   assert.match(script, /jobs=\$\{AXOLOTY_CONSUMER_JOBS:-2\}/);
-  assert.match(script, /swift build --jobs "\$jobs" --configuration "\$configuration" --target WireConsumer/);
-  assert.match(script, /swift build --jobs "\$jobs" --configuration "\$configuration" --target AxolotyConsumer/);
+  for (const target of ["PortableConsumer", "MQTTConsumer", "TransportSPIConsumer"]) {
+    assert.ok(script.includes(target), `consumer target ${target} is declared`);
+  }
+  assert.match(script, /for target in WireConsumer PortableConsumer MQTTConsumer TransportSPIConsumer/);
+  assert.match(script, /consumer_swiftpm build --jobs "\$jobs" --configuration "\$configuration" --target "\$target"/);
+  assert.match(script, /revision:/);
+  assert.match(script, /\$revision/);
+  assert.match(script, /consumer_swiftpm run --jobs "\$jobs" --configuration "\$configuration" "\$executable"/);
+  assert.match(script, /AXOLOTY_CONSUMER_EVIDENCE_DIR/);
+  assert.match(script, /axoloty_check_consumer_paths/);
+  assert.match(script, /axoloty_check_core_pin/);
+});
+
+test("consumer provenance guards reject noncanonical URLs, path dependencies, and mismatched revisions", () => {
+  const result = spawnSync("sh", [path.join(root, "Tests/Support/selftests/check-axoloty-consumer-provenance.sh")], {
+    cwd: root,
+    encoding: "utf8",
+  });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(result.stdout, /reject noncanonical URLs, paths, and mismatched Core pins/);
 });
 
 test("G4 runtime gates select whole suites and their owning Swift packages", () => {

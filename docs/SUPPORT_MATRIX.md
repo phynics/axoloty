@@ -92,7 +92,7 @@ CBOR-only consumers have two known limitations; see
 |---|---|---|
 | Linux | Validated | Canonical platform. The [CI workflow](../.github/workflows/ci.yml) runs the required checks in the pinned Linux container, including host tests and the hardware-free Embedded Swift gate. |
 | macOS | Best effort | `Package.swift` declares macOS 26.0; the Apple MQTT path uses Network.framework. No automated macOS CI. Verification is manual: use the [macOS oracle procedure](./testing.md#manual-macos-oracle). Recorded [macOS arm64 Zenoh tier results](./dependencies/zenoh.md#host-macos-266-arm64-xcode-27-swift-64-native) cover that transport and configuration. |
-| iOS | Best effort | `Package.swift` declares iOS 26.0 and selects the Apple MQTT implementation. No dedicated iOS device/simulator tests or CI. Shared Apple code and macOS results do not establish iOS validation. |
+| iOS | Experimental, unvalidated | `Package.swift` declares iOS 26.0 and selects the Apple MQTT implementation. No dedicated iOS device/simulator tests or CI. Shared Apple code and macOS results do not establish iOS validation. |
 | ESP32-C6 Embedded Swift | Validated at 0.8 (embedded scope) | 313 on-device vector tests. Six physical harness scenarios: two-device exchange, host interop, CoatyJS bidirectional, last-will, broker-restart. Zero hot-path allocations. Scope: Advertise/Deadvertise, Discover/Resolve only. Device qualification now lives in `phynics/axoloty-embedded`. No profile holds an unrevoked certificate at the current Core revision, and requalification is tracked in [#796](https://github.com/phynics/axoloty/issues/796). |
 
 Host architecture is part of the Zenoh host contract. The pinned `zenoh-c`
