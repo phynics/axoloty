@@ -13,15 +13,18 @@ the acquisition unit for all six stable products:
 | `AxolotyProtocol` | Portable product consumer and transport SPI consumer |
 | `AxolotyObjectModel` | Portable product consumer |
 | `AxolotyStaticRuntime` | Portable product consumer |
-| `Axoloty` | MQTT composition and transport SPI consumers |
+| `Axoloty` | Core-only, MQTT composition, and transport SPI consumers |
 | `AxolotyMQTT` | Host MQTT composition consumer |
 
 `make test-axoloty-semver-consumer` resolves the root URL into a fresh temporary
 consumer. Set `AXOLOTY_CONSUMER_REVISION` to a full immutable 40-character git
 revision and explicitly set `AXOLOTY_CONSUMER_LOCAL=0` for revision-based
 validation, or set `AXOLOTY_CONSUMER_VERSION` for a published semantic
-version. The check builds and runs every consumer in
-debug and release configurations. `AXOLOTY_CONSUMER_EVIDENCE_DIR` retains the
+version. By default, the check builds and runs every consumer in debug and
+release configurations. `AXOLOTY_CONSUMER_SCOPE=core-wire` limits it to fresh
+Core-only and Wire-only consumers for packaging-boundary checks. The focused
+scope still uses the canonical public root URL when local mode is disabled.
+`AXOLOTY_CONSUMER_EVIDENCE_DIR` retains the
 manifest, resolution, build and run logs, toolchain, platform, and provenance
 outside the temporary consumer directory. Without that override, evidence is
 retained under `.build/external-consumer-evidence/`.
@@ -38,6 +41,11 @@ that target, so resolution may fetch host dependencies. That package-level
 resolution is not host product linkage. The checker records both the resolved
 graph and the target build log, and rejects host-target compilation in the
 Wire-only build.
+
+`AxolotyZenoh` remains experimental in its separate nested package. A root URL
+consumer cannot select a SwiftPM package manifest from a repository
+subdirectory; host consumers use the documented checkout workflow and pinned
+native provisioning in [ADR 0014](adr/0014-optional-zenoh-root-packaging-disposition.md).
 
 The host MQTT consumer constructs the public `RuntimeBuilder`, immutable
 definition, and `MQTTBinding`. It does not connect to a broker. The transport
