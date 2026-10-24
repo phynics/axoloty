@@ -15,7 +15,12 @@ spy_bin="$work/bin"
 mkdir -p "$spy_bin"
 cat >"$spy_bin/swift" <<'EOF'
 #!/bin/sh
-echo swift-called >>"$AXOLOTY_CONSUMER_SPY_MARKER"
+if [ "${AXOLOTY_CONSUMER_EXPECTED_HOME+x}" = x ] && [ "${HOME-}" != "$AXOLOTY_CONSUMER_EXPECTED_HOME" ]; then
+    echo unexpected-home >>"$AXOLOTY_CONSUMER_SPY_MARKER"
+    exit 91
+fi
+printf '%s\n' "$*" >>"$AXOLOTY_CONSUMER_SPY_MARKER"
+[ "$*" = --version ] && { echo 'Swift fixture'; exit 0; }
 exit 90
 EOF
 cp "$spy_bin/swift" "$spy_bin/git"
@@ -58,6 +63,29 @@ case "$output" in
 esac
 [ ! -e "$canonical_marker" ] || { echo "canonical preflight test reached git or SwiftPM" >&2; exit 1; }
 [ ! -e "$canonical_evidence" ] || { echo "canonical preflight test created evidence before revision validation" >&2; exit 1; }
+
+# A valid canonical request reaches resolution with explicit private state
+# paths while preserving HOME. The Swift spy stops before network access.
+canonical_marker="$work/canonical-resolution-marker"
+if output=$(env PATH="$spy_bin:$PATH" \
+    AXOLOTY_CONSUMER_LOCAL=0 \
+    AXOLOTY_CONSUMER_REVISION=6f34bcc1fa77da35d23303c51cbfc9a96e583d10 \
+    AXOLOTY_CONSUMER_REPOSITORY_URL=https://github.com/phynics/axoloty.git \
+    AXOLOTY_CONSUMER_EVIDENCE_DIR="$work/canonical-resolution-evidence" \
+    AXOLOTY_CONSUMER_EXPECTED_HOME="${HOME-}" \
+    AXOLOTY_CONSUMER_SPY_MARKER="$canonical_marker" \
+    sh "$consumer_check" 2>&1); then
+    echo "expected Swift spy to stop canonical resolution" >&2
+    exit 1
+fi
+grep -Eq '^package --config-path /.+/configuration --cache-path /.+/cache --security-path /.+/security resolve$' "$canonical_marker" || {
+    echo "canonical resolution did not use explicit private SwiftPM paths: $output" >&2
+    exit 1
+}
+if grep -Fqx unexpected-home "$canonical_marker"; then
+    echo "consumer validation changed HOME" >&2
+    exit 1
+fi
 
 consumer="$work/consumer"
 mkdir -p "$consumer/Sources/Consumer"

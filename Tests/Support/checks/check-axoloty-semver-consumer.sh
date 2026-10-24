@@ -101,10 +101,18 @@ fi
 mkdir -p "$evidence"
 evidence=$(CDPATH= cd -- "$evidence" && pwd)
 
-# Ignore user SwiftPM mirrors and keep its configuration and scratch private.
-HOME="$work/home"
-mkdir -p "$HOME"
-export HOME
+# Ignore user SwiftPM mirrors and keep cache/security state private without
+# changing the operator's home directory.
+consumer_config_dir="$work/configuration"
+consumer_cache_dir="$work/cache"
+consumer_security_dir="$work/security"
+mkdir -p "$consumer_config_dir" "$consumer_cache_dir" "$consumer_security_dir"
+consumer_swiftpm() {
+    consumer_swift_subcommand=$1
+    shift
+    swift "$consumer_swift_subcommand" --config-path "$consumer_config_dir" \
+        --cache-path "$consumer_cache_dir" --security-path "$consumer_security_dir" "$@"
+}
 
 consumer="$work/consumer"
 mkdir -p "$consumer/Sources/WireConsumer" "$consumer/Sources/PortableConsumer" \
@@ -250,8 +258,8 @@ cp Package.swift "$evidence/Package.swift"
 . "$root/Tests/Support/lib/consumer-provenance.sh"
 axoloty_check_consumer_paths "$root" "$consumer" || exit 1
 
-swift package resolve >"$evidence/resolve.log" 2>&1 || { cat "$evidence/resolve.log" >&2; fail "fresh remote resolution failed"; }
-swift package show-dependencies --format flatlist >"$evidence/dependencies.txt"
+consumer_swiftpm package resolve >"$evidence/resolve.log" 2>&1 || { cat "$evidence/resolve.log" >&2; fail "fresh remote resolution failed"; }
+consumer_swiftpm package show-dependencies --format flatlist >"$evidence/dependencies.txt"
 cp Package.resolved "$evidence/Package.resolved"
 
 if [ -n "$revision" ]; then
@@ -261,7 +269,7 @@ fi
 for configuration in debug release; do
     for target in WireConsumer PortableConsumer MQTTConsumer TransportSPIConsumer; do
         log="$evidence/build-$configuration-$target.log"
-        if ! swift build --jobs "$jobs" --configuration "$configuration" --target "$target" >"$log" 2>&1; then
+        if ! consumer_swiftpm build --jobs "$jobs" --configuration "$configuration" --target "$target" >"$log" 2>&1; then
             cat "$log" >&2
             fail "$configuration build failed for $target"
         fi
@@ -272,7 +280,7 @@ for configuration in debug release; do
     fi
     for executable in WireConsumer PortableConsumer MQTTConsumer TransportSPIConsumer; do
         log="$evidence/run-$configuration-$executable.log"
-        if ! swift run --jobs "$jobs" --configuration "$configuration" "$executable" >"$log" 2>&1; then
+        if ! consumer_swiftpm run --jobs "$jobs" --configuration "$configuration" "$executable" >"$log" 2>&1; then
             cat "$log" >&2
             fail "$configuration linked execution failed for $executable"
         fi

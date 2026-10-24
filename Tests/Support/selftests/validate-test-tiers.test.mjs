@@ -212,10 +212,10 @@ test("cold semver consumer bounds SwiftPM build parallelism", () => {
     assert.ok(script.includes(target), `consumer target ${target} is declared`);
   }
   assert.match(script, /for target in WireConsumer PortableConsumer MQTTConsumer TransportSPIConsumer/);
-  assert.match(script, /swift build --jobs "\$jobs" --configuration "\$configuration" --target "\$target"/);
+  assert.match(script, /consumer_swiftpm build --jobs "\$jobs" --configuration "\$configuration" --target "\$target"/);
   assert.match(script, /revision:/);
   assert.match(script, /\$revision/);
-  assert.match(script, /swift run --jobs "\$jobs" --configuration "\$configuration" "\$executable"/);
+  assert.match(script, /consumer_swiftpm run --jobs "\$jobs" --configuration "\$configuration" "\$executable"/);
   assert.match(script, /AXOLOTY_CONSUMER_EVIDENCE_DIR/);
   assert.match(script, /axoloty_check_consumer_paths/);
   assert.match(script, /axoloty_check_core_pin/);
