@@ -20,7 +20,9 @@ the acquisition unit for all six stable products:
 consumer. Set `AXOLOTY_CONSUMER_REVISION` to a full immutable 40-character git
 revision and explicitly set `AXOLOTY_CONSUMER_LOCAL=0` for revision-based
 validation, or set `AXOLOTY_CONSUMER_VERSION` for a published semantic
-version. By default, the check builds and runs every consumer in debug and
+version. `make checkpoint` accepts the same revision input for its release
+consumer gate; set `AXOLOTY_CONSUMER_LOCAL=0` there too for public revision
+resolution. By default, the check builds and runs every consumer in debug and
 release configurations. `AXOLOTY_CONSUMER_SCOPE=core-wire` limits it to fresh
 Core-only and Wire-only consumers for packaging-boundary checks. The focused
 scope still uses the canonical public root URL when local mode is disabled.
