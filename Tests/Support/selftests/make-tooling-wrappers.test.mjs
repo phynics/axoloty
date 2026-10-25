@@ -241,6 +241,70 @@ test("release targets fail closed when the container env allowlist is unavailabl
   assert.equal(missing.stdout, "");
 });
 
+test("checkpoint forwards an explicit consumer revision through its container allowlist", () => {
+  const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), "axoloty-checkpoint-consumer-revision-"));
+  const fixture = path.join(temporaryRoot, "checkout");
+  const bin = path.join(temporaryRoot, "bin");
+  const capture = path.join(temporaryRoot, "container-capture.txt");
+  fs.mkdirSync(path.join(fixture, "Tests/Support/lib"), { recursive: true });
+  fs.mkdirSync(path.join(fixture, ".devcontainer"), { recursive: true });
+  fs.mkdirSync(bin);
+  fs.copyFileSync("Makefile", path.join(fixture, "Makefile"));
+  fs.copyFileSync("Tests/Support/lib/tool-container-env.sh", path.join(fixture, "Tests/Support/lib/tool-container-env.sh"));
+  fs.copyFileSync("Tests/Support/test-tiers.json", path.join(fixture, "Tests/Support/test-tiers.json"));
+  fs.writeFileSync(path.join(fixture, "VERSION"), "0.9.0\n");
+  fs.writeFileSync(path.join(bin, "git"), "#!/bin/sh\ncase \"$1 $2\" in\n  'rev-parse HEAD') echo 1111111111111111111111111111111111111111 ;;\n  'rev-parse HEAD^{tree}') echo 2222222222222222222222222222222222222222 ;;\n  'status --porcelain') : ;;\n  *) exit 2 ;;\nesac\n");
+  fs.writeFileSync(path.join(fixture, ".devcontainer/run.sh"), `#!/bin/sh
+set -eu
+printf 'argv=%s\\n' "$*" > "$AXOLOTY_TEST_CAPTURE"
+found=0
+for name in $CONTAINER_ENV_VARS; do
+  if [ "$name" = AXOLOTY_CONSUMER_REVISION ]; then found=1; fi
+done
+if [ "$found" -eq 1 ]; then
+  printf 'revision=%s\\n' "\${AXOLOTY_CONSUMER_REVISION-}" >> "$AXOLOTY_TEST_CAPTURE"
+else
+  printf 'revision=<not-allowlisted>\\n' >> "$AXOLOTY_TEST_CAPTURE"
+fi
+`);
+  fs.chmodSync(path.join(bin, "git"), 0o755);
+  fs.chmodSync(path.join(fixture, ".devcontainer/run.sh"), 0o755);
+
+  const invoke = (revision) => {
+    fs.rmSync(capture, { force: true });
+    const args = ["--no-print-directory", "checkpoint", "AXOLOTY_DEVCONTAINER=1", `AXOLOTY_TEST_CAPTURE=${capture}`];
+    if (revision !== undefined) args.push(`AXOLOTY_CONSUMER_REVISION=${revision}`);
+    return spawnSync("make", args, {
+      cwd: fixture,
+      encoding: "utf8",
+      env: {
+        ...Object.fromEntries(Object.entries(process.env).filter(([name]) => name !== "AXOLOTY_CONSUMER_REVISION")),
+        PATH: `${bin}${path.delimiter}${process.env.PATH}`,
+      },
+    });
+  };
+
+  try {
+    const revision = "0123456789abcdef0123456789abcdef01234567";
+    const supplied = invoke(revision);
+    assert.equal(supplied.status, 0, `make checkpoint failed: ${supplied.stdout}\n${supplied.stderr}`);
+    const suppliedCapture = fs.readFileSync(capture, "utf8");
+    assert.match(suppliedCapture, /^argv=\/opt\/axoloty\/bin\/axoloty-tool release checkpoint$/m);
+    assert.match(suppliedCapture, new RegExp(`^revision=${revision}$`, "m"));
+
+    const absent = invoke(undefined);
+    assert.equal(absent.status, 0, `make checkpoint without a revision failed: ${absent.stdout}\n${absent.stderr}`);
+    assert.match(fs.readFileSync(capture, "utf8"), /^revision=$/m);
+
+    const checkpointRecipe = recipe(fs.readFileSync("Makefile", "utf8"), "checkpoint");
+    assert.match(checkpointRecipe, /AXOLOTY_CONSUMER_REVISION="\$\(AXOLOTY_CONSUMER_REVISION\)"/);
+    const allowlist = JSON.parse(fs.readFileSync("Tests/Support/test-tiers.json", "utf8")).toolContainerEnv["release-checkpoint"];
+    assert.ok(allowlist.includes("AXOLOTY_CONSUMER_REVISION"));
+  } finally {
+    fs.rmSync(temporaryRoot, { recursive: true, force: true });
+  }
+});
+
 test("canonical tiers are the only test entry points", () => {
   const makefile = fs.readFileSync("Makefile", "utf8");
   // Per-subject aliases were replaced by `make test-tier TIER=<category>`;
