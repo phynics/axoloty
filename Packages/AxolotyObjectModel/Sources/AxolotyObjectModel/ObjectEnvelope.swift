@@ -57,12 +57,16 @@ public struct ObjectEnvelope<let nameCapacity: Int, let externalIDCapacity: Int>
 
     /// Decodes the standard envelope members from one complete JSON object.
     ///
+    /// This initializer decodes `coaty/3` JSON. In a build without
+    /// `_JSONCore` it traps, as selecting `WireCodec` `.coaty3JSON` for
+    /// decoding does; a CBOR-only consumer must not call it.
+    ///
     /// - Parameter bytes: The complete JSON object to decode.
     /// - Throws: ``ObjectError/invalidEnvelope`` when a required member is
     ///   missing, empty, malformed, or exceeds the selected capacity.
     public init(decoding bytes: ByteSlice) throws(ObjectError) {
         let reader = bytes.withBytes { pointer, count in
-            WireReader(bytes: pointer.assumingMemoryBound(to: UInt8.self), length: count)
+            objectJSONReader(bytes: pointer.assumingMemoryBound(to: UInt8.self), length: count)
         }
         try self.init(decoding: reader)
     }
@@ -70,7 +74,8 @@ public struct ObjectEnvelope<let nameCapacity: Int, let externalIDCapacity: Int>
     /// Decodes standard envelope members with reusable tokenizer storage.
     ///
     /// Use this initializer in repeated decode loops to retain tokenizer
-    /// storage separately from each envelope value.
+    /// storage separately from each envelope value. Like the other JSON
+    /// decoder, it traps in a build without `_JSONCore`.
     ///
     /// - Parameters:
     ///   - bytes: The complete JSON object to decode.
@@ -82,11 +87,15 @@ public struct ObjectEnvelope<let nameCapacity: Int, let externalIDCapacity: Int>
         workspace: inout Workspace
     ) throws(ObjectError) {
         let reader = bytes.withBytes { pointer, count in
+            #if canImport(_JSONCore)
             WireReader(
                 bytes: pointer.assumingMemoryBound(to: UInt8.self),
                 length: count,
                 workspace: &workspace
             )
+            #else
+            objectJSONReader(bytes: pointer.assumingMemoryBound(to: UInt8.self), length: count)
+            #endif
         }
         try self.init(decoding: reader)
     }
@@ -177,7 +186,7 @@ func validateObjectIdentity(
 ) throws(ObjectError) {
     var matches = false
     bytes.withBytes { pointer, count in
-        let reader = WireReader(bytes: pointer.assumingMemoryBound(to: UInt8.self), length: count)
+        let reader = objectJSONReader(bytes: pointer.assumingMemoryBound(to: UInt8.self), length: count)
         do throws(WireDecodeError) { try reader.validate() } catch { return }
         guard let idBytes = reader.readString("objectId"), ObjectID(bytes: idBytes) != nil,
               let nameBytes = reader.readString("name"), nameBytes.length > 0,

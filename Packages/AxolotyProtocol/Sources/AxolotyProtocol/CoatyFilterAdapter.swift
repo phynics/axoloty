@@ -3,6 +3,7 @@
 import AxolotyObjectModel
 import AxolotyWire
 
+#if canImport(_JSONCore)
 /// Protocol-owned adaptation of a Coaty `objectFilter` wire value.
 ///
 /// The adapter owns only the bounded predicate program. JSON tokenization and
@@ -59,3 +60,4 @@ public struct CoatyFilterAdapter<let nodeCapacity: Int, let pathCapacity: Int, l
         try predicate.encode(to: &writer)
     }
 }
+#endif

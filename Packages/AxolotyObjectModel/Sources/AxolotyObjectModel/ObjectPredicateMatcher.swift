@@ -2,6 +2,7 @@
 
 import AxolotyWire
 
+#if canImport(_JSONCore)
 private enum PredicateScratchLimits {
     // Predicate string comparison has a separate measured scalar bound.
     // Overflow is a deterministic non-match, never truncation.
@@ -161,3 +162,4 @@ enum ObjectPredicateMatcher {
         return true
     }
 }
+#endif

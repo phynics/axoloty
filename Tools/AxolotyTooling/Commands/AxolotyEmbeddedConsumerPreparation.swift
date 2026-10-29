@@ -51,13 +51,15 @@ struct AxolotyEmbeddedConsumerPreparationReport: Codable, Equatable, Sendable {
     let schemaVersion: Int
     let status: String
     let contractSHA256: String
+    /// Contract wire profiles selected for this consumer preparation.
+    let selectedWireProfiles: [String]
     let core: Core
     let swift: Swift
     let portablePackages: [PortablePackage]
     /// The resolved `_JSONCore` checkout.
     ///
-    /// Present exactly when the contract declares a wire profile that sets
-    /// `requiresJSONCore`. A CBOR-only contract omits this field, so the
+    /// Present when the selected wire profiles include one that sets
+    /// `requiresJSONCore`. A CBOR-only selection omits this field, so the
     /// report remains schema version 1.
     let jsonCore: JSONCore?
     let staticRuntimeMacro: StaticRuntimeMacro
@@ -78,12 +80,12 @@ struct AxolotyEmbeddedConsumerPreparation: Sendable {
     func run(arguments: [String]) -> AxolotyCommandResult {
         if arguments == ["--help"] || arguments == ["-h"] {
             return AxolotyCommandResult(
-                standardOutput: "Usage: axoloty-tool embedded consumer prepare --scratch <absolute-path> --output <absolute-path>\n"
+                standardOutput: "Usage: axoloty-tool embedded consumer prepare --scratch <absolute-path> --output <absolute-path> [--profile <wire-profile-id>]\n"
             )
         }
         guard let paths = parse(arguments) else {
             return AxolotyCommandResult(
-                standardError: "error: usage: axoloty-tool embedded consumer prepare --scratch <absolute-path> --output <absolute-path>\n",
+                standardError: "error: usage: axoloty-tool embedded consumer prepare --scratch <absolute-path> --output <absolute-path> [--profile <wire-profile-id>]\n",
                 exitCode: 64
             )
         }
@@ -126,7 +128,10 @@ struct AxolotyEmbeddedConsumerPreparation: Sendable {
             }.joined(separator: "; ")
             return failure("embedded consumer contract failed validation: \(detail)", code: 1)
         }
-        guard let contract = parseContract(contractData) else {
+        guard let contract = parseContract(contractData, selecting: paths.profile) else {
+            if let profile = paths.profile {
+                return failure("wire profile is not declared in the embedded consumer contract: \(profile)", code: 64)
+            }
             return failure("embedded consumer contract has an unsupported shape", code: 1)
         }
 
@@ -217,25 +222,27 @@ struct AxolotyEmbeddedConsumerPreparation: Sendable {
             return failure("Zenoh façade module map must remain inside caller-owned scratch", code: 1)
         }
         let packagePath = coreURL.appendingPathComponent("Packages/AxolotyStaticRuntime").path
+        let buildArguments = [
+            "build", "--package-path", packagePath, "--scratch-path", scratchURL.path,
+            "--disable-automatic-resolution", "--configuration", "debug",
+            "--target", "AxolotyStaticRuntime",
+        ]
         let build = commandRunner.run(AxolotyCommandPlan(
             executable: "swift",
-            arguments: [
-                "build", "--package-path", packagePath, "--scratch-path", scratchURL.path,
-                "--disable-automatic-resolution", "--configuration", "debug",
-                "--target", "AxolotyStaticRuntime",
-            ],
+            arguments: buildArguments,
             executionContext: .project,
             timeoutSeconds: 3_600
         ))
         guard build.exitCode == 0 else {
             return failure("failed to build AxolotyStaticRuntime macro: \(bounded(build.standardError + build.standardOutput))", code: 1)
         }
+        let binArguments = [
+            "build", "--package-path", packagePath, "--scratch-path", scratchURL.path,
+            "--disable-automatic-resolution", "--configuration", "debug", "--show-bin-path",
+        ]
         let bin = commandRunner.run(AxolotyCommandPlan(
             executable: "swift",
-            arguments: [
-                "build", "--package-path", packagePath, "--scratch-path", scratchURL.path,
-                "--disable-automatic-resolution", "--configuration", "debug", "--show-bin-path",
-            ],
+            arguments: binArguments,
             executionContext: .project,
             timeoutSeconds: 600
         ))
@@ -294,6 +301,7 @@ struct AxolotyEmbeddedConsumerPreparation: Sendable {
             schemaVersion: 1,
             status: "prepared",
             contractSHA256: AxolotySHA256().hash(contractData),
+            selectedWireProfiles: contract.wireProfiles.map(\.id),
             core: .init(sourceDir: coreURL.path, sha: sha, dirty: dirty),
             swift: .init(
                 toolsVersion: contract.swiftToolsVersion,
@@ -331,8 +339,9 @@ struct AxolotyEmbeddedConsumerPreparation: Sendable {
         return AxolotyCommandResult(standardOutput: output)
     }
 
-    private struct Paths { let scratch: String; let output: String }
+    private struct Paths { let scratch: String; let output: String; let profile: String? }
     private struct Package { let name: String; let sourcePath: String }
+    private struct WireProfile { let id: String; let requiresJSONCore: Bool }
     private struct ZenohCoreContract {
         let module: String
         let sourcePath: String
@@ -341,6 +350,7 @@ struct AxolotyEmbeddedConsumerPreparation: Sendable {
     }
     private struct Contract {
         let packages: [Package]
+        let wireProfiles: [WireProfile]
         let zenohCore: ZenohCoreContract
         /// The locked `swift-json` revision, or `nil` for a CBOR-only contract.
         let jsonRevision: String?
@@ -352,9 +362,17 @@ struct AxolotyEmbeddedConsumerPreparation: Sendable {
     }
 
     private func parse(_ arguments: [String]) -> Paths? {
-        guard arguments.count == 4, arguments[0] == "--scratch", arguments[2] == "--output" else { return nil }
+        guard arguments.count == 4 || arguments.count == 6,
+              arguments[0] == "--scratch", arguments[2] == "--output" else { return nil }
         guard arguments[1].hasPrefix("/"), arguments[3].hasPrefix("/") else { return nil }
-        return Paths(scratch: arguments[1], output: arguments[3])
+        let profile: String?
+        if arguments.count == 6 {
+            guard arguments[4] == "--profile", !arguments[5].isEmpty else { return nil }
+            profile = arguments[5]
+        } else {
+            profile = nil
+        }
+        return Paths(scratch: arguments[1], output: arguments[3], profile: profile)
     }
 
     /// Macro executable names to try, in preference order.
@@ -375,7 +393,7 @@ struct AxolotyEmbeddedConsumerPreparation: Sendable {
         return "module \(module) {\n    header \"\(escapedHeaderPath)\"\n    export *\n}\n"
     }
 
-    private func parseContract(_ data: Data) -> Contract? {
+    private func parseContract(_ data: Data, selecting selectedProfile: String?) -> Contract? {
         guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let swift = root["swift"] as? [String: Any],
               let tools = swift["toolsVersion"] as? String,
@@ -391,17 +409,27 @@ struct AxolotyEmbeddedConsumerPreparation: Sendable {
               let macro = root["staticRuntimeMacro"] as? [String: Any],
               let executable = macro["executable"] as? String,
               let plugin = macro["pluginModule"] as? String else { return nil }
-        // `jsonCore` is present exactly when a declared profile requires the
-        // JSON parser. A CBOR-only contract declares only `axoloty1CBOR`, so
-        // preparation never touches the swift-json checkout.
-        let requiresJSONCore = wireProfiles.contains { ($0["requiresJSONCore"] as? Bool) == true }
+        let parsedProfiles = wireProfiles.compactMap { profile -> WireProfile? in
+            guard let id = profile["id"] as? String,
+                  let requiresJSONCore = profile["requiresJSONCore"] as? Bool else { return nil }
+            return WireProfile(id: id, requiresJSONCore: requiresJSONCore)
+        }
+        guard parsedProfiles.count == wireProfiles.count,
+              !parsedProfiles.isEmpty else { return nil }
+        let selectedProfiles: [WireProfile]
+        if let selectedProfile {
+            guard let profile = parsedProfiles.first(where: { $0.id == selectedProfile }) else { return nil }
+            selectedProfiles = [profile]
+        } else {
+            selectedProfiles = parsedProfiles
+        }
+        let requiresJSONCore = selectedProfiles.contains(where: \.requiresJSONCore)
         let jsonRevision: String?
         if requiresJSONCore {
             guard let json = root["jsonCore"] as? [String: Any],
                   let revision = json["revision"] as? String else { return nil }
             jsonRevision = revision
         } else {
-            guard root["jsonCore"] == nil else { return nil }
             jsonRevision = nil
         }
         let parsed = packages.compactMap { object -> Package? in
@@ -412,6 +440,7 @@ struct AxolotyEmbeddedConsumerPreparation: Sendable {
               parsed.map(\.name) == ["AxolotyWire", "AxolotyObjectModel", "AxolotyProtocol", "AxolotyCoatyModels", "AxolotyStaticRuntime"] else { return nil }
         return Contract(
             packages: parsed,
+            wireProfiles: selectedProfiles,
             zenohCore: ZenohCoreContract(
                 module: zenohModule,
                 sourcePath: zenohSourcePath,

@@ -2,6 +2,7 @@
 
 import AxolotyWire
 
+#if canImport(_JSONCore)
 /// The Coaty object-filter operators, retaining their protocol integer values.
 public enum ObjectPredicateOperator: UInt8, Sendable, Equatable {
     /// Strictly less than.
@@ -90,3 +91,4 @@ public typealias PredicateOperator = ObjectPredicateOperator
 public typealias PredicateLiteral = ObjectPredicateLiteral
 /// Short alias for a predicate expression.
 public typealias PredicateExpression = ObjectPredicateExpression
+#endif

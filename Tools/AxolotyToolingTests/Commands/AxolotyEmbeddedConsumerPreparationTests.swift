@@ -27,7 +27,12 @@ private struct EmbeddedConsumerPreparationRunner: AxolotyCheckCommandRunning {
             }
             return .init(exitCode: 1, standardError: "unexpected git command")
         case "swift":
-            if command.arguments.last == "--show-bin-path" {
+            if command.arguments.first == "build",
+               command.arguments.contains("--target"),
+               !command.arguments.contains("AxolotyStaticRuntime") {
+                return .init(exitCode: 1, standardError: "preparation must build the static runtime macro prerequisite")
+            }
+            if command.arguments.contains("--show-bin-path") {
                 return .init(exitCode: 0, standardOutput: macroBin.path + "\n")
             }
             return .init(exitCode: 0)
@@ -92,6 +97,7 @@ func preparationReportsZenohCoreWithoutChangingLegacyPackageOutput() throws {
     let report = try JSONSerialization.jsonObject(with: reportData) as! [String: Any]
     #expect(report["schemaVersion"] as? Int == 1)
     #expect(report["status"] as? String == "prepared")
+    #expect(report["selectedWireProfiles"] as? [String] == ["coaty3JSON", "axoloty1CBOR"])
     let packageReports = report["portablePackages"] as! [[String: Any]]
     #expect(packageReports.compactMap { $0["name"] as? String } == [
         "AxolotyWire",
@@ -185,6 +191,84 @@ func preparationAcceptsCBOROnlyContractWithoutJSONCore() throws {
     #expect(report["status"] as? String == "prepared")
     #expect(report["jsonCore"] == nil)
     #expect((report["portablePackages"] as? [[String: Any]])?.count == 5)
+}
+
+@Test
+func preparationSelectsCBORFromDualProfileContractWithoutJSONCore() throws {
+    let fixture = try makeEmbeddedContractFixture()
+    let scratch = FileManager.default.temporaryDirectory
+        .appendingPathComponent("axoloty-consumer-preparation-cbor-select-" + UUID().uuidString)
+    let reportURL = FileManager.default.temporaryDirectory
+        .appendingPathComponent("axoloty-consumer-preparation-cbor-report-" + UUID().uuidString + ".json")
+    defer {
+        try? FileManager.default.removeItem(at: fixture)
+        try? FileManager.default.removeItem(at: scratch)
+        try? FileManager.default.removeItem(at: reportURL)
+    }
+
+    let macroBin = scratch.appendingPathComponent("bin")
+    try FileManager.default.createDirectory(at: macroBin, withIntermediateDirectories: true)
+    let macroExecutable = macroBin.appendingPathComponent("AxolotyStaticRuntimeMacrosImplementation-tool")
+    try Data().write(to: macroExecutable)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: macroExecutable.path)
+
+    let contractData = try Data(contentsOf: fixture.appendingPathComponent("docs/embedded-consumer-contract.json"))
+    let contract = try JSONSerialization.jsonObject(with: contractData) as! [String: Any]
+    let jsonRevision = (contract["jsonCore"] as! [String: Any])["revision"] as! String
+    let runner = EmbeddedConsumerPreparationRunner(
+        coreRoot: fixture,
+        macroBin: macroBin,
+        jsonRevision: jsonRevision
+    )
+    let preparation = AxolotyEmbeddedConsumerPreparation(
+        environment: [
+            "AXOLOTY_SOURCE_DIR": fixture.path,
+            "PATH": ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin",
+        ],
+        commandRunner: runner
+    )
+
+    let result = preparation.run(arguments: [
+        "--scratch", scratch.path,
+        "--output", reportURL.path,
+        "--profile", "axoloty1CBOR",
+    ])
+    #expect(result.exitCode == 0, "\(result.standardError)")
+
+    let report = try JSONSerialization.jsonObject(with: Data(contentsOf: reportURL)) as! [String: Any]
+    #expect(report["selectedWireProfiles"] as? [String] == ["axoloty1CBOR"])
+    #expect(report["jsonCore"] == nil)
+    #expect(FileManager.default.fileExists(atPath: scratch.appendingPathComponent("checkouts/swift-json").path) == false)
+}
+
+@Test
+func preparationRejectsUndeclaredWireProfileSelection() throws {
+    let fixture = try makeEmbeddedContractFixture()
+    let scratch = FileManager.default.temporaryDirectory
+        .appendingPathComponent("axoloty-consumer-preparation-invalid-profile-" + UUID().uuidString)
+    let reportURL = FileManager.default.temporaryDirectory
+        .appendingPathComponent("axoloty-consumer-preparation-invalid-profile-" + UUID().uuidString + ".json")
+    try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
+    defer {
+        try? FileManager.default.removeItem(at: fixture)
+        try? FileManager.default.removeItem(at: scratch)
+        try? FileManager.default.removeItem(at: reportURL)
+    }
+    let preparation = AxolotyEmbeddedConsumerPreparation(
+        environment: ["AXOLOTY_SOURCE_DIR": fixture.path],
+        commandRunner: EmbeddedConsumerPreparationRunner(
+            coreRoot: fixture,
+            macroBin: scratch,
+            jsonRevision: ""
+        )
+    )
+    let result = preparation.run(arguments: [
+        "--scratch", scratch.path,
+        "--output", reportURL.path,
+        "--profile", "axoloty4CBOR",
+    ])
+    #expect(result.exitCode == 64)
+    #expect(result.standardError.contains("wire profile is not declared"))
 }
 
 @Test

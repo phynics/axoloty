@@ -2,6 +2,7 @@
 
 import AxolotyWire
 
+#if canImport(_JSONCore)
 /// A compact, fixed-inline predicate program.
 public struct ObjectPredicate<let nodeCapacity: Int, let pathCapacity: Int, let literalCapacity: Int, let arenaCapacity: Int>: ~Copyable {
     private var nodes: InlineArray<nodeCapacity, PredicateNode>
@@ -36,7 +37,7 @@ public struct ObjectPredicate<let nodeCapacity: Int, let pathCapacity: Int, let 
         guard bytes.wireValueKind == .object else { throw ObjectError(.invalidPredicate) }
         var failure: ObjectError?
         bytes.withBytes { pointer, count in
-            let reader = WireReader(bytes: pointer.assumingMemoryBound(to: UInt8.self), length: count)
+            let reader = objectJSONReader(bytes: pointer.assumingMemoryBound(to: UInt8.self), length: count)
             do throws(WireDecodeError) { try reader.validate() } catch { failure = ObjectError(.invalidPredicate); return }
             guard let conditions = reader.readField("conditions") else { return }
             candidate.appendConditionValue(conditions, parent: 0, failure: &failure)
@@ -447,7 +448,7 @@ public struct ObjectPredicate<let nodeCapacity: Int, let pathCapacity: Int, let 
         let start = arenaLength
         switch literal {
         case .raw(let value):
-            guard WireReader.isValidJSONValue(value) else { throw ObjectError(.invalidPredicateExpression) }
+            guard objectHasValidJSONValue(value) else { throw ObjectError(.invalidPredicateExpression) }
             try copy(value)
         case .null: try appendStatic("null")
         case .bool(let value): try appendStatic(value ? "true" : "false")
@@ -457,7 +458,7 @@ public struct ObjectPredicate<let nodeCapacity: Int, let pathCapacity: Int, let 
             try appendByte(34)
         case .number(let value):
             let bytes = ByteSlice(bytes: value.utf8Start, length: value.utf8CodeUnitCount)
-            guard WireReader.isValidJSONValue(bytes), bytes.wireValueKind == .number else { throw ObjectError(.invalidPredicateExpression) }
+            guard objectHasValidJSONValue(bytes), bytes.wireValueKind == .number else { throw ObjectError(.invalidPredicateExpression) }
             try copy(bytes)
         }
         literals[literalCount] = PredicateLiteralRecord(start: start, length: arenaLength - start)
@@ -695,3 +696,4 @@ private struct PredicateNode {
 private struct PredicatePath { var firstSegment = 0; var segmentCount = 0 }
 private struct PredicateSegment { var start = 0; var length = 0 }
 private struct PredicateLiteralRecord { var start = 0; var length = 0 }
+#endif

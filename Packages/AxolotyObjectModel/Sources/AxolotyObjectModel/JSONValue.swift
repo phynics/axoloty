@@ -180,7 +180,7 @@ public struct JSONValueView: ~Copyable {
         _ raw: borrowing ByteSlice,
         _ body: (borrowing JSONValueView) -> R
     ) throws(ObjectError) -> R {
-        guard WireReader.isValidJSONValue(raw) else {
+        guard objectHasValidJSONValue(raw) else {
             throw ObjectError(.invalidField)
         }
         return body(JSONValueView(raw: raw))
@@ -240,7 +240,7 @@ public struct OwnedJSONValue<let byteCapacity: Int>: Sendable, Equatable {
     /// Copies one complete JSON value into inline storage.
     public init(copying value: ByteSlice) throws(ObjectError) {
         guard value.length <= byteCapacity else { throw ObjectError(.capacityExceeded, byteOffset: value.length) }
-        guard WireReader.isValidJSONValue(value) else { throw ObjectError(.invalidEditValue) }
+        guard objectHasValidJSONValue(value) else { throw ObjectError(.invalidEditValue) }
         storage = InlineArray(repeating: 0); length = value.length
         for index in 0..<value.length { storage[index] = value.byte(at: index)! }
     }

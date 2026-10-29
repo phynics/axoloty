@@ -49,15 +49,22 @@ Decode through `WireCodec.reader(bytes:length:)` and
 `.coaty3JSON` profile traps when `_JSONCore` is unavailable; a CBOR-only
 consumer selects `.axoloty1CBOR`.
 
-The preparation command accepts a CBOR-only contract. When no declared
-profile sets `requiresJSONCore: true`, it skips the swift-json checkout and
-lock agreement and omits `jsonCore` from the schema-version-1 report. A
-JSON-bearing contract still emits `jsonCore`. This keeps the report schema at
-version 1; a CBOR-only report simply omits `jsonCore`.
+The preparation command accepts `--profile` to select a declared profile.
+Without it, the report covers every declared profile. When all selected
+profiles omit `requiresJSONCore: true`, the report does not require an
+`_JSONCore` revision entry and omits `jsonCore` from the
+schema-version-1 report. A
+selection that includes a JSON profile emits `jsonCore`. The report schema
+remains version 1; a CBOR-only selection simply omits `jsonCore`.
 
-Materializing a CBOR-only firmware consumer also requires the portable object
-model to carry CBOR; that work is tracked separately. The Core gate below proves
-the wire layer compiles and links without `_JSONCore`.
+`AxolotyObjectModel` exposes `BoundedCBORObject<byteCapacity, fieldCapacity>`
+for bounded materialization of an `axoloty/1` object map. It validates and owns
+the complete deterministic CBOR bytes, enforces the caller's inline byte and
+field capacities, and lends exact encoded field values only during a
+synchronous callback. Unknown fields and CBOR-only values such as byte strings
+remain in their original CBOR representation; this API does not convert them
+to JSON. Existing `BoundedDynamicObject` and `BoundedObject` remain the JSON
+object and schema APIs.
 
 ## Validate the contract
 
@@ -179,6 +186,15 @@ axoloty-tool embedded consumer prepare \
   --output /tmp/axoloty-consumer-preparation.json
 ```
 
+Pass `--profile axoloty1CBOR` to prepare a CBOR-only consumer from a contract
+that declares both profiles. The report's `selectedWireProfiles` records the
+selection. Preparation omits `jsonCore` for that selection. Preparing the
+static-runtime target also builds its macro executable prerequisite. The
+CBOR-only Core compile and link gate proves that the selected modules do not
+import or link `_JSONCore`. Without `--profile`, preparation selects every
+profile in the contract and includes `_JSONCore` when any selected profile
+requires it.
+
 The command validates the contract before invoking SwiftPM, builds
 `AxolotyStaticRuntime` with the committed lock and
 `--disable-automatic-resolution`, and emits the same versioned JSON report
@@ -223,12 +239,18 @@ make check-embedded-core-consumer
 
 The gate compiles `_JSONCore` and all five portable packages for the repository's
 RISC-V Embedded Swift test target when the contract declares a JSON profile. It
-then compiles a real `@StaticIoActor`
-consumer with the resolved macro executable and performs a relocatable link of
-the resulting objects. A second leg compiles and links a CBOR-only consumer that
-imports no `_JSONCore` and asserts that the linked objects carry no JSON symbols,
-proving `axoloty/1` works without the JSON parser. A CBOR-only contract therefore runs
-only this leg, so a CBOR-only consumer can use the same gate. The gate reads
+then compiles a real `@StaticIoActor` consumer with the resolved macro
+executable and performs a relocatable link of the resulting objects. A second
+leg compiles and links a CBOR-only consumer that imports no `_JSONCore` and
+asserts that the linked objects carry no JSON symbols. It also compiles and
+links the full five-module portable graph plus a static-runtime consumer with
+no `_JSONCore`, then checks that link for JSON symbols. Only the CBOR wire
+probe runs on the host after Embedded Swift compilation. The Core consumer is
+compiled and linked but not executed, so that leg proves the graph builds and
+links without `_JSONCore`, not runtime behavior; the host `StaticRuntimeTests`
+and `BoundedCBORObjectTests` cover behavior. A CBOR-only contract therefore
+omits `_JSONCore` preparation and still compiles the complete selected
+profile. The gate reads
 Core sources
 and caller-owned scratch
 storage only. It does not read the firmware project, invoke ESP-IDF, use a

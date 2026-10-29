@@ -282,7 +282,7 @@ public struct ObjectFieldDecoder: ~Copyable {
         _ key: StaticString,
         as type: T.Type
     ) throws(ObjectDecodingError) -> T {
-        let reader = WireReader(bytes: bytes.assumingMemoryBound(to: UInt8.self), length: length)
+        let reader = objectJSONReader(bytes: bytes.assumingMemoryBound(to: UInt8.self), length: length)
         do throws(WireDecodeError) { try reader.validate() }
         catch { throw .invalidField }
         guard let raw = reader.readField(key) else { throw .missingRequiredField }
@@ -303,7 +303,7 @@ public struct ObjectFieldDecoder: ~Copyable {
         _ key: StaticString,
         as type: T.Type
     ) throws(ObjectDecodingError) -> T? {
-        let reader = WireReader(bytes: bytes.assumingMemoryBound(to: UInt8.self), length: length)
+        let reader = objectJSONReader(bytes: bytes.assumingMemoryBound(to: UInt8.self), length: length)
         do throws(WireDecodeError) { try reader.validate() }
         catch { throw .invalidField }
         guard let raw = reader.readField(key) else { return nil }
@@ -328,7 +328,7 @@ public struct ObjectFieldDecoder: ~Copyable {
         as type: T.Type,
         default defaultValue: T
     ) throws(ObjectDecodingError) -> T {
-        let reader = WireReader(bytes: bytes.assumingMemoryBound(to: UInt8.self), length: length)
+        let reader = objectJSONReader(bytes: bytes.assumingMemoryBound(to: UInt8.self), length: length)
         do throws(WireDecodeError) { try reader.validate() }
         catch { throw .invalidField }
         guard let raw = reader.readField(key) else { return defaultValue }
@@ -350,7 +350,7 @@ public struct ObjectFieldDecoder: ~Copyable {
         _ key: StaticString,
         as type: T.Type
     ) throws(ObjectDecodingError) -> Presence<T> {
-        let reader = WireReader(bytes: bytes.assumingMemoryBound(to: UInt8.self), length: length)
+        let reader = objectJSONReader(bytes: bytes.assumingMemoryBound(to: UInt8.self), length: length)
         do throws(WireDecodeError) { try reader.validate() }
         catch { throw .invalidField }
         guard let raw = reader.readField(key) else { return .missing }
