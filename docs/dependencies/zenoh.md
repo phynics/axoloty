@@ -175,6 +175,63 @@ only the `axoloty/1` CBOR profile, so current keys read
 published payload `application/cbor`. The probe above was not re-run; MQTT
 still uses the sealed `coaty/3` JSON profile.
 
+### Host (Linux x86_64, Swift 6.4, Core v0.10 candidate)
+
+The current host-client evidence was run in the pinned `axoloty-dev` container
+from the task worktree based on Core commit
+`ac92751888c065a13f6c1a2ed7c31570913484f3`. The native inputs were the pinned
+`zenohd 1.10.0` standalone archive (SHA-256
+`43de097382e3db4f95903cbadbbf472a21fbea53d6a3193606ae12b034a20881`) and
+`zenoh-c 1.10.0` standalone archive (SHA-256
+`1168b3dffa7f4f48ffabfd640a3878ec0527c0a612ce825aa6f93e2cd05762d1`). The
+upstream `zenoh` 1.10.0 tag resolved to commit
+`c479f0c1102d7321c2fa83f515bddede92014cce`; `zenoh-c` 1.10.0 resolved to
+`7d586a9c19c0623144e06bd795e8c2b85dd722d4`. The router announced readiness
+on a unique loopback TCP endpoint before tests started. The exact façade
+source contract was 2.2.0, ABI generation 2. The Axoloty tool runner and
+provisioner are from the `ac92751888c065a13f6c1a2ed7c31570913484f3` checkout;
+their source hashes and the development-container input hash are in the task
+evidence bundle.
+
+`make test-tier TIER=zenoh-offline NODE=zenoh-offline-package` passed 41
+package tests and 7 core tests. They exercise the real `zenoh-c` implementation
+and assert ABI result mapping, session open/close and slot reuse, router-count
+status and invalid arguments, owned subscriber handles, four-frame queue
+saturation, over-limit key and payload reporting, advisory Encoding handling,
+and borrowed-buffer copy behavior. The package tier provisions the pinned
+archive and verifies its checksum; it does not start a router.
+
+`CONTAINER_NETWORK=host make test-tier TIER=zenoh-live` passed on the same
+host. The router-assisted client suite passed two Axoloty clients,
+Axoloty-to-independent-C and C-to-Axoloty traffic, a full native receive queue
+with reported drops, an over-limit native sample counted as oversized without
+delivery, and graceful session shutdown. In the production runtime recovery
+case, one CBOR Query with correlation
+`22222222-2222-4222-8222-222222222222` arrived before the router was killed;
+the sessions detected loss, the runtime entered reconnecting, and both
+sessions and the runtime recovered after router restart. One CBOR Channel
+publication arrived after recovery, and the Query count remained one, so the
+accepted request was not replayed. The run also passed a separate routerless
+peer scenario: three host bindings exchanged an external route over local
+multicast, then the remaining peer continued receiving after another peer
+stopped. This is host-only local-link evidence; it does not claim device peer
+support.
+
+A fresh SwiftPM consumer selecting the separate `AxolotyZenoh` package from
+this exact worktree built and ran in the pinned container. `ldd` resolved
+`libzenohc.so` from the checksum-verified `zenoh-c 1.10.0` archive. A second
+fresh consumer selected only the root `Axoloty` product, built and ran with no
+Zenoh environment configured, and had no `libzenohc` entry in `ldd`. These are
+local-checkout exact-candidate proofs. The separate package remains a checkout
+package with native provisioning; immutable public-revision consumption must
+be repeated by the release owner after publishing the exact release head.
+
+Run output and consumer link maps are retained with the task evidence bundle
+under `/tmp/axoloty-batch2-382c4846/core-v010-zenoh-luna-evidence/`. These results
+qualify Linux x86_64 only. No new macOS, iOS, firmware, device, or external
+network claim is made. The Zenoh products remain experimental under ADR 0012;
+these host test results do not promote them into the stable product set.
+
 ### Host (macOS 26.6 arm64, Xcode 27, Swift 6.4, native)
 
 Both host tiers pass natively through `axoloty-tool test-tier` against the
