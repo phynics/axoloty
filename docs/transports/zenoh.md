@@ -129,7 +129,7 @@ correlation before restart and asserts that it is not replayed after recovery.
 The corresponding offline run exercises the native façade contract and
 receive-buffer bounds without starting a router. Exact artifact hashes and
 run evidence are recorded in
-[`docs/dependencies/zenoh.md`](../dependencies/zenoh.md#host-linux-x86_64-swift-64-core-v010-candidate).
+[`docs/dependencies/zenoh.md`](../dependencies/zenoh.md#host-linux-x86-64-swift-64-core-v010-candidate).
 
 Peer mode is a separate optional level. The Linux `zenoh-live` tier starts
 three host bindings with local multicast scouting and no router, exchanges an

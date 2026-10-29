@@ -175,7 +175,7 @@ only the `axoloty/1` CBOR profile, so current keys read
 published payload `application/cbor`. The probe above was not re-run; MQTT
 still uses the sealed `coaty/3` JSON profile.
 
-### Host (Linux x86_64, Swift 6.4, Core v0.10 candidate)
+### Host (Linux x86-64, Swift 6.4, Core v0.10 candidate)
 
 The current host-client evidence was run in the pinned `axoloty-dev` container
 from the task worktree based on Core commit
