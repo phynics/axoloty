@@ -44,8 +44,11 @@ static int open_client(z_owned_session_t *session, const char *endpoint) {
 }
 
 int main(int argc, char **argv) {
-    if (argc != 4 || (strcmp(argv[1], "publish") != 0 && strcmp(argv[1], "subscribe") != 0)) {
-        fprintf(stderr, "usage: zenoh-live-peer publish|subscribe ENDPOINT KEY\n");
+    if (argc != 4 || (strcmp(argv[1], "publish") != 0 &&
+                      strcmp(argv[1], "subscribe") != 0 &&
+                      strcmp(argv[1], "flood") != 0 &&
+                      strcmp(argv[1], "oversized") != 0)) {
+        fprintf(stderr, "usage: zenoh-live-peer publish|subscribe|flood|oversized ENDPOINT KEY\n");
         return 64;
     }
     z_owned_session_t session;
@@ -64,6 +67,37 @@ int main(int argc, char **argv) {
             z_put_options_default(&options);
             status = z_put(z_session_loan(&session), z_keyexpr_loan(&key), z_bytes_move(&payload), &options) == Z_OK ? 0 : 3;
             if (status == 0) puts("PUBLISHED");
+        }
+    } else if (strcmp(argv[1], "flood") == 0) {
+        enum { message_count = 256 };
+        for (unsigned index = 0; index < message_count; index++) {
+            char message[32];
+            int length = snprintf(message, sizeof(message), "burst-%u", index);
+            z_owned_bytes_t payload;
+            if (length <= 0 || (size_t)length >= sizeof(message) ||
+                z_bytes_copy_from_buf(&payload, message, (size_t)length) != Z_OK) {
+                status = 3;
+                break;
+            }
+            z_put_options_t options;
+            z_put_options_default(&options);
+            if (z_put(z_session_loan(&session), z_keyexpr_loan(&key), z_bytes_move(&payload), &options) != Z_OK) {
+                status = 3;
+                break;
+            }
+        }
+        if (status == 0) printf("PUBLISHED_COUNT %d\n", message_count);
+    } else if (strcmp(argv[1], "oversized") == 0) {
+        uint8_t payload_bytes[2049];
+        memset(payload_bytes, 0xA5, sizeof(payload_bytes));
+        z_owned_bytes_t payload;
+        if (z_bytes_copy_from_buf(&payload, payload_bytes, sizeof(payload_bytes)) != Z_OK) {
+            status = 3;
+        } else {
+            z_put_options_t options;
+            z_put_options_default(&options);
+            status = z_put(z_session_loan(&session), z_keyexpr_loan(&key), z_bytes_move(&payload), &options) == Z_OK ? 0 : 3;
+            if (status == 0) puts("PUBLISHED_OVERSIZED");
         }
     } else {
         struct received_state state = {0};

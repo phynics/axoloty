@@ -117,6 +117,35 @@ not itself a transport failure. Concrete operation failures, such as a closed
 session or an invalid argument, still surface as transport failures. Client
 mode keeps the one-second debounced router-loss and recovery behavior.
 
+### Host qualification levels
+
+The experimental host adapter's qualified topology is client mode connected
+to a Zenoh router. On Linux x86_64, the pinned `zenoh-live` run exercises two
+Axoloty clients, an independent C client in each direction, actual native
+receive-queue overflow and oversized-sample rejection, graceful cleanup, and
+the production runtime's CBOR `QRY` and `CHN` paths across a `zenohd`
+disconnect and restart. The recovery case observes one Query with a fixed
+correlation before restart and asserts that it is not replayed after recovery.
+The corresponding offline run exercises the native façade contract and
+receive-buffer bounds without starting a router. Exact artifact hashes and
+run evidence are recorded in
+[`docs/dependencies/zenoh.md`](../dependencies/zenoh.md#host-linux-x86-64-swift-64-core-v010-candidate).
+
+Peer mode is a separate optional level. The Linux `zenoh-live` tier starts
+three host bindings with local multicast scouting and no router, exchanges an
+external route, then verifies delivery after one peer stops. This only
+qualifies that local host scenario. It does not qualify peer-mode router-loss
+recovery, networks outside the test host, embedded peer mode, or device
+behavior. Client-mode router detection and recovery claims do not apply to
+peer mode.
+
+Both remain experimental qualification levels under the Zenoh products,
+outside the six stable Core products. The package remains separate from the root package, and host
+consumers of `AxolotyZenoh` must provision the pinned native `zenoh-c` archive.
+Profile traffic in the host evidence uses only `axoloty/1` CBOR; Coaty
+`coaty/3` remains the MQTT JSON profile. Sample `Encoding` metadata is
+diagnostic only and does not select a second Zenoh profile.
+
 ### Zenoh network configuration
 
 `zenohd` owns network listening and routing. Start it with a listener endpoint.

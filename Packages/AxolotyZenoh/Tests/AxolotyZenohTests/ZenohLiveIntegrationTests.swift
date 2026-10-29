@@ -9,6 +9,7 @@ import Darwin
 #endif
 
 import Axoloty
+import AxolotyWire
 @_spi(AxolotyRuntimeAdapter) import AxolotyProtocol
 @testable import AxolotyZenoh
 @testable import AxolotyProtocolTraceTestSupport
@@ -67,6 +68,73 @@ struct ZenohLiveIntegrationTests {
             }) {
                 try await publisher.perform(.publish(RuntimeOutboundMessage(route: route, payload: [1, 2, 3])))
             }
+        }
+    }
+
+    @Test("the real router reports receive-queue saturation and oversized frames")
+    func routerQueueSaturationAndOversizedFrame() async throws {
+        let route = "external/live/bounds/\(UUID().uuidString.lowercased())"
+        let blockedReceiver = BlockingFrameReceiver()
+        let binding = try ZenohBinding(connectEndpoint: endpoint)
+        try await withStoppedBindings([binding]) {
+            let counters = RuntimeTransportDiagnostics()
+            await binding.setDiagnostics(counters)
+            try await binding.start { frame in blockedReceiver.append(frame) }
+            try await binding.perform(.externalRouteActivated(OwnedExternalRouteTransition(
+                sourceID: .zero,
+                actorID: .zero,
+                route: Array(route.utf8)
+            )))
+            try await waitFor("bounded receiver connection to zenohd") { bindingRouterCount(binding) > 0 }
+
+            let (publisher, _) = try makeCPeer(mode: "flood", route: route)
+            publisher.standardOutput = FileHandle.nullDevice
+            try publisher.run()
+            try await waitForProcessExit(publisher, description: "native burst publisher")
+            #expect(publisher.terminationStatus == 0)
+
+            let callbackBlocked = blockedReceiver.waitForFirstFrame()
+            blockedReceiver.release()
+            #expect(callbackBlocked, "burst did not reach the receive callback")
+            try await waitFor("full bounded queue to be drained") {
+                counters.snapshot().receivedFrames > 1
+            }
+            try await waitFor("native queue-full notification") {
+                counters.snapshot().receiveDrops > 0
+            }
+
+            let snapshot = counters.snapshot()
+            #expect(blockedReceiver.frameCount > 0)
+            #expect(blockedReceiver.frameCount < 256, "native queue saturation did not drop any burst publications")
+            #expect(snapshot.receiveDrops > 0, "native subscriber queue did not report its dropped newest frames")
+            #expect(snapshot.receivedFrames == UInt64(blockedReceiver.frameCount))
+        }
+
+        let oversizedRoute = "external/live/oversized/\(UUID().uuidString.lowercased())"
+        let oversizedBinding = try ZenohBinding(connectEndpoint: endpoint)
+        let oversizedCounters = RuntimeTransportDiagnostics()
+        await oversizedBinding.setDiagnostics(oversizedCounters)
+        try await withStoppedBindings([oversizedBinding]) {
+            try await oversizedBinding.start { _ in }
+            try await oversizedBinding.perform(.externalRouteActivated(OwnedExternalRouteTransition(
+                sourceID: .zero,
+                actorID: .zero,
+                route: Array(oversizedRoute.utf8)
+            )))
+            try await waitFor("oversized-sample receiver connection to zenohd") {
+                bindingRouterCount(oversizedBinding) > 0
+            }
+
+            let (oversizedPublisher, _) = try makeCPeer(mode: "oversized", route: oversizedRoute)
+            oversizedPublisher.standardOutput = FileHandle.nullDevice
+            try oversizedPublisher.run()
+            try await waitForProcessExit(oversizedPublisher, description: "native oversized publisher")
+            #expect(oversizedPublisher.terminationStatus == 0)
+            try await waitFor("oversized native sample diagnostic") {
+                oversizedCounters.snapshot().oversizedSamples == 1
+            }
+            #expect(oversizedCounters.snapshot().receivedFrames == 0)
+            #expect(oversizedCounters.snapshot().receiveDrops == 0)
         }
     }
 
@@ -162,6 +230,24 @@ struct ZenohLiveIntegrationTests {
             }
             print("ZENOH_LIVE_RESTART_STAGE router-observed")
 
+            let correlationID = try #require(UUID16(parsing: "22222222-2222-4222-8222-222222222222"))
+            let queryPayload = TracePayloadCBOR.encode("{}")
+            let requestReceipt = await runtime.request(.query(
+                correlationID: correlationID,
+                payload: queryPayload,
+                timeoutMS: 30_000
+            ))
+            #expect(requestReceipt == .accepted)
+            let queryRoutePrefix = "axoloty/1/\(namespace)/QRY/"
+            try await waitFor("one correlated Query through zenohd") {
+                receiver.count(routePrefix: queryRoutePrefix) == 1
+                    && receiver.snapshot().contains { frame in
+                        guard case let .profile(route, _, _) = frame else { return false }
+                        return route.contains("22222222-2222-4222-8222-222222222222")
+                    }
+            }
+            print("ZENOH_LIVE_RESTART_STAGE query-observed correlation=22222222-2222-4222-8222-222222222222")
+
             let pid = try #require(Int32(ProcessInfo.processInfo.environment["AXOLOTY_ZENOH_LIVE_ROUTER_PID"] ?? ""))
             guard kill(pid, SIGKILL) == 0 else {
                 throw ZenohLiveTestFailure.routerKillFailed(String(cString: strerror(errno)))
@@ -199,15 +285,17 @@ struct ZenohLiveIntegrationTests {
             let payload = TracePayloadCBOR.encode(#"{"privateData":{"sequence":7}}"#)
             let messageResumed: Bool
             if runtimeRecovered {
-                messageResumed = await publishRuntimeUntilReceived(
-                    runtime,
-                    payload: payload,
-                    receiver: receiver
-                )
+                let receipt = await runtime.publish(.channel(identifier: "restart-proof", payload: payload))
+                if receipt == .accepted {
+                    messageResumed = await eventually { receiver.contains(payload: payload) }
+                } else {
+                    messageResumed = false
+                }
             } else {
                 messageResumed = false
             }
             print("ZENOH_LIVE_RESTART_STAGE message-resumed=\(messageResumed)")
+            let queryCountAfterRecovery = receiver.count(routePrefix: queryRoutePrefix)
             await runtime.stop()
             print("ZENOH_LIVE_RESTART_STAGE runtime-stopped")
             await subscriber.stop()
@@ -220,28 +308,9 @@ struct ZenohLiveIntegrationTests {
             #expect(routerRestored, "sessions did not reconnect to the restarted router")
             #expect(runtimeRecovered, "runtime did not recover automatically after router return")
             #expect(messageResumed, "runtime publication was not received after router recovery")
+            #expect(queryCountAfterRecovery == 1, "accepted Query was replayed or its correlation was duplicated after recovery")
             #expect(!router.isRunning)
         }
-    }
-
-    private func publishRuntimeUntilReceived(
-        _ runtime: AxolotyRuntime,
-        payload: [UInt8],
-        receiver: FrameRecorder
-    ) async -> Bool {
-        let deadline = ContinuousClock.now + .seconds(20)
-        while ContinuousClock.now < deadline {
-            let receipt = await runtime.publish(.channel(identifier: "restart-proof", payload: payload))
-            guard receipt == .accepted else {
-                try? await Task.sleep(for: .milliseconds(50))
-                continue
-            }
-            if receiver.contains(payload: payload) {
-                return true
-            }
-            try? await Task.sleep(for: .milliseconds(50))
-        }
-        return false
     }
 
     private func eventually(
@@ -313,6 +382,23 @@ struct ZenohLiveIntegrationTests {
             try await Task.sleep(for: .milliseconds(20))
         }
         throw ZenohLiveTestFailure.timeout(description)
+    }
+
+    private func waitForProcessExit(
+        _ process: Process,
+        description: String,
+        timeout: Duration = .seconds(10)
+    ) async throws {
+        let deadline = ContinuousClock.now + timeout
+        while process.isRunning, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        guard !process.isRunning else {
+            process.terminate()
+            process.waitUntilExit()
+            throw ZenohLiveTestFailure.timeout(description)
+        }
+        process.waitUntilExit()
     }
 
     private func bindingRouterCount(_ binding: ZenohBinding) -> UInt32 {
@@ -392,8 +478,44 @@ private final class FrameRecorder: @unchecked Sendable {
         }
     }
 
+    func count(routePrefix: String) -> Int {
+        lock.withLock {
+            storage.reduce(into: 0) { count, frame in
+                guard case let .profile(route, _, _) = frame, route.hasPrefix(routePrefix) else { return }
+                count += 1
+            }
+        }
+    }
+
+    func snapshot() -> [RuntimeInboundFrame] { lock.withLock { storage } }
+
     func append(_ frame: RuntimeInboundFrame) { lock.withLock { storage.append(frame) }
     }
+}
+
+private final class BlockingFrameReceiver: @unchecked Sendable {
+    private let lock = NSLock()
+    private let firstFrame = DispatchSemaphore(value: 0)
+    private let resume = DispatchSemaphore(value: 0)
+    private var count = 0
+
+    var frameCount: Int { lock.withLock { count } }
+
+    func append(_: RuntimeInboundFrame) {
+        let isFirst = lock.withLock {
+            count += 1
+            return count == 1
+        }
+        guard isFirst else { return }
+        firstFrame.signal()
+        _ = resume.wait(timeout: .now() + .seconds(15))
+    }
+
+    func waitForFirstFrame() -> Bool {
+        firstFrame.wait(timeout: .now() + .seconds(15)) == .success
+    }
+
+    func release() { resume.signal() }
 }
 
 /// Opt-in routerless peer scenario.
