@@ -10,10 +10,11 @@ version](https://img.shields.io/badge/swift-6.4-%23F05138?logo=swift)](https://d
 MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
 > **Development checkpoint.** [`VERSION`](./VERSION) identifies the current
-> published release (`0.9.0`). Axoloty is not API-stable. The 0.9 line moves
-> to Swift 6.4, completes the split of firmware into `phynics/axoloty-embedded`,
-> and adds an experimental Zenoh transport, on the versioned embedded consumer
-> contract from 0.8 and the explicit runtime composition from 0.7.
+> published release (`0.10.0`). Axoloty is not API-stable. The 0.10 line adds
+> the `axoloty/1` CBOR wire profile, makes it the only Zenoh encoding, freezes
+> the candidate Core surface for 1.0, and moves the runtime and debug products
+> to `phynics/axoloty-debug`, on the Swift 6.4 toolchain and the versioned
+> embedded consumer contract from 0.9.
 
 ## About Axoloty
 
@@ -93,7 +94,7 @@ Add Axoloty to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/phynics/axoloty", from: "0.9.0"),
+    .package(url: "https://github.com/phynics/axoloty", from: "0.10.0"),
 ],
 targets: [
     .executableTarget(
@@ -109,7 +110,7 @@ For a wire target in a consumer that already resolves the root package:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/phynics/axoloty", from: "0.9.0"),
+    .package(url: "https://github.com/phynics/axoloty", from: "0.10.0"),
 ],
 targets: [
     .executableTarget(
@@ -246,7 +247,7 @@ See the [axoloty-debug inspector reference](https://github.com/phynics/axoloty-d
 for the full reference.
 
 For the current release's changes, see
-[0.9.0 release notes](./docs/releases/0.9.0.md). The `axoloty/1` CBOR profile
+[0.10.0 release notes](./docs/releases/0.10.0.md). The `axoloty/1` CBOR profile
 and the 1.0 direction are recorded in
 [protocol/axoloty-1.md](./docs/protocol/axoloty-1.md) and
 [1.0.0 release notes](./docs/releases/1.0.0.md). For migrating from legacy
