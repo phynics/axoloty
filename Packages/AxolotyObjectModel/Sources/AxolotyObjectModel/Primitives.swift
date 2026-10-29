@@ -1,12 +1,20 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
-import AxolotyWire
+@_spi(AxolotyObjectModel) import AxolotyWire
+
+func objectJSONReader(bytes: UnsafePointer<UInt8>, length: Int) -> WireReader {
+    WireCodec(profile: .coaty3JSON).reader(bytes: bytes, length: length)
+}
+
+func objectHasValidJSONValue(_ bytes: ByteSlice) -> Bool {
+    WireCodec(profile: .coaty3JSON).isValidJSONValue(bytes)
+}
 
 /// A stable, structured failure raised while decoding or editing an object.
 public struct ObjectError: Error, Sendable, Equatable {
     /// The category of the failure.
     public enum Reason: UInt8, Sendable, Equatable {
-        /// The input was not one complete JSON object.
+        /// The input was not one complete object in its selected encoding.
         case invalidObject
         /// A field key or value was malformed.
         case invalidField

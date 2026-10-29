@@ -54,6 +54,24 @@ public struct WireCodec: Sendable, Equatable {
         }
     }
 
+    /// Reports whether `bytes` contains one complete JSON value.
+    ///
+    /// This profile-specific validation entry point is available in every
+    /// build. A CBOR-only build returns `false` because it has no JSON parser;
+    /// selecting `.coaty3JSON` for decoding still traps without `_JSONCore`.
+    ///
+    /// - Parameter bytes: The borrowed encoded value to validate.
+    /// - Returns: `true` when this codec selects JSON and the bytes form one
+    ///   complete JSON value.
+    @_spi(AxolotyObjectModel) public func isValidJSONValue(_ bytes: ByteSlice) -> Bool {
+        guard profile == .coaty3JSON else { return false }
+        #if canImport(_JSONCore)
+        return WireReader.isValidJSONValue(bytes)
+        #else
+        return false
+        #endif
+    }
+
     /// Creates a format-neutral writer into a caller-owned buffer.
     ///
     /// `coaty/3` writers emit JSON exactly as before; `axoloty/1` writers

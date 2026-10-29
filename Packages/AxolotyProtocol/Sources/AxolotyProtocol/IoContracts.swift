@@ -331,7 +331,7 @@ public enum DynamicIoValue: IoEndpointValue, Equatable {
         do throws(ProtocolError) {
             switch representation {
             case .json:
-                guard WireReader.isValidJSONValue(payload) else {
+                guard (try? JSONValueView.withValidatedRaw(payload) { _ in true }) == true else {
                     throw ProtocolError(.malformedPayload)
                 }
                 return .json(try BoundedJSONValue(copying: payload))

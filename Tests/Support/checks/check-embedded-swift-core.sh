@@ -382,6 +382,96 @@ fi
 cbor_linked_size=$(wc -c < "$workdir/embedded-cbor-linked.o")
 echo "  CBOR-only consumer link: ${cbor_linked_size} bytes"
 
+# Compile and link the complete public static-runtime path a CBOR-only firmware
+# consumer selects. This leg intentionally has no `_JSONCore` module in any
+# include path; compiling AxolotyWire alone does not prove that ObjectModel,
+# Protocol, CoatyModels, and StaticRuntime can be consumed without JSON.
+cbor_core_dir="$workdir/cbor-core-only"
+mkdir -p -- "$cbor_core_dir"
+
+compile_cbor_core_module() {
+    module_name=$1
+    module_dir=$2
+    shift 2
+
+    set --
+    for source in "$module_dir"/*.swift; do
+        [ -f "$source" ] || continue
+        set -- "$@" "$source"
+    done
+    [ "$#" -gt 0 ] || {
+        echo "FAIL: no Swift sources found for $module_name at $module_dir" >&2
+        exit 1
+    }
+
+    echo "Compiling CBOR-only $module_name as Embedded Swift..."
+    if [ "$module_name" = AxolotyStaticRuntime ]; then
+        swiftc \
+            -target riscv32-none-none-eabi \
+            -swift-version 6 \
+            -enable-experimental-feature Embedded \
+            -enable-experimental-feature Lifetimes \
+            -parse-as-library -Osize -wmo \
+            -warnings-as-errors \
+            -module-name "$module_name" \
+            -load-plugin-executable "$macro_tool#AxolotyStaticRuntimeMacrosImplementation" \
+            -I "$cbor_core_dir" \
+            -emit-module -emit-module-path "$cbor_core_dir/$module_name.swiftmodule" \
+            -c "$@" \
+            -o "$cbor_core_dir/$module_name.o"
+    else
+        swiftc \
+            -target riscv32-none-none-eabi \
+            -swift-version 6 \
+            -enable-experimental-feature Embedded \
+            -enable-experimental-feature Lifetimes \
+            -parse-as-library -Osize -wmo \
+            -module-name "$module_name" \
+            -I "$cbor_core_dir" \
+            -emit-module -emit-module-path "$cbor_core_dir/$module_name.swiftmodule" \
+            -c "$@" \
+            -o "$cbor_core_dir/$module_name.o"
+    fi
+}
+
+compile_cbor_core_module AxolotyWire "$AXOLOTY_WIRE_SOURCE_DIR"
+compile_cbor_core_module AxolotyObjectModel "$AXOLOTY_OBJECT_MODEL_SOURCE_DIR"
+compile_cbor_core_module AxolotyProtocol "$AXOLOTY_PROTOCOL_SOURCE_DIR"
+compile_cbor_core_module AxolotyCoatyModels "$AXOLOTY_COATY_MODELS_SOURCE_DIR"
+compile_cbor_core_module AxolotyStaticRuntime "$AXOLOTY_STATIC_RUNTIME_SOURCE_DIR"
+
+cbor_core_fixture=${AXOLOTY_EMBEDDED_CBOR_CORE_FIXTURE:-$source_root/Tests/Support/fixtures/embedded-cbor-core-consumer.swift}
+[ -f "$cbor_core_fixture" ] || {
+    echo "FAIL: CBOR-only Core consumer fixture is missing: $cbor_core_fixture" >&2
+    exit 1
+}
+swiftc \
+    -target riscv32-none-none-eabi \
+    -swift-version 6 \
+    -enable-experimental-feature Embedded \
+    -enable-experimental-feature Lifetimes \
+    -parse-as-library -Osize -wmo \
+    -module-name EmbeddedCBORCoreConsumer \
+    -I "$cbor_core_dir" \
+    -c "$cbor_core_fixture" \
+    -o "$cbor_core_dir/EmbeddedCBORCoreConsumer.o"
+
+"$riscv_linker" -r \
+    -o "$workdir/embedded-cbor-core-linked.o" \
+    "$cbor_core_dir/EmbeddedCBORCoreConsumer.o" \
+    "$cbor_core_dir/AxolotyStaticRuntime.o" \
+    "$cbor_core_dir/AxolotyCoatyModels.o" \
+    "$cbor_core_dir/AxolotyProtocol.o" \
+    "$cbor_core_dir/AxolotyObjectModel.o" \
+    "$cbor_core_dir/AxolotyWire.o"
+check_unresolved_symbols "$workdir/embedded-cbor-core-linked.o"
+if nm "$workdir/embedded-cbor-core-linked.o" | grep -q '_JSONCore'; then
+    echo "FAIL: the CBOR-only Core partial link still references _JSONCore" >&2
+    exit 1
+fi
+cbor_core_linked_size=$(wc -c < "$workdir/embedded-cbor-core-linked.o")
+echo "  CBOR-only Core consumer link: ${cbor_core_linked_size} bytes"
+
 echo "Running Embedded Swift parser behavior probe..."
 host_target=$(swiftc -print-target-info | node -e 'let data=""; process.stdin.on("data", chunk => data += chunk); process.stdin.on("end", () => process.stdout.write(JSON.parse(data).target.triple));')
 swift_resource_dir=$(swiftc -print-target-info | node -e 'let data=""; process.stdin.on("data", chunk => data += chunk); process.stdin.on("end", () => process.stdout.write(JSON.parse(data).paths.runtimeResourcePath));')
@@ -453,7 +543,7 @@ swiftc \
 
 echo "  CBOR behavior: axoloty/1 encode and decode passed without _JSONCore"
 if [ -n "$json_core_dir" ]; then
-    echo "EMBEDDED SWIFT CORE OK — five portable modules, StaticIoActor consumer, RISC-V link probe, CBOR-only consumer, and parser probe passed: ${linked_size} bytes"
+    echo "EMBEDDED SWIFT CORE OK — five portable modules, StaticIoActor consumer, RISC-V link probe, CBOR-only Wire and Core consumers, and parser probe passed: ${linked_size} bytes, ${cbor_core_linked_size} bytes"
 else
-    echo "EMBEDDED SWIFT CORE OK — five portable modules, StaticIoActor consumer, and CBOR-only consumer passed without _JSONCore: ${cbor_linked_size} bytes"
+    echo "EMBEDDED SWIFT CORE OK — five portable modules, StaticIoActor consumer, CBOR-only Wire and Core consumers passed without _JSONCore: ${cbor_linked_size} bytes, ${cbor_core_linked_size} bytes"
 fi

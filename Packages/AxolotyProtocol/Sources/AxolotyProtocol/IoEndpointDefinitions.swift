@@ -158,7 +158,7 @@ private func endpointSnapshot<Schema: ObjectSchema, let payloadCapacity: Int>(
     object.withEncodedBytes { bytes in
         snapshot = try? BoundedIoBytes<payloadCapacity>(copying: bytes)
         identifier = bytes.withBytes { pointer, length in
-            let reader = WireReader(
+            let reader = WireCodec(profile: .coaty3JSON).reader(
                 bytes: pointer.assumingMemoryBound(to: UInt8.self),
                 length: length
             )

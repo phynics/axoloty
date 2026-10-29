@@ -13706,6 +13706,41 @@
           "classification": "intentional-stable-api"
         },
         {
+          "identifier": "s:18AxolotyObjectModel17BoundedCBORObjectV",
+          "name": "BoundedCBORObject",
+          "kind": "swift.struct",
+          "declaration": "struct BoundedCBORObject<let byteCapacity : Int, let fieldCapacity : Int>",
+          "classification": "intentional-stable-api"
+        },
+        {
+          "identifier": "s:18AxolotyObjectModel17BoundedCBORObjectV16withEncodedBytesyqd__qd__0A4Wire9ByteSliceVKXEKlF",
+          "name": "withEncodedBytes(_:)",
+          "kind": "swift.method",
+          "declaration": "borrowing func withEncodedBytes<R>(_ body: (borrowing ByteSlice) throws -> R) rethrows -> R",
+          "classification": "intentional-stable-api"
+        },
+        {
+          "identifier": "s:18AxolotyObjectModel17BoundedCBORObjectV5countSivp",
+          "name": "count",
+          "kind": "swift.property",
+          "declaration": "var count: Int { get }",
+          "classification": "intentional-stable-api"
+        },
+        {
+          "identifier": "s:18AxolotyObjectModel17BoundedCBORObjectV8decodingACyxq_G0A4Wire9ByteSliceV_tAA0B5ErrorVYKcfc",
+          "name": "init(decoding:)",
+          "kind": "swift.init",
+          "declaration": "init(decoding bytes: ByteSlice) throws(ObjectError)",
+          "classification": "intentional-stable-api"
+        },
+        {
+          "identifier": "s:18AxolotyObjectModel17BoundedCBORObjectV9withValue3for_Sbs12StaticStringV_y0A4Wire9ByteSliceVXEtF",
+          "name": "withValue(for:_:)",
+          "kind": "swift.method",
+          "declaration": "borrowing func withValue(for key: StaticString, _ body: (borrowing ByteSlice) -> Void) -> Bool",
+          "classification": "intentional-stable-api"
+        },
+        {
           "identifier": "s:18AxolotyObjectModel17PredicateOperatora",
           "name": "PredicateOperator",
           "kind": "swift.typealias",

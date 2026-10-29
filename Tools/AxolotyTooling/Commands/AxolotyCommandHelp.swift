@@ -31,7 +31,7 @@ enum AxolotyCommandHelp {
       wire capture         Run live MQTT captures with pinned reference agents.
       zenoh live           Run the opt-in pinned zenohd integration suite.
       zenoh offline        Run the router-free Zenoh package tests on pinned zenoh-c.
-      embedded consumer prepare  Prepare a standalone Embedded Swift consumer report.
+      embedded consumer prepare  Prepare a consumer report; --profile selects one declared wire profile.
       release checkpoint   Run the release checkpoint validation (no hardware).
       repository validate    Validate version, documentation, and architecture authority.
 

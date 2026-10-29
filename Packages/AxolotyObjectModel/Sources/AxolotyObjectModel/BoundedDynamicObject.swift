@@ -114,7 +114,7 @@ public struct BoundedDynamicObject<let byteCapacity: Int, let fieldCapacity: Int
         var localDescriptorCount = 0
         var failure: ObjectError?
         bytes.withBytes { (pointer: UnsafeRawPointer, count: Int) -> Void in
-            let reader = WireReader(bytes: pointer.assumingMemoryBound(to: UInt8.self), length: count)
+            let reader = objectJSONReader(bytes: pointer.assumingMemoryBound(to: UInt8.self), length: count)
             do throws(WireDecodeError) { try reader.validate() } catch { failure = objectError(error); return }
             for index in 0..<count { localRaw[index] = pointer.load(fromByteOffset: index, as: UInt8.self) }
             do throws(ObjectError) { try fillDescriptors(reader, descriptors: &localDescriptors, count: &localDescriptorCount) }
@@ -246,7 +246,7 @@ public struct BoundedDynamicObject<let byteCapacity: Int, let fieldCapacity: Int
         withUnsafeBytes(of: editor.output) { (buffer: UnsafeRawBufferPointer) -> Void in
             nextLength = editor.outputLength
             for index in 0..<nextLength { nextRaw[index] = buffer[index] }
-            let reader = WireReader(bytes: buffer.baseAddress!.assumingMemoryBound(to: UInt8.self), length: nextLength)
+            let reader = objectJSONReader(bytes: buffer.baseAddress!.assumingMemoryBound(to: UInt8.self), length: nextLength)
             do throws(WireDecodeError) { try reader.validate() } catch { failure = objectError(error); return }
             do throws(ObjectError) { try fillDescriptors(reader, descriptors: &nextDescriptors, count: &nextCount) }
             catch { failure = error }
@@ -337,7 +337,7 @@ public struct ObjectEditor<let byteCapacity: Int> {
 
     /// Copies a complete raw JSON value synchronously into this edit plan.
     public mutating func setRaw(_ key: StaticString, value: ByteSlice) throws(ObjectError) {
-        guard WireReader.isValidJSONValue(value) else { throw ObjectError(.invalidEditValue) }
+        guard objectHasValidJSONValue(value) else { throw ObjectError(.invalidEditValue) }
         let valueStart = valueLength
         var fits = true
         value.withBytes { pointer, count in
@@ -473,7 +473,7 @@ public struct ObjectEditor<let byteCapacity: Int> {
             try appendByte(34)
         case let .number(value):
             let bytes = ByteSlice(bytes: value.utf8Start, length: value.utf8CodeUnitCount)
-            guard WireReader.isValidJSONValue(bytes), let first = bytes.byte(at: 0), first == 45 || first == 48 || first >= 49 && first <= 57 else { throw ObjectError(.invalidEditValue) }
+            guard objectHasValidJSONValue(bytes), let first = bytes.byte(at: 0), first == 45 || first == 48 || first >= 49 && first <= 57 else { throw ObjectError(.invalidEditValue) }
             try appendStatic(value)
         case let .bool(value):
             try appendStatic(value ? "true" : "false")
@@ -501,7 +501,7 @@ public struct ObjectEditor<let byteCapacity: Int> {
         var descriptors = InlineArray<24, DynamicFieldDescriptor>(repeating: DynamicFieldDescriptor()); var count = 0
         var failure: ObjectError?
         withUnsafeBytes(of: source) { (buffer: UnsafeRawBufferPointer) -> Void in
-            let reader = WireReader(bytes: buffer.baseAddress!.assumingMemoryBound(to: UInt8.self), length: sourceLength)
+            let reader = objectJSONReader(bytes: buffer.baseAddress!.assumingMemoryBound(to: UInt8.self), length: sourceLength)
             do throws(WireDecodeError) { try reader.validate() } catch { failure = objectError(error); return }
             do throws(ObjectError) { try fillDescriptors(reader, descriptors: &descriptors, count: &count) }
             catch { failure = error }

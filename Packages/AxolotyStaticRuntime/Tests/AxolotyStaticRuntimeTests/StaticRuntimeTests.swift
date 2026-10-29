@@ -53,6 +53,52 @@ struct StaticRuntimeTests {
         }
     }
 
+    @Test("axoloty/1 CBOR selects the shared processor and preserves nested object bytes")
+    func cborAdvertiseUsesSharedProcessor() throws {
+        let codec = WireCodec(profile: .axoloty1CBOR)
+        let objectStorage = UnsafeMutablePointer<UInt8>.allocate(capacity: 256)
+        defer { objectStorage.deallocate() }
+        var objectWriter = codec.writer(buffer: objectStorage, capacity: 256)
+        try objectWriter.beginObject()
+        try objectWriter.writeStringField("name", staticPayload("sensor"))
+        try objectWriter.writeStringField("coreType", staticPayload("CoatyObject"))
+        try objectWriter.writeUUIDField("objectId", staticUUID("11111111-1111-4111-8111-111111111111"))
+        try objectWriter.writeStringField("objectType", staticPayload("com.example.Sensor"))
+        try objectWriter.endObject()
+        let objectLength = objectWriter.position
+
+        let boundedObject = try BoundedCBORObject<256, 8>(decoding: ByteSlice(
+            bytes: UnsafePointer(objectStorage),
+            length: objectLength
+        ))
+        #expect(boundedObject.count == 4)
+
+        let payloadStorage = UnsafeMutablePointer<UInt8>.allocate(capacity: 320)
+        defer { payloadStorage.deallocate() }
+        var payloadWriter = codec.writer(buffer: payloadStorage, capacity: 320)
+        try payloadWriter.beginObject()
+        try payloadWriter.writeRawField(
+            "object",
+            ByteSlice(bytes: UnsafePointer(objectStorage), length: objectLength)
+        )
+        try payloadWriter.endObject()
+
+        var runtime = try StaticRuntime<2, 320>(
+            registryID: staticRegistryID(),
+            wireCodec: codec
+        )
+        let operation = try ProtocolLocalOperation(
+            capability: .advertise,
+            sourceID: staticUUID("00000000-0000-4000-8000-000000000001"),
+            payload: ByteSlice(bytes: UnsafePointer(payloadStorage), length: payloadWriter.position)
+        )
+        let outcome = runtime.send(operation)
+        #expect(outcome == .accepted)
+        #expect(runtime.state.activeObjects == 1)
+        #expect(runtime.actionCount == 2)
+        #expect(runtime.drain { _ in } == 2)
+    }
+
     @Test("owning sink rolls back a partially appended action batch")
     func owningSinkRollsBackPartialBatch() throws {
         let source = UUID16(parsing: "00000000-0000-4000-8000-000000000001")!
