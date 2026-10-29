@@ -7,18 +7,23 @@ record; this document summarizes the active strategy.
 
 ## Current checkpoint
 
-[`VERSION`](../VERSION) identifies the current released version (`0.9.0`). Axoloty remains pre-1.0 and its public API may change. The 0.9 line is the active checkpoint.
+[`VERSION`](../VERSION) identifies the current released version (`0.10.0`). Axoloty remains pre-1.0 and its public API may change. The 0.10 line is the active checkpoint.
 
 Historical release outcomes are preserved in [`docs/releases/`](./releases/) and [`CHANGELOG.md`](../CHANGELOG.md). They do not define current strategy.
 
 ## Active direction: complete the Core 1.0 contract
 
-Axoloty 0.9.0 closes [epic #845](https://github.com/phynics/axoloty/issues/845),
-which moved firmware and device qualification into
-`phynics/axoloty-embedded`. The release also ships the host Zenoh transport from
+Axoloty 0.10.0 ships the `axoloty/1` CBOR profile
+([epic #977](https://github.com/phynics/axoloty/issues/977)), makes it the only
+Zenoh encoding, and freezes the candidate Core 1.0 surface. Firmware locks to
+the `v0.10.0` tag. Axoloty 0.9.0 closed
+[epic #845](https://github.com/phynics/axoloty/issues/845), which moved
+firmware and device qualification into `phynics/axoloty-embedded`, and shipped
+the host Zenoh transport from
 [epic #796](https://github.com/phynics/axoloty/issues/796) as experimental.
-The release record is [`docs/releases/0.9.0.md`](./releases/0.9.0.md). The
-approved product and ownership contracts are in
+The release records are [`docs/releases/0.10.0.md`](./releases/0.10.0.md) and
+[`docs/releases/0.9.0.md`](./releases/0.9.0.md). The approved product and
+ownership contracts are in
 [ADR 0012](./adr/0012-approved-product-and-ownership-contracts.md).
 
 ### Zenoh status
@@ -28,10 +33,10 @@ approved product and ownership contracts are in
 - **Embedded binding:** firmware and carrier work belong to
   `phynics/axoloty-embedded`. Device peer-mode qualification is deferred beyond
   embedded v1.
-- **Wire encoding moves to `axoloty/1` CBOR.** The profile is implemented on
-  `main`. [ADR 0009](./adr/0009-zenoh-carries-only-axoloty-1.md) makes Zenoh
-  carry only the `axoloty/1` CBOR profile. Zenoh peers built on 0.9.x will not
-  interoperate with the 1.0 release.
+- **Wire encoding is `axoloty/1` CBOR.** The profile shipped in 0.10.0, and
+  [ADR 0009](./adr/0009-zenoh-carries-only-axoloty-1.md) makes Zenoh carry only
+  that profile. Zenoh peers built on 0.9.x do not interoperate with 0.10.0 or
+  later.
 - **Consumption:** the adapter is consumed by path from a checkout, not through
   a URL dependency ([ADR 0007](./adr/0007-zenoh-adapter-package-boundary.md)).
   Zenoh remains outside the Core 1.0 stability contract. Promotion is tracked

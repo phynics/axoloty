@@ -9,6 +9,13 @@ fork, through CoatySwift 2.4.0, remain documented in the
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-10-29
+
+Axoloty 0.10.0 adds the `axoloty/1` CBOR wire profile, makes it the only Zenoh
+encoding, audits and freezes the candidate Core 1.0 surface, and moves the
+runtime and debug products to `phynics/axoloty-debug`. See
+`docs/releases/0.10.0.md`.
+
 ### Added
 
 - The `axoloty/1` CBOR wire profile. `AxolotyWire` ships a bounded
@@ -40,20 +47,51 @@ fork, through CoatySwift 2.4.0, remain documented in the
   gates delivery
   ([ADR 0009](docs/adr/0009-zenoh-carries-only-axoloty-1.md)). MQTT keeps the
   sealed `coaty/3` JSON profile.
-- A CBOR-only consumer path. `AxolotyWire` builds without `_JSONCore` with
-  `--disable-default-traits`, and
-  [docs/embedded-consumer-contract.json](docs/embedded-consumer-contract.json)
-  declares `axoloty1CBOR` as a mandatory profile that does not require
-  `_JSONCore`. Two limitations remain; see
-  [docs/protocol/axoloty-1.md](docs/protocol/axoloty-1.md#cbor-only-consumers).
+- A CBOR-only portable Core consumer path. `embedded consumer prepare
+  --profile axoloty1CBOR` selects all five portable modules without
+  `_JSONCore`. The RISC-V gate compiles and partially links that graph;
+  it does not execute the Core fixture. `BoundedCBORObject` owns bounded CBOR
+  object bytes and lends encoded field values through synchronous callbacks.
+  JSON-only object APIs remain restricted, and full operation coverage is
+  tracked in [#1057](https://github.com/phynics/axoloty/issues/1057). See
+  [the consumer contract](docs/embedded-consumer-contract.md) (#1056).
 - The `wire-cbor` tier replays the same canonical protocol traces through the
   host `coaty/3` JSON path and the static `axoloty/1` CBOR path, then compares
   normalized operations, state, and structured rejections. The host and static
   runtimes select a profile through `WireCodec` at composition time; no
   protocol rule branches on the active profile.
+- Typed, owned runtime observations. `RuntimeDiagnostics` events gain a
+  monotonic sequence, a runtime timestamp, and an optional typed observation
+  for reconnects, admission and saturation, request outcomes, observable
+  presence, transport failures, and supported capabilities. The stream keeps
+  the oldest buffered values and counts every dropped offer in
+  `diagnosticsDropped`, so sequence gaps expose loss. Observations carry no
+  payload bytes (#1048).
+- `make api-baseline` verifies the checked-in Core public-symbol baseline for
+  the six frozen products against SwiftPM symbol graphs. The audit and
+  baseline are in `docs/api/` (#1049).
+- External-consumer evidence. The checkpoint validates a fresh consumer of the
+  six Core products at an exact public revision and records provenance, and
+  forwards the consumer revision through `make checkpoint` (#1050, #1053).
+- Host Zenoh qualification evidence: native queue saturation, oversized-sample
+  rejection, router-restart recovery without replaying a correlated request,
+  and external consumption. The package stays experimental and separate from
+  the six root products (#1045, #1051, #1055).
 
 ### Changed
 
+- Reconnect replays only one-way publications. An accepted request whose send
+  failed is dropped rather than replayed, because the reset pending-correlation
+  ledger would make a late response ambiguous (#1047).
+- The `AxolotyWire` reader builds its field index in place with compact
+  storage, removing a copy per reader construction and bounding index writes
+  by storage capacity (#1017, #1033).
+- The canonical check runner schedules independent nodes concurrently within a
+  CPU and memory budget. Only nodes marked parallel-safe overlap, and
+  `AXOLOTY_CHECK_CONCURRENCY=1` forces serial execution. `make test-tier`
+  accepts `NODE=<id>` to run one node (#1037).
+- Zenoh admission is decided only by the validated route. The Zenoh
+  `Encoding` label is advisory and reported once as a diagnostic.
 - `make checkpoint` no longer requires evidence bundles for the `wire` and
   `zenoh-live` tiers, which nothing produced (#991). Both tiers are now
   non-required checkpoint inputs; the certificate records them as
@@ -71,6 +109,15 @@ fork, through CoatySwift 2.4.0, remain documented in the
   until the CBOR decision (#977). The Phase 4 `min-heap-stack-headroom` gate
   is re-derived from the production `esp32c6-mqtt` heap and stack floors
   (#987). See [docs/performance-budgets.md](docs/performance-budgets.md).
+
+### Removed
+
+- `axoloty-inspect`, `axoloty-mcp`, `AxolotyInspectorCore`, `AxolotyInspectorRuntime`,
+  `AxolotyMCP`, and the `serve mqtt|mcp|dev` command moved to
+  [`phynics/axoloty-debug`](https://github.com/phynics/axoloty-debug). This
+  repository's `Tools` package is a library-free harness and no longer
+  publishes `AxolotyTooling` or `AxolotyVersion` as library products
+  (#1020).
 
 ### Migration
 

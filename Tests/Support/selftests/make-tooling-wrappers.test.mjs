@@ -252,7 +252,7 @@ test("checkpoint forwards an explicit consumer revision through its container al
   fs.copyFileSync("Makefile", path.join(fixture, "Makefile"));
   fs.copyFileSync("Tests/Support/lib/tool-container-env.sh", path.join(fixture, "Tests/Support/lib/tool-container-env.sh"));
   fs.copyFileSync("Tests/Support/test-tiers.json", path.join(fixture, "Tests/Support/test-tiers.json"));
-  fs.writeFileSync(path.join(fixture, "VERSION"), "0.9.0\n");
+  fs.writeFileSync(path.join(fixture, "VERSION"), "0.10.0\n");
   fs.writeFileSync(path.join(bin, "git"), "#!/bin/sh\ncase \"$1 $2\" in\n  'rev-parse HEAD') echo 1111111111111111111111111111111111111111 ;;\n  'rev-parse HEAD^{tree}') echo 2222222222222222222222222222222222222222 ;;\n  'status --porcelain') : ;;\n  *) exit 2 ;;\nesac\n");
   fs.writeFileSync(path.join(fixture, ".devcontainer/run.sh"), `#!/bin/sh
 set -eu

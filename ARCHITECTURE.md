@@ -9,7 +9,7 @@ epics, and the 0.8 firmware split
 released. Their history is in [`docs/ROADMAP.md`](./docs/ROADMAP.md),
 [`docs/releases/`](./docs/releases/), and git.
 
-## Current implementation (0.9.0 checkpoint)
+## Current implementation (0.10.0 checkpoint)
 
 The released implementation consists of the root `Axoloty` host library, the
 Foundation-free `AxolotyWire`, `AxolotyObjectModel`, and `AxolotyProtocol`
