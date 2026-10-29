@@ -393,8 +393,9 @@ The release gate requires no unresolved compatibility flake.
 
 ## Manual macOS oracle
 
-Linux/Podman is the canonical CI platform. macOS and iOS are
-[best effort](./SUPPORT_MATRIX.md#platforms), with no dedicated platform CI.
+Linux/Podman is the canonical CI platform. macOS is best effort; iOS is
+experimental and unvalidated. Neither has dedicated platform CI. See the
+[platform support matrix](./SUPPORT_MATRIX.md#platforms).
 Each recorded macOS run covers its tested OS, toolchain, architecture, and
 scenarios. iOS requires separate device or simulator validation.
 
