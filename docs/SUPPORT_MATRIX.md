@@ -1,7 +1,7 @@
-# Axoloty 0.10.0 support matrix
+# Axoloty 1.0.0 support matrix
 
 This matrix records the support level for the current implementation, backed
-by behavioral test evidence. [`VERSION`](../VERSION) is `0.10.0`. Typed IO
+by behavioral test evidence. [`VERSION`](../VERSION) is `1.0.0`. Typed IO
 endpoint ergonomics and the optional SensorThings products are part of the
 product surface. Support levels use a consistent vocabulary:
 
@@ -21,6 +21,10 @@ product surface. Support levels use a consistent vocabulary:
 - **Unsupported** — not implemented.
 - **Planned** — tracked but not implemented.
 
+A support level describes the implementation, not the wire format. The
+`axoloty/1` wire format is frozen; a breaking change needs a new profile
+identifier. The Zenoh transport and the device path around it are experimental.
+
 ## Wire profiles
 
 The route prefix selects exactly one profile. MQTT carries the sealed
@@ -29,7 +33,7 @@ The route prefix selects exactly one profile. MQTT carries the sealed
 | Transport | Encoding | Support level | Evidence |
 |---|---|---|---|
 | MQTT | `coaty/3` JSON | Validated | Sealed profile. Offline fixtures, live CoatyJS directions, and the `wire` tier. The `axoloty/1` work does not change `coaty/3` field presence or bytes. |
-| Zenoh (host, client and peer) | `axoloty/1` CBOR | Experimental | `wire-cbor` golden corpus and host/static trace parity, plus the `zenoh-offline` and `zenoh-live` tiers. From 1.0, Zenoh carries only `axoloty/1` CBOR ([ADR 0009](./adr/0009-zenoh-carries-only-axoloty-1.md)); 0.9.x Zenoh peers do not interoperate with 1.0 Zenoh peers. |
+| Zenoh (host, client and peer) | `axoloty/1` CBOR | Experimental | `wire-cbor` golden corpus and host/static trace parity, plus the `zenoh-offline` and `zenoh-live` tiers. Zenoh carries only `axoloty/1` CBOR ([ADR 0009](./adr/0009-zenoh-carries-only-axoloty-1.md)); 0.9.x Zenoh peers do not interoperate with 0.10.0 or 1.0 Zenoh peers. |
 | ESP32-C6 (Embedded Swift) | `coaty/3` JSON | Validated at 0.8 scope | Advertise/Deadvertise and Discover/Resolve only. Device qualification lives in `phynics/axoloty-embedded`. |
 | ESP32-C6 (Embedded Swift) | `axoloty/1` CBOR | Experimental | Advertise, Discover, Resolve, and Channel: sensor-node evidence in [embedded #127](https://github.com/phynics/axoloty-embedded/issues/127). Deadvertise: earlier CBOR agent exchange. Update and Complete have host evidence only. See the [family evidence](./embedded-consumer-contract.md#family-evidence). |
 
@@ -83,10 +87,10 @@ API absences and typed failures; see
 | TLS | Supported | Platform-conditional implementation (NIOSSL on Linux, NIOTransportServices on Apple). Manual macOS oracle verification only — no automated TLS tests. |
 | mDNS discovery | Unsupported | The G4 runtime does not publish or discover brokers through mDNS. |
 | MQTT QoS configuration | Supported | The G4 MQTT binding uses QoS 0, which matches CoatyJS 2.4.0. Higher QoS is not supported by the current binding. |
-| Zenoh transport, host client mode | Experimental | `AxolotyZenoh` package over pinned `zenoh-c` 1.10.0. Evidence: the offline façade-contract and conformance tier (`zenoh-offline`) and the live pinned-`zenohd` tier (`zenoh-live`), both on Linux x86_64 in the pinned container and natively on macOS arm64, plus MQTT↔Zenoh protocol-trace parity tests. Experimental because the package is consumable only from a checkout (path dependency, ADR 0007) and its wire encoding moves to `axoloty/1` CBOR, the only Zenoh encoding from 1.0 ([ADR 0009](./adr/0009-zenoh-carries-only-axoloty-1.md)), so 0.9 Zenoh peers will not interoperate with 1.0 Zenoh peers. See [docs/transports/zenoh.md](./transports/zenoh.md). |
+| Zenoh transport, host client mode | Experimental | `AxolotyZenoh` package over pinned `zenoh-c` 1.10.0. Evidence: the offline façade-contract and conformance tier (`zenoh-offline`) and the live pinned-`zenohd` tier (`zenoh-live`), both on Linux x86_64 in the pinned container and natively on macOS arm64, plus MQTT↔Zenoh protocol-trace parity tests. Experimental because the package is consumable only from a checkout (path dependency, ADR 0007) and sits outside the Core 1.0 stability contract. Its wire encoding is `axoloty/1` CBOR, the only Zenoh encoding ([ADR 0009](./adr/0009-zenoh-carries-only-axoloty-1.md)), so 0.9 Zenoh peers do not interoperate with 0.10.0 or 1.0 Zenoh peers. See [docs/transports/zenoh.md](./transports/zenoh.md). |
 | Zenoh transport, host peer mode | Experimental | Routerless scenario in the `zenoh-live` tier. Same limits as client mode. Router loss is not reported in peer mode. |
 | Zenoh Embedded-Swift core (`AxolotyZenohCore`) | Experimental | Compiled and partially linked for RISC-V by the hardware-free `zenoh-core-embedded` pull-request node, which needs no zenoh-c archive, router, or device. No firmware session or device evidence exists in this repository. |
-| Zenoh transport, ESP32-C6 | Planned | Firmware builds reproducibly in `phynics/axoloty-embedded`; device qualification is pending ([axoloty-embedded#8](https://github.com/phynics/axoloty-embedded/issues/8)). |
+| Zenoh transport, ESP32-C6 | Experimental | Firmware lives in `phynics/axoloty-embedded`. Profile `esp32c6-zenoh` is certified there at `0.10.0-embedded.2` on Core v0.10.0. No certificate names Core 1.0.0; requalification is tracked in [axoloty-embedded#73](https://github.com/phynics/axoloty-embedded/issues/73). This repository did not re-verify the certificate. |
 
 ## Platforms
 
@@ -95,7 +99,7 @@ API absences and typed failures; see
 | Linux | Validated | Canonical platform. The [CI workflow](../.github/workflows/ci.yml) runs the required checks in the pinned Linux container, including host tests and the hardware-free Embedded Swift gate. |
 | macOS | Best effort | `Package.swift` declares macOS 26.0; the Apple MQTT path uses Network.framework. No automated macOS CI. Verification is manual: use the [macOS oracle procedure](./testing.md#manual-macos-oracle). Recorded [macOS arm64 Zenoh tier results](./dependencies/zenoh.md#host-macos-266-arm64-xcode-27-swift-64-native) cover that transport and configuration. |
 | iOS | Experimental, unvalidated | `Package.swift` declares iOS 26.0 and selects the Apple MQTT implementation. No dedicated iOS device/simulator tests or CI. Shared Apple code and macOS results do not establish iOS validation. |
-| ESP32-C6 Embedded Swift | Validated at 0.8 (embedded scope) | 313 on-device vector tests. Six physical harness scenarios: two-device exchange, host interop, CoatyJS bidirectional, last-will, broker-restart. Zero hot-path allocations. Scope: Advertise/Deadvertise, Discover/Resolve only. Device qualification now lives in `phynics/axoloty-embedded`. No profile holds an unrevoked certificate at the current Core revision, and requalification is tracked in [#796](https://github.com/phynics/axoloty/issues/796). |
+| ESP32-C6 Embedded Swift | Validated at 0.8 (embedded scope) | 313 on-device vector tests. Six physical harness scenarios: two-device exchange, host interop, CoatyJS bidirectional, last-will, broker-restart. Zero hot-path allocations. Scope: Advertise/Deadvertise, Discover/Resolve only. Device qualification lives in `phynics/axoloty-embedded`. Profiles `esp32c6-zenoh` and `esp32c6-mqtt` are certified there at `0.10.0-embedded.2` on Core v0.10.0. No certificate names Core 1.0.0: 1.0 ships before its device certificates exist, and requalification on 1.0 is tracked in [axoloty-embedded#73](https://github.com/phynics/axoloty-embedded/issues/73). The 0.8 vector and harness counts in this row are historical. |
 
 Host architecture is part of the Zenoh host contract. The pinned `zenoh-c`
 artifacts cover Linux x86_64 (container) and macOS arm64 (native) only. Linux

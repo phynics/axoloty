@@ -7,40 +7,55 @@ record; this document summarizes the active strategy.
 
 ## Current checkpoint
 
-[`VERSION`](../VERSION) identifies the current released version (`0.10.0`). Axoloty remains pre-1.0 and its public API may change. The 0.10 line is the active checkpoint.
+[`VERSION`](../VERSION) identifies the current released version (`1.0.0`). The six Core products listed under [1.0 scope](#10-scope) are frozen and follow the [versioning and deprecation policy](./versioning.md). Everything else remains experimental and may change in any release.
 
 Historical release outcomes are preserved in [`docs/releases/`](./releases/) and [`CHANGELOG.md`](../CHANGELOG.md). They do not define current strategy.
 
-## Active direction: complete the Core 1.0 contract
+## Active direction: Core 1.0 and the embedded relock
 
-Axoloty 0.10.0 ships the `axoloty/1` CBOR profile
-([epic #977](https://github.com/phynics/axoloty/issues/977)), makes it the only
-Zenoh encoding, and freezes the candidate Core 1.0 surface. Firmware locks to
-the `v0.10.0` tag. Axoloty 0.9.0 closed
-[epic #845](https://github.com/phynics/axoloty/issues/845), which moved
-firmware and device qualification into `phynics/axoloty-embedded`, and shipped
-the host Zenoh transport from
-[epic #796](https://github.com/phynics/axoloty/issues/796) as experimental.
-The release records are [`docs/releases/0.10.0.md`](./releases/0.10.0.md) and
+Axoloty 1.0.0 freezes the six Core products. It builds on 0.10.0, which shipped
+the `axoloty/1` CBOR profile
+([epic #977](https://github.com/phynics/axoloty/issues/977)) as the only Zenoh
+encoding, and 0.9.0, which closed
+[epic #845](https://github.com/phynics/axoloty/issues/845) and moved firmware
+and device qualification into `phynics/axoloty-embedded`. The release records
+are [`docs/releases/1.0.0.md`](./releases/1.0.0.md),
+[`docs/releases/0.10.0.md`](./releases/0.10.0.md), and
 [`docs/releases/0.9.0.md`](./releases/0.9.0.md). The approved product and
 ownership contracts are in
 [ADR 0012](./adr/0012-approved-product-and-ownership-contracts.md).
 
+Device evidence trails the Core tag. `esp32c6-zenoh` and `esp32c6-mqtt` are
+certified in `phynics/axoloty-embedded` at `0.10.0-embedded.2` on Core v0.10.0.
+Embedded relocks to 1.0.0 and requalifies both profiles under
+[phynics/axoloty-embedded#73](https://github.com/phynics/axoloty-embedded/issues/73).
+Until then, no device certificate names Core 1.0.0. The `sensor-node` reference
+profiles keep their evidence and budgets and are not certified. The debug
+products re-pin to 1.0 under
+[phynics/axoloty-debug#6](https://github.com/phynics/axoloty-debug/issues/6).
+Items kept out of 1.0 are
+[#1061](https://github.com/phynics/axoloty/issues/1061),
+[#1060](https://github.com/phynics/axoloty/issues/1060),
+[#1044](https://github.com/phynics/axoloty/issues/1044), and
+[#998](https://github.com/phynics/axoloty/issues/998).
+
 ### Zenoh status
 
 - **Host binding:** shipped experimental in 0.9.0 as the `AxolotyZenoh`
-  package, in client and peer modes.
+  package, in client and peer modes. It stays experimental in 1.0.0.
 - **Embedded binding:** firmware and carrier work belong to
   `phynics/axoloty-embedded`. Device peer-mode qualification is deferred beyond
   embedded v1.
 - **Wire encoding is `axoloty/1` CBOR.** The profile shipped in 0.10.0, and
   [ADR 0009](./adr/0009-zenoh-carries-only-axoloty-1.md) makes Zenoh carry only
   that profile. Zenoh peers built on 0.9.x do not interoperate with 0.10.0 or
-  later.
+  later. The binding does not count an `Encoding` label that diverges from
+  `application/cbor` ([#1062](https://github.com/phynics/axoloty/issues/1062)).
 - **Consumption:** the adapter is consumed by path from a checkout, not through
   a URL dependency ([ADR 0007](./adr/0007-zenoh-adapter-package-boundary.md)).
-  Zenoh remains outside the Core 1.0 stability contract. Promotion is tracked
-  separately in [#1045](https://github.com/phynics/axoloty/issues/1045).
+  Zenoh remains outside the Core 1.0 stability contract. The graduation
+  evidence issue [#1045](https://github.com/phynics/axoloty/issues/1045) is
+  closed, and Zenoh stays experimental.
 
 ### 1.0 scope
 
@@ -52,14 +67,17 @@ The 1.0 API freeze covers the following:
   Coaty convenience models, SensorThings and IO-routing products,
   macro-generated schema support, the `Tools/` harness, and products in the
   sibling `phynics/axoloty-debug` package.
-- **`axoloty/1` CBOR is in 1.0 scope and implemented on `main`.** The bounded
+- **`axoloty/1` CBOR is in 1.0 scope and implemented.** The bounded
   codec, `axoloty/1` routes, frozen golden corpus, host/static trace parity,
-  Zenoh-only profile, and embedded consumer contract surface are in the tree.
+  Zenoh-only profile, and embedded consumer contract surface shipped in 0.10.0.
+  The CBOR-only portable consumer surface is Advertise, Discover, Resolve,
+  Deadvertise, Channel, Update, and Complete, with predicates, filters, and
+  JSON-only object-model APIs as tested absences
+  ([#1063](https://github.com/phynics/axoloty/issues/1063)).
   [ADR 0009](./adr/0009-zenoh-carries-only-axoloty-1.md) makes it the only
   Zenoh encoding, and `coaty/3` JSON stays sealed on MQTT for CoatyJS
   compatibility. [Epic #977](https://github.com/phynics/axoloty/issues/977)
-  delivered the profile and closed. Remaining 1.0 acceptance work is tracked in
-  [#1043](https://github.com/phynics/axoloty/issues/1043). The `wire-cbor` tier
+  delivered the profile and closed. The `wire-cbor` tier
   runs the corpus and trace parity on every pull request.
 - **Not frozen:** a JSON Zenoh encoding, or any JSON-only codec surface that the
   CBOR profile would replace.
@@ -68,10 +86,11 @@ The version numbers, deprecation window, and security support for these
 products are recorded in [the versioning and deprecation policy](./versioning.md)
 and [`SECURITY.md`](../SECURITY.md). Scoping decisions are recorded in the
 closed historical review
-[#978](https://github.com/phynics/axoloty/issues/978). Remaining 1.0 acceptance
-work is tracked in
-[#1043](https://github.com/phynics/axoloty/issues/1043), and the API audit is
-tracked in [#1000](https://github.com/phynics/axoloty/issues/1000).
+[#978](https://github.com/phynics/axoloty/issues/978). The 1.0 acceptance
+checkpoint [#1043](https://github.com/phynics/axoloty/issues/1043) and the API
+audit [#1000](https://github.com/phynics/axoloty/issues/1000) are closed. The
+owner decision to cut 1.0 is recorded in
+[#1059](https://github.com/phynics/axoloty/issues/1059).
 
 ## Completed: 0.7 architecture stabilization and transport boundary
 

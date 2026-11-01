@@ -9,12 +9,14 @@ version](https://img.shields.io/badge/swift-6.4-%23F05138?logo=swift)](https://d
 [![License:
 MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
-> **Development checkpoint.** [`VERSION`](./VERSION) identifies the current
-> published release (`0.10.0`). Axoloty is not API-stable. The 0.10 line adds
-> the `axoloty/1` CBOR wire profile, makes it the only Zenoh encoding, freezes
-> the candidate Core surface for 1.0, and moves the runtime and debug products
-> to `phynics/axoloty-debug`, on the Swift 6.4 toolchain and the versioned
-> embedded consumer contract from 0.9.
+> **Core 1.0.** [`VERSION`](./VERSION) identifies the current release
+> (`1.0.0`). The six Core products `Axoloty`, `AxolotyWire`, `AxolotyProtocol`,
+> `AxolotyObjectModel`, `AxolotyStaticRuntime`, and `AxolotyMQTT` follow the
+> [versioning and deprecation policy](./docs/versioning.md). Everything else,
+> including Zenoh, is experimental. Linux is the validated host. The
+> embedded device profiles are qualified per Core release in
+> `phynics/axoloty-embedded`, and their 1.0 certificates are not yet issued;
+> see the [1.0.0 release notes](./docs/releases/1.0.0.md).
 
 ## About Axoloty
 
@@ -27,10 +29,11 @@ ships and validates against live CoatyJS; it reaches the runtime through a
 replaceable adapter (`AxolotyMQTT`) rather than defining what Axoloty
 networking is.
 An experimental [Zenoh](https://zenoh.io) adapter (`AxolotyZenoh`) carries the
-same Coaty routes and payloads over `zenohd` or peer-to-peer in 0.9; see
+`axoloty/1` CBOR routes and payloads over `zenohd` or peer-to-peer; see
 [docs/transports/zenoh.md](./docs/transports/zenoh.md). It is consumed from a
-checkout of this repository. From 1.0, Zenoh carries only the `axoloty/1` CBOR
-profile, so 0.9 Zenoh peers will not interoperate with 1.0 peers
+checkout of this repository and is outside the Core 1.0 stability contract.
+Zenoh carries only the `axoloty/1` CBOR profile, so 0.9 Zenoh peers do not
+interoperate with 0.10 or 1.0 peers
 ([ADR 0009](./docs/adr/0009-zenoh-carries-only-axoloty-1.md)).
 
 Axoloty provides an application and communication layer foundation for
@@ -94,7 +97,7 @@ Add Axoloty to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/phynics/axoloty", from: "0.10.0"),
+    .package(url: "https://github.com/phynics/axoloty", from: "1.0.0"),
 ],
 targets: [
     .executableTarget(
@@ -110,7 +113,7 @@ For a wire target in a consumer that already resolves the root package:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/phynics/axoloty", from: "0.10.0"),
+    .package(url: "https://github.com/phynics/axoloty", from: "1.0.0"),
 ],
 targets: [
     .executableTarget(
@@ -247,10 +250,10 @@ See the [axoloty-debug inspector reference](https://github.com/phynics/axoloty-d
 for the full reference.
 
 For the current release's changes, see
-[0.10.0 release notes](./docs/releases/0.10.0.md). The `axoloty/1` CBOR profile
-and the 1.0 direction are recorded in
-[protocol/axoloty-1.md](./docs/protocol/axoloty-1.md) and
-[1.0.0 release notes](./docs/releases/1.0.0.md). For migrating from legacy
+[1.0.0 release notes](./docs/releases/1.0.0.md). The `axoloty/1` CBOR profile
+is recorded in [protocol/axoloty-1.md](./docs/protocol/axoloty-1.md). For
+migrating from 0.x to the frozen 1.0 API, see
+[the pre-1.0 migration note](./docs/migration/pre-1.0-to-1.0.md). For migrating from legacy
 CoatySwift, see [the 0.2 migration guide](./docs/migration/from-coatyswift-to-0.2.md).
 For the 0.7 runtime-registration migration, see
 [the 0.6-to-0.7 guide](./docs/migration/from-0.6-to-0.7.md). For the 0.8

@@ -9,6 +9,62 @@ fork, through CoatySwift 2.4.0, remain documented in the
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-11-01
+
+Axoloty 1.0.0 freezes the six Core products (`Axoloty`, `AxolotyWire`,
+`AxolotyProtocol`, `AxolotyObjectModel`, `AxolotyStaticRuntime`, and
+`AxolotyMQTT`) under the [versioning and deprecation
+policy](docs/versioning.md). It adds no public API over 0.10.0. See
+`docs/releases/1.0.0.md`.
+
+### Added
+
+- Behavioral proof of the CBOR-only portable Core consumer surface: Advertise,
+  Discover, Resolve, Deadvertise, Channel, Update, and Complete round-trip
+  through the static runtime and its owning action sink, with correlation
+  checks. Predicates, filters, and the JSON-only object-model APIs
+  (`ObjectEnvelope` decoding, `ObjectFieldDecoder`, `ObjectPredicate`,
+  `CoatyFilterAdapter`) are absent at compile time, and the Core gate probes
+  each absence. The hardware-free gate now also compiles the CBOR-only graph in
+  Embedded Swift mode for the host and executes the full Core consumer
+  fixture, and checks both artifacts for `_JSONCore` symbols. RISC-V execution
+  is still not claimed (#1063, closes #1057).
+
+### Changed
+
+- In a build without `_JSONCore`, selecting the `coaty/3` JSON codec for
+  decoding no longer traps. A JSON reader records
+  `WireDecodeError(.invalidValue)` that its validation and the wire DTO
+  decoders throw, `WireCodec.isValidBareValue(_:)` returns `false`, and
+  JSON `ObjectEnvelope` decoding throws `ObjectError(.invalidEnvelope)`. A
+  build with `_JSONCore` is unchanged, and no public declaration changes
+  (#1063).
+- The Zenoh binding does not count a sample whose `Encoding` label diverges
+  from `application/cbor`. The documents previously said it did. No counter is
+  added and behavior is unchanged (#1064, closes #1062).
+- `ProtocolTraceRuntimeReplay.seedObject` uses the selected profile writer, so
+  it is no longer JSON-only (#1063).
+- `VERSION` is `1.0.0`. Support levels do not widen: Linux is validated, macOS
+  is best effort, iOS is experimental and unvalidated, Zenoh and the
+  ESP32-C6 `axoloty/1` CBOR path are experimental, and CoatyJS stays pinned at
+  2.4.0.
+
+### Security
+
+- Updated `brace-expansion` in the CoatyJS reference agent lockfile. The
+  package is used only by the wire-compatibility test harness and is not part
+  of any shipped product (#1065).
+
+### Documentation
+
+- Device evidence trails the Core tag. `esp32c6-zenoh` and `esp32c6-mqtt` are
+  certified in `phynics/axoloty-embedded` at `0.10.0-embedded.2` on Core
+  v0.10.0. No device certificate names Core 1.0.0 yet; requalification on 1.0
+  is tracked in
+  [phynics/axoloty-embedded#73](https://github.com/phynics/axoloty-embedded/issues/73).
+- `SECURITY.md` now states that security fixes follow the stable-major policy
+  and that `0.x` releases receive none.
+
 ## [0.10.0] - 2026-10-29
 
 Axoloty 0.10.0 adds the `axoloty/1` CBOR wire profile, makes it the only Zenoh
@@ -666,7 +722,9 @@ and reproducible compatibility and resource evidence.
 Initial Axoloty prerelease as an independently maintained, modernized fork of
 CoatySwift.
 
-[Unreleased]: https://github.com/phynics/axoloty/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/phynics/axoloty/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/phynics/axoloty/compare/v0.10.0...v1.0.0
+[0.10.0]: https://github.com/phynics/axoloty/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/phynics/axoloty/compare/v0.8.2...v0.9.0
 [0.8.2]: https://github.com/phynics/axoloty/compare/v0.8.1...v0.8.2
 [0.8.1]: https://github.com/phynics/axoloty/compare/v0.8.0...v0.8.1

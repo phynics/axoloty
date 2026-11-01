@@ -6,26 +6,19 @@ window are defined in [the versioning and deprecation policy](./docs/versioning.
 
 ## Supported versions
 
-Axoloty is pre-1.0; [`VERSION`](./VERSION) identifies the current release and
-the [support matrix](./docs/SUPPORT_MATRIX.md) records per-capability support.
-While Axoloty is pre-1.0, only the latest release line receives security
-fixes. Older release lines and unreleased development snapshots do not.
-
-| Release | Security fixes |
-|---|---|
-| Latest release line (`0.Y`) | Yes |
-| Older `0.x` release lines | No |
-| `main` between releases | No |
-
-After 1.0, the frozen products listed in
+[`VERSION`](./VERSION) identifies the current release, and the
+[support matrix](./docs/SUPPORT_MATRIX.md) records per-capability support.
+Axoloty 1.0.0 is the first stable release. The frozen products listed in
 [the versioning and deprecation policy](./docs/versioning.md) receive security
 fixes as follows:
 
 | Release | Security fixes |
 |---|---|
-| Latest stable major version | Yes |
+| Latest stable major version (`1.x`) | Yes |
 | Previous stable major version | For 12 months after the first stable release of its successor |
 | Older major versions | No |
+| Pre-1.0 releases (`0.x`) | No |
+| `main` between releases | No |
 
 Deprecation is not a security-fix commitment; a release can be supported for
 security while a deprecated symbol is already scheduled for removal.
