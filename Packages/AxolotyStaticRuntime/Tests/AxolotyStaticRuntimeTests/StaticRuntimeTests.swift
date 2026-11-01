@@ -120,6 +120,7 @@ struct StaticRuntimeTests {
             #expect(publications.count == (capability == .advertise ? 2 : 1))
             // Advertise emits core-type and object-type routes for one logical
             // event. Send its application-delivery route once to the peer.
+            #expect(publications.filter(\.isApplicationDelivery).count == 1)
             for publication in publications where publication.isApplicationDelivery {
                 #expect(publication.payload == payload)
                 let deliveries = cborTestReceive(publication, into: &peer)
