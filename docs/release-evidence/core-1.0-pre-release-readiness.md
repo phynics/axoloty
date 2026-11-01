@@ -1,5 +1,18 @@
 # Core 1.0 pre-release readiness evidence
 
+> **Status (2026-11-01).** The owner decided to cut Core 1.0 on
+> [#1059](https://github.com/phynics/axoloty/issues/1059). The record below is
+> the 2026-10-26 evidence for `0.9.0` and is kept as written. It is not the
+> 1.0.0 release validation. The 1.0.0 release commit has its own `make
+> checkpoint` result, recorded in the release pull request. Where the record
+> says `ownerSignoff=PENDING` or `VERSION` remains `0.9.0`, it describes the
+> state at that checkpoint. The owner decision supersedes `PENDING` for the
+> decision to release. It does not widen any support claim. Device evidence is
+> not part of this record: `esp32c6-zenoh` and `esp32c6-mqtt` are certified in
+> `phynics/axoloty-embedded` at `0.10.0-embedded.2` on Core v0.10.0, and
+> requalification on 1.0 follows under
+> [phynics/axoloty-embedded#73](https://github.com/phynics/axoloty-embedded/issues/73).
+
 This record binds the retained release checkpoint to Core commit
 `d69b9aa8e0b56532483663688f65db287ffb0d27`, tree
 `1b1199b2b5a0338fcd194eb07bdcd783acf2989a`, version `0.9.0`, on Linux with

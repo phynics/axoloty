@@ -4,8 +4,7 @@ This document describes the current host and portable APIs. The exact public
 declarations selected for Core 1.0 are recorded in the
 [Core API audit](./api/core-1.0-surface.md) and its generated
 [symbol baseline](./api/core-1.0-public-symbols.json). `VERSION` remains the
-release authority; this audit does not change the current 0.10.0 version.
-The current released API is Axoloty 0.10.0.
+release authority. The current released API is Axoloty 1.0.0.
 
 ## Core 1.0 surface
 

@@ -2,9 +2,8 @@
 
 Core 1.0 freezes the public surface of `Axoloty`, `AxolotyWire`,
 `AxolotyProtocol`, `AxolotyObjectModel`, `AxolotyStaticRuntime`, and
-`AxolotyMQTT`. This note lists the pre-1.0 source changes made during the API
-audit. It does not describe a released migration; the current release version
-remains in `VERSION`.
+`AxolotyMQTT` in Axoloty 1.0.0. This note lists the pre-1.0 source changes made
+during the API audit. Use it to move code written against a 0.x release to 1.0.
 
 ## Transport adapter changes
 
