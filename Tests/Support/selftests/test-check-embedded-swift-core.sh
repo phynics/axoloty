@@ -35,6 +35,9 @@ grep -Fq 'CBOR-only consumer link' "$tmpdir/pass.log"
 grep -Fq 'CBOR behavior: axoloty/1 encode and decode passed without _JSONCore' "$tmpdir/pass.log"
 echo "  PASS: five portable modules and real StaticIoActor consumer compile/link"
 echo "  PASS: CBOR-only consumer compiles, links, and runs without _JSONCore"
+grep -Fq 'CBOR Core behavior: bounded objects, StaticRuntime, and JSON-only typed failures passed without _JSONCore' "$tmpdir/pass.log"
+grep -Fq 'CBOR-only absence: ObjectPredicateMatcher' "$tmpdir/pass.log"
+echo "  PASS: CBOR-only Core consumer executes and JSON-only APIs fail without traps"
 echo "  PASS: missing firmware and SDK paths are irrelevant"
 
 # Reuse the macro/dependency preparation from the successful run. This keeps
@@ -137,6 +140,35 @@ if AXOLOTY_SOURCE_DIR="$source_root" \
 fi
 echo "  PASS: JSON-only WireReader initializer is rejected in a CBOR-only build"
 
+# Fail only in the executable host leg. Compiling and partially linking this
+# fixture succeeds, so the checker must actually run its preconditions.
+cp "$source_root/Tests/Support/fixtures/embedded-cbor-core-consumer.swift" "$tmpdir/FailingCoreBehavior.swift"
+node - "$tmpdir/FailingCoreBehavior.swift" <<'NODE'
+const fs = require("node:fs");
+const path = process.argv[2];
+const source = fs.readFileSync(path, "utf8");
+const entry = "    static func main() {";
+if (!source.includes(entry)) throw new Error("Core fixture entry point changed");
+fs.writeFileSync(path, source.replace(entry, entry + "\n#if CBOR_CORE_INTERNAL_TESTS\n        precondition(false)\n#endif"));
+NODE
+behavior_status=0
+AXOLOTY_SOURCE_DIR="$source_root" \
+    AXOLOTY_STATIC_RUNTIME_MACRO_SCRATCH_DIR="$macro_scratch" \
+    AXOLOTY_EMBEDDED_CBOR_CORE_FIXTURE="$tmpdir/FailingCoreBehavior.swift" \
+    "$checker" >"$tmpdir/core-behavior-fail.log" 2>&1 || behavior_status=$?
+# Embedded Swift's precondition trap terminates with SIGILL (128 + 4).
+# A compiler error, missing artifact, or timeout must not count as execution.
+if [ "$behavior_status" -ne 132 ]; then
+    cat "$tmpdir/core-behavior-fail.log" >&2
+    echo "expected executed Core precondition to fail with SIGILL, got $behavior_status" >&2
+    exit 1
+fi
+grep -Fq 'CBOR-only Core host executable built without _JSONCore; executing...' "$tmpdir/core-behavior-fail.log" || {
+    cat "$tmpdir/core-behavior-fail.log" >&2
+    exit 1
+}
+echo "  PASS: failing CBOR-only Core behavior is rejected after successful partial linking"
+
 # Keep this check auditable: this gate must not grow a hidden firmware/SDK
 # dependency while its manifest remains a hardware-free CI requirement.
 if grep -Eq 'Embedded/swift|ESP-IDF|idf\.py|IDF_PATH' "$checker"; then
@@ -146,4 +178,4 @@ fi
 echo "  PASS: checker source has no firmware or ESP-IDF dependency"
 
 echo ""
-echo "SELF-TEST OK (8 checks passed, 0 failed)"
+echo "SELF-TEST OK (10 checks passed, 0 failed)"

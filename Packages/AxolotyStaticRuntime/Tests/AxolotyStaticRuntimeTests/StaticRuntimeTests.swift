@@ -99,6 +99,119 @@ struct StaticRuntimeTests {
         #expect(runtime.drain { _ in } == 2)
     }
 
+    @Test("CBOR Advertise, Channel, and Deadvertise cross a peer wire boundary")
+    func cborLifecycleRoundTrip() throws(WireEncodeError) {
+        let codec = WireCodec(profile: .axoloty1CBOR)
+        var sender = try! StaticRuntime<4, 512>(registryID: staticRegistryID(), wireCodec: codec)
+        var peer = try! StaticRuntime<4, 512>(registryID: staticRegistryID(), wireCodec: codec)
+        let object = try cborTestObject()
+        for capability: ProtocolCapability in [.advertise, .channel, .deadvertise] {
+            let payload = try cborTestPayload(capability, object: object)
+            payload.withUnsafeBufferPointer { buffer in
+                let operation = try! ProtocolLocalOperation(
+                    capability: capability,
+                    sourceID: .zero,
+                    payload: ByteSlice(bytes: buffer.baseAddress!, length: buffer.count),
+                    operationName: capability == .channel ? staticPayload("readings") : nil
+                )
+                #expect(sender.send(operation) == .accepted)
+            }
+            let publications = cborTestPublications(&sender)
+            #expect(publications.count == (capability == .advertise ? 2 : 1))
+            // Advertise emits core-type and object-type routes for one logical
+            // event. Send its application-delivery route once to the peer.
+            for publication in publications where publication.isApplicationDelivery {
+                #expect(publication.payload == payload)
+                let deliveries = cborTestReceive(publication, into: &peer)
+                #expect(deliveries.count == 1)
+                #expect(deliveries.first?.payload == payload)
+                #expect(deliveries.first?.routingKey.capability == capability)
+                if capability == .channel {
+                    #expect(deliveries.first?.deliveryKey == .channel(Array("readings".utf8)))
+                }
+            }
+            let expectedObjects = capability == .deadvertise ? 0 : 1
+            #expect(sender.state.activeObjects == expectedObjects)
+            #expect(peer.state.activeObjects == expectedObjects)
+        }
+    }
+
+    @Test("CBOR request and response round trips enforce correlation",
+          arguments: [ProtocolCapability.discover, .update])
+    func cborCorrelatedRoundTrip(_ request: ProtocolCapability) throws(WireEncodeError) {
+        let codec = WireCodec(profile: .axoloty1CBOR)
+        var caller = try! StaticRuntime<4, 512>(registryID: staticRegistryID(), wireCodec: codec)
+        var peer = try! StaticRuntime<4, 512>(registryID: staticRegistryID(), wireCodec: codec)
+        let correlation = staticUUID("22222222-2222-4222-8222-222222222222")
+        let response: ProtocolCapability = request == .discover ? .resolve : .complete
+        let object = try cborTestObject()
+        let requestPayload = try cborTestPayload(request, object: object)
+        requestPayload.withUnsafeBufferPointer { buffer in
+            let operation = try! ProtocolLocalOperation(
+                capability: request, sourceID: .zero, correlationID: correlation,
+                payload: ByteSlice(bytes: buffer.baseAddress!, length: buffer.count),
+                requestTimeoutMS: 100
+            )
+            #expect(caller.send(operation, nowMS: 1) == .accepted)
+        }
+        #expect(caller.state.pendingCorrelations == 1)
+        let requests = cborTestPublications(&caller)
+        #expect(requests.count == 1)
+        for publication in requests {
+            #expect(publication.payload == requestPayload)
+            let deliveries = cborTestReceive(publication, into: &peer)
+            #expect(deliveries.count == 1)
+            #expect(deliveries.first?.payload == requestPayload)
+            #expect(deliveries.first?.routingKey.capability == request)
+            #expect(deliveries.first?.routingKey.correlationID == correlation)
+        }
+        let responsePayload = try cborTestPayload(response, object: object)
+        // The peer emits a response with a wrong correlation first. The caller
+        // must retain the pending request and produce no delivery.
+        for responseID in [UUID16.zero, correlation] {
+            responsePayload.withUnsafeBufferPointer { buffer in
+                let operation = try! ProtocolLocalOperation(
+                    capability: response, sourceID: staticRegistryID().uuid,
+                    correlationID: responseID,
+                    payload: ByteSlice(bytes: buffer.baseAddress!, length: buffer.count)
+                )
+                #expect(peer.send(operation, nowMS: 2) == .accepted)
+            }
+            let responses = cborTestPublications(&peer)
+            #expect(responses.count == 1)
+            for publication in responses {
+                #expect(publication.payload == responsePayload)
+                let deliveries = cborTestReceive(
+                    publication, into: &caller,
+                    expected: responseID == correlation ? .accepted : .rejected(.correlationMismatch)
+                )
+                #expect(deliveries.count == (responseID == correlation ? 1 : 0))
+                if responseID == correlation {
+                    #expect(deliveries.first?.payload == responsePayload)
+                    #expect(deliveries.first?.deliveryKey == .correlated(response, correlation))
+                }
+            }
+            #expect(caller.state.pendingCorrelations == (response == .complete && responseID == correlation ? 0 : 1))
+        }
+        if response == .complete {
+            // Complete is terminal: its tombstone rejects a replay as a
+            // duplicate, with no delivery.
+            responsePayload.withUnsafeBufferPointer { buffer in
+                #expect(peer.send(.complete(
+                    sourceID: staticRegistryID().uuid, correlationID: correlation,
+                    payload: ByteSlice(bytes: buffer.baseAddress!, length: buffer.count)
+                )) == .accepted)
+            }
+            for publication in cborTestPublications(&peer) {
+                #expect(cborTestReceive(publication, into: &caller, expected: .rejected(.duplicate)).isEmpty)
+            }
+        } else {
+            let cancelled = caller.cancel(correlationID: correlation)
+            #expect(cancelled)
+            #expect(caller.state.pendingCorrelations == 0)
+        }
+    }
+
     @Test("owning sink rolls back a partially appended action batch")
     func owningSinkRollsBackPartialBatch() throws {
         let source = UUID16(parsing: "00000000-0000-4000-8000-000000000001")!
@@ -453,4 +566,94 @@ struct StaticRuntimeTests {
         #expect(runtime.state.activeAssociations == 0)
         #expect(runtime.state.pendingCorrelations == 0)
     }
+}
+
+// Build the payload with the production profile writer, then preserve those
+// exact encoded bytes across the owning sink, topic builder, and peer parser.
+private func cborTestObject() throws(WireEncodeError) -> [UInt8] {
+    let storage = UnsafeMutablePointer<UInt8>.allocate(capacity: 512)
+    defer { storage.deallocate() }
+    var writer = WireCodec(profile: .axoloty1CBOR).writer(buffer: storage, capacity: 512)
+    try writer.beginObject()
+    try writer.writeStringField("name", staticPayload("sensor"))
+    try writer.writeStringField("coreType", staticPayload("CoatyObject"))
+    try writer.writeUUIDField("objectId", staticUUID("11111111-1111-4111-8111-111111111111"))
+    try writer.writeStringField("objectType", staticPayload("com.example.Sensor"))
+    try writer.endObject()
+    return Array(UnsafeBufferPointer(start: storage, count: writer.position))
+}
+
+private func cborTestPayload(_ capability: ProtocolCapability, object: [UInt8]) throws(WireEncodeError) -> [UInt8] {
+    let storage = UnsafeMutablePointer<UInt8>.allocate(capacity: 512)
+    defer { storage.deallocate() }
+    var writer = WireCodec(profile: .axoloty1CBOR).writer(buffer: storage, capacity: 512)
+    try writer.beginObject()
+    if capability == .deadvertise {
+        // The bounded writer owns one container at a time. Encode nested
+        // arrays separately, then splice them through the raw-field seam.
+        let ids = UnsafeMutablePointer<UInt8>.allocate(capacity: 32)
+        defer { ids.deallocate() }
+        var array = WireCodec(profile: .axoloty1CBOR).writer(buffer: ids, capacity: 32)
+        try array.beginArray()
+        try array.writeUUIDValue(staticUUID("11111111-1111-4111-8111-111111111111"))
+        try array.endArray()
+        try writer.writeRawField("objectIds", ByteSlice(bytes: ids, length: array.position))
+    } else if capability == .discover {
+        try writer.writeStringField("externalId", staticPayload("sensor-1"))
+    } else {
+        try object.withUnsafeBufferPointer { buffer throws(WireEncodeError) in
+            try writer.writeRawField("object", ByteSlice(bytes: buffer.baseAddress!, length: buffer.count))
+        }
+    }
+    try writer.endObject()
+    return Array(UnsafeBufferPointer(start: storage, count: writer.position))
+}
+
+private func cborTestPublications(_ runtime: inout StaticRuntime<4, 512>) -> [OwnedProtocolPublication] {
+    var publications: [OwnedProtocolPublication] = []
+    runtime.drain { action in
+        if case .publish(let publication) = action { publications.append(publication.owned()) }
+    }
+    #expect(!publications.isEmpty)
+    return publications
+}
+
+private func cborTestReceive(
+    _ publication: OwnedProtocolPublication,
+    into peer: inout StaticRuntime<4, 512>,
+    expected: ProtocolProcessOutcome = .accepted
+) -> [OwnedProtocolDelivery] {
+    let storage = UnsafeMutablePointer<UInt8>.allocate(capacity: 256)
+    defer { storage.deallocate() }
+    var builder = TopicBuilder(buffer: storage, capacity: 256)
+    try! builder.writePrefix(.axoloty1CBOR)
+    try! builder.writeNamespace("cbor-test")
+    guard case .profile(let filter, let kind) = publication.target else {
+        Issue.record("Expected a profile publication")
+        return []
+    }
+    if let filter {
+        filter.withUnsafeBufferPointer { buffer in
+            try! builder.writeEventType(
+                publication.routingKey.capability.wireEventType,
+                filter: ByteSlice(bytes: buffer.baseAddress!, length: buffer.count),
+                filterKind: kind == .objectType ? .objectType : .direct
+            )
+        }
+    } else {
+        try! builder.writeEventType(publication.routingKey.capability.wireEventType)
+    }
+    try! builder.writeSourceId(publication.routingKey.sourceID)
+    if let correlation = publication.routingKey.correlationID { try! builder.writeCorrelationId(correlation) }
+    publication.payload.withUnsafeBufferPointer { buffer in
+        #expect(peer.receive(
+            topic: builder.build(),
+            payload: ByteSlice(bytes: buffer.baseAddress!, length: buffer.count), nowMS: 3
+        ) == expected)
+    }
+    var deliveries: [OwnedProtocolDelivery] = []
+    peer.drain { action in
+        if case .deliver(let delivery) = action { deliveries.append(delivery.owned()) }
+    }
+    return deliveries
 }

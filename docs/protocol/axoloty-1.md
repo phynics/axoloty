@@ -237,19 +237,46 @@ exact `axoloty/1` float width is preserved on re-encode.
 
 ## CBOR-only consumers
 
-A CBOR-only `AxolotyWire` build, produced with `--disable-default-traits`, does
-not link `_JSONCore`. Two known limitations apply today. They are recorded
-here and are not fixed in the profile code:
+A CBOR-only build omits `_JSONCore`. Its supported `StaticRuntime` surface is
+Advertise, Discover, Resolve, Deadvertise, Channel, Update, and Complete.
+`StaticRuntimeTests` sends these CBOR payloads through the owning action sink,
+builds `axoloty/1` topics, and receives the frames on a peer runtime. It checks
+lifecycle state and exact payload bytes, Discover/Resolve correlation, and
+Update/Complete correlation. A wrong correlation produces no delivery;
+Complete consumes its Update correlation and a replay is rejected. Resolve
+leaves Discover open until cancellation or timeout.
 
-1. `BorrowedMessage.ownedEvent()` and `BorrowedMessage.reader()` are gated by
-   `#if canImport(_JSONCore)` and are absent from a CBOR-only build. Decode
-   through `WireCodec.reader(bytes:length:)` and
-   `BorrowedWireEvent.init(eventType:from:)` instead. See
-   [../embedded-consumer-contract.md](../embedded-consumer-contract.md) for the
-   supported build shape.
-2. `ProtocolTraceRuntimeReplay.seedObject` in
-   `AxolotyProtocolTraceTestSupport` hardcodes a JSON Advertise payload, so the
-   trace-parity replay seed path is JSON-only today. This is test support, not
-   production code: no shipping path switches on the active profile. If a
-   CBOR-only replay seed is required, that helper must encode the seed with the
-   route profile.
+The hardware-free `make check-embedded-core-consumer` gate compiles and
+partially links the five-module CBOR-only graph for RISC-V, then compiles it in
+Embedded Swift mode for the host and executes the full Core consumer fixture.
+Both artifacts are checked for `_JSONCore` symbols. RISC-V execution is not
+claimed: the repository has no hardware-free runner for that target. Existing
+wire goldens and the `wire-cbor` parity gate provide additional profile evidence;
+`ProtocolTraceRuntimeReplay.seedObject` now uses the selected profile writer.
+
+There are no CBOR equivalents for JSON `ObjectEnvelope` decoding,
+`ObjectFieldDecoder`, `ObjectPredicate` and its contracts and matcher, or
+`CoatyFilterAdapter`. Predicates and filters are absent at compile time; the
+Core gate probes each absence. JSON envelope, dynamic-object, typed-object,
+and field decoding paths that remain callable throw their existing typed
+errors without `_JSONCore`. Selecting a JSON codec produces a failed reader
+whose validation throws `WireDecodeError(.invalidValue)`;
+`WireCodec.isValidBareValue(_:)` returns `false`. The Core fixture
+executes these error paths, including `BoundedObject.init(envelope:fields:)`.
+JSON `WireReader` initializers are absent, while borrowed message and event
+entry points remain available with profile-aware decoding. The
+[consumer contract](../embedded-consumer-contract.md#wire-profiles) lists the
+entry points and error mappings.
+
+`BoundedCBORObject` owns validated deterministic CBOR bytes and preserves
+unknown fields and CBOR-only values. It is read-only, has no CBOR editor, and
+is bounded by both its caller-selected capacities and the reader's 24-field
+index. It does not provide schema-driven JSON object-model behavior.
+
+ESP32-C6 device evidence covers Advertise, Discover, Resolve, and Channel
+(the Zenoh sensor-node run in
+[embedded #127](https://github.com/phynics/axoloty-embedded/issues/127)) and
+Deadvertise (the earlier two-device CBOR Zenoh agent exchange). Update and
+Complete have host evidence only. The
+[family evidence](../embedded-consumer-contract.md#family-evidence) section
+links each record and states what it does not establish.

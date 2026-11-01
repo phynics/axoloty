@@ -389,6 +389,8 @@ echo "  CBOR-only consumer link: ${cbor_linked_size} bytes"
 cbor_core_dir="$workdir/cbor-core-only"
 mkdir -p -- "$cbor_core_dir"
 
+cbor_core_target=riscv32-none-none-eabi
+cbor_core_testing_flags=
 compile_cbor_core_module() {
     module_name=$1
     module_dir=$2
@@ -407,11 +409,11 @@ compile_cbor_core_module() {
     echo "Compiling CBOR-only $module_name as Embedded Swift..."
     if [ "$module_name" = AxolotyStaticRuntime ]; then
         swiftc \
-            -target riscv32-none-none-eabi \
+            -target "$cbor_core_target" \
             -swift-version 6 \
             -enable-experimental-feature Embedded \
             -enable-experimental-feature Lifetimes \
-            -parse-as-library -Osize -wmo \
+            -parse-as-library -Osize -wmo $cbor_core_testing_flags \
             -warnings-as-errors \
             -module-name "$module_name" \
             -load-plugin-executable "$macro_tool#AxolotyStaticRuntimeMacrosImplementation" \
@@ -421,11 +423,11 @@ compile_cbor_core_module() {
             -o "$cbor_core_dir/$module_name.o"
     else
         swiftc \
-            -target riscv32-none-none-eabi \
+            -target "$cbor_core_target" \
             -swift-version 6 \
             -enable-experimental-feature Embedded \
             -enable-experimental-feature Lifetimes \
-            -parse-as-library -Osize -wmo \
+            -parse-as-library -Osize -wmo $cbor_core_testing_flags \
             -module-name "$module_name" \
             -I "$cbor_core_dir" \
             -emit-module -emit-module-path "$cbor_core_dir/$module_name.swiftmodule" \
@@ -542,6 +544,84 @@ swiftc \
 "$workdir/embedded-cbor-consumer"
 
 echo "  CBOR behavior: axoloty/1 encode and decode passed without _JSONCore"
+# Run the exact full-Core consumer fixture with the Embedded compiler mode on
+# the host, using a separate include directory with no JSON parser module.
+# RISC-V objects cannot execute on this host; no emulator or hardware runner
+# belongs to this gate.
+echo "Running the CBOR-only Core Embedded consumer on the host..."
+cbor_core_dir="$workdir/cbor-core-host"
+cbor_core_target=$host_target
+cbor_core_testing_flags=-enable-testing
+mkdir -p -- "$cbor_core_dir"
+compile_cbor_core_module AxolotyWire "$AXOLOTY_WIRE_SOURCE_DIR"
+compile_cbor_core_module AxolotyObjectModel "$AXOLOTY_OBJECT_MODEL_SOURCE_DIR"
+compile_cbor_core_module AxolotyProtocol "$AXOLOTY_PROTOCOL_SOURCE_DIR"
+compile_cbor_core_module AxolotyCoatyModels "$AXOLOTY_COATY_MODELS_SOURCE_DIR"
+compile_cbor_core_module AxolotyStaticRuntime "$AXOLOTY_STATIC_RUNTIME_SOURCE_DIR"
+swiftc \
+    -target "$host_target" \
+    -swift-version 6 \
+    -enable-experimental-feature Embedded \
+    -enable-experimental-feature Lifetimes \
+    -parse-as-library -Osize -wmo \
+    -D CBOR_CORE_INTERNAL_TESTS \
+    -I "$cbor_core_dir" \
+    "$cbor_core_fixture" \
+    "$cbor_core_dir"/*.o \
+    "$workdir/embedded-host-shims.o" \
+    "$unicode_archive" \
+    -Xlinker -lm \
+    -o "$workdir/embedded-cbor-core-consumer"
+if nm "$workdir/embedded-cbor-core-consumer" | grep -q '_JSONCore'; then
+    echo "FAIL: the CBOR-only Core host executable references _JSONCore" >&2
+    exit 1
+fi
+echo "  CBOR-only Core host executable built without _JSONCore; executing..."
+"$workdir/embedded-cbor-core-consumer"
+echo "  CBOR Core behavior: bounded objects, StaticRuntime, and JSON-only typed failures passed without _JSONCore"
+
+# Probe each absent public predicate contract independently. A missing import
+# or unrelated diagnostic cannot satisfy the expected missing-type failure.
+for absent_type in 'ObjectPredicate<4, 4, 4, 64>' ObjectPredicateOperator ObjectPredicateLiteral ObjectPredicateExpression PredicateOperator PredicateLiteral PredicateExpression CoatyFilterAdapter; do
+    cat > "$workdir/absent-api.swift" <<SWIFT
+import AxolotyObjectModel
+import AxolotyProtocol
+func absentAPI(_ value: $absent_type) {}
+SWIFT
+    if swiftc -target "$host_target" -swift-version 6 \
+        -enable-experimental-feature Embedded -enable-experimental-feature Lifetimes \
+        -parse-as-library -wmo -typecheck -I "$cbor_core_dir" \
+        "$workdir/absent-api.swift" >"$workdir/absent-api.log" 2>&1; then
+        echo "FAIL: CBOR-only build exposes $absent_type" >&2
+        exit 1
+    fi
+    missing_name=${absent_type%%<*}
+    if ! grep -Fq "cannot find type '$missing_name' in scope" "$workdir/absent-api.log"; then
+        cat "$workdir/absent-api.log" >&2
+        echo "FAIL: absence probe failed for an unexpected reason: $absent_type" >&2
+        exit 1
+    fi
+    echo "  CBOR-only absence: $missing_name"
+done
+# The matcher is internal even in JSON builds. @testable import makes its
+# absence observable instead of mistaking access control for a missing API.
+cat > "$workdir/absent-matcher.swift" <<'SWIFT'
+@testable import AxolotyObjectModel
+let matcher = ObjectPredicateMatcher.self
+SWIFT
+if swiftc -target "$host_target" -swift-version 6 \
+    -enable-experimental-feature Embedded -enable-experimental-feature Lifetimes \
+    -parse-as-library -wmo -typecheck -I "$cbor_core_dir" \
+    "$workdir/absent-matcher.swift" >"$workdir/absent-matcher.log" 2>&1; then
+    echo "FAIL: CBOR-only build exposes ObjectPredicateMatcher" >&2
+    exit 1
+fi
+grep -Fq "cannot find 'ObjectPredicateMatcher' in scope" "$workdir/absent-matcher.log" || {
+    cat "$workdir/absent-matcher.log" >&2
+    exit 1
+}
+echo "  CBOR-only absence: ObjectPredicateMatcher"
+
 if [ -n "$json_core_dir" ]; then
     echo "EMBEDDED SWIFT CORE OK — five portable modules, StaticIoActor consumer, RISC-V link probe, CBOR-only Wire and Core consumers, and parser probe passed: ${linked_size} bytes, ${cbor_core_linked_size} bytes"
 else

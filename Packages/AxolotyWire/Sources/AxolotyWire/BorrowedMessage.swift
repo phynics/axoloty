@@ -137,9 +137,9 @@ public struct BorrowedMessage: ~Sendable {
     /// JSON engine.
     ///
     /// - Important: This method is available in every build. In a build
-    ///   without `_JSONCore`, only an `axoloty/1` route can produce a reader;
-    ///   a raw or unrecognized route selects the `coaty/3` JSON engine and
-    ///   traps, matching ``WireCodec/reader(bytes:length:)``.
+    ///   without `_JSONCore`, an `axoloty/1` route produces a CBOR reader.
+    ///   Other routes produce a reader whose validation throws
+    ///   `WireDecodeError(.invalidValue)`, matching ``WireCodec/reader(bytes:length:)``.
     public func reader() -> WireReader {
         let codec = WireCodec(profile: profile ?? .coaty3JSON)
         return payload.withBytes { ptr, len in
@@ -159,7 +159,7 @@ public struct BorrowedMessage: ~Sendable {
     ///
     /// - Important: In a build without `_JSONCore`, the `coaty/3` JSON arm is
     ///   unavailable, so every route is served by ``reader()``; an `axoloty/1`
-    ///   route reads CBOR and any other route traps as above.
+    ///   route reads CBOR and other routes report the validation error above.
     public func reader<Workspace: WireParserWorkspace & ~Copyable>(
         workspace: inout Workspace
     ) -> WireReader {
@@ -194,8 +194,8 @@ public struct BorrowedMessage: ~Sendable {
     ///
     /// - Important: This method is available in every build. In a build
     ///   without `_JSONCore`, an `axoloty/1` route owns CBOR fields and a
-    ///   raw or unrecognized route traps when it selects the `coaty/3` JSON
-    ///   engine.
+    ///   JSON route throws `WireDecodeError(.invalidValue)`. A raw or
+    ///   unrecognized route throws `WireDecodeError(.malformedTopic)`.
     public func ownedEvent() throws(WireDecodeError) -> OwnedWireEvent {
         try BorrowedWireEvent(message: self).owned(profile: profile ?? .coaty3JSON)
     }

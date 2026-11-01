@@ -264,6 +264,16 @@ public struct WireReader: ~Sendable {
     @usableFromInline var index: WireFieldIndex
     @usableFromInline let isCBOR: Bool
 
+    // Retain the normal reader contract: construction records failure and
+    // validate() reports it through WireDecodeError before any field is read.
+    init(bytes: UnsafePointer<UInt8>, length: Int, failure: WireDecodeError) {
+        self.bytes = UnsafeRawPointer(bytes)
+        self.length = max(0, length)
+        self.isCBOR = false
+        self.index = WireFieldIndex()
+        self.index.failure = failure
+    }
+
     /// Creates a reader over a borrowed JSON byte buffer.
     ///
     /// Inputs larger than ``WireBufferConfig.maxPayloadSize`` are rejected

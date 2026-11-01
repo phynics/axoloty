@@ -25,8 +25,9 @@ public enum BorrowedWireEvent {
     ///
     /// The reader's engine follows the message's route profile, so this is
     /// available in every build. In a build without `_JSONCore`, only an
-    /// `axoloty/1` route can decode; a raw or unrecognized route traps when it
-    /// selects the `coaty/3` JSON engine.
+    /// `axoloty/1` route can decode. A JSON route throws
+    /// `WireDecodeError(.invalidValue)`; a raw or unrecognized route throws
+    /// `WireDecodeError(.malformedTopic)`.
     public init(message: BorrowedMessage) throws(WireDecodeError) {
         guard let eventType = message.eventType else {
             throw WireDecodeError(.malformedTopic)

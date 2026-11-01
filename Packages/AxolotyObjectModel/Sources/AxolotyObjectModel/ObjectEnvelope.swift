@@ -58,8 +58,8 @@ public struct ObjectEnvelope<let nameCapacity: Int, let externalIDCapacity: Int>
     /// Decodes the standard envelope members from one complete JSON object.
     ///
     /// This initializer decodes `coaty/3` JSON. In a build without
-    /// `_JSONCore` it traps, as selecting `WireCodec` `.coaty3JSON` for
-    /// decoding does; a CBOR-only consumer must not call it.
+    /// `_JSONCore` it throws `ObjectError(.invalidEnvelope)`. No CBOR
+    /// envelope decoder is provided.
     ///
     /// - Parameter bytes: The complete JSON object to decode.
     /// - Throws: ``ObjectError/invalidEnvelope`` when a required member is
@@ -75,7 +75,7 @@ public struct ObjectEnvelope<let nameCapacity: Int, let externalIDCapacity: Int>
     ///
     /// Use this initializer in repeated decode loops to retain tokenizer
     /// storage separately from each envelope value. Like the other JSON
-    /// decoder, it traps in a build without `_JSONCore`.
+    /// decoder, it throws `ObjectError(.invalidEnvelope)` without `_JSONCore`.
     ///
     /// - Parameters:
     ///   - bytes: The complete JSON object to decode.
