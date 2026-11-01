@@ -38,16 +38,20 @@ public struct WireCodec: Sendable, Equatable {
     ///   - length: The number of valid payload bytes.
     /// - Returns: A reader over the payload in this codec's format.
     ///
-    /// - Important: In a build without `_JSONCore`, requesting the
-    ///   `.coaty3JSON` profile is a programmer error and traps. A CBOR-only
-    ///   consumer selects `.axoloty1CBOR`.
+    /// In a build without `_JSONCore`, a `.coaty3JSON` reader records
+    /// ``WireDecodeError/Reason/invalidValue``. Its `validate()` method and
+    /// wire DTO decoders throw that error; field accessors return `nil`.
     public func reader(bytes: UnsafePointer<UInt8>, length: Int) -> WireReader {
         switch profile {
         case .coaty3JSON:
             #if canImport(_JSONCore)
             return WireReader(bytes: bytes, length: length)
             #else
-            preconditionFailure("coaty/3 JSON is unavailable in a CBOR-only build")
+            return WireReader(
+                bytes: bytes,
+                length: length,
+                failure: WireDecodeError(.invalidValue)
+            )
             #endif
         case .axoloty1CBOR:
             return WireReader(cborBytes: bytes, length: length)
@@ -58,7 +62,7 @@ public struct WireCodec: Sendable, Equatable {
     ///
     /// This profile-specific validation entry point is available in every
     /// build. A CBOR-only build returns `false` because it has no JSON parser;
-    /// selecting `.coaty3JSON` for decoding still traps without `_JSONCore`.
+    /// a `.coaty3JSON` reader reports a typed validation error without it.
     ///
     /// - Parameter bytes: The borrowed encoded value to validate.
     /// - Returns: `true` when this codec selects JSON and the bytes form one
@@ -97,14 +101,11 @@ public struct WireCodec: Sendable, Equatable {
     /// accepted as external raw input. `axoloty/1` has no first-byte sniff —
     /// every byte value opens a legal CBOR item, and external IO routes carry
     /// application-defined bytes — so the bare-value gate is the caller's
-    /// bounded decode and this method accepts the payload.
+    /// bounded decode and this method accepts the payload. In a build without
+    /// `_JSONCore`, `.coaty3JSON` has no parser and rejects every payload.
     ///
     /// - Parameter payload: The borrowed bare-value payload to accept.
     /// - Returns: Whether the payload passes the profile's bare-value gate.
-    ///
-    /// - Important: In a build without `_JSONCore`, calling this method for the
-    ///   `.coaty3JSON` profile traps. A CBOR-only consumer selects
-    ///   `.axoloty1CBOR`.
     public func isValidBareValue(_ payload: ByteSlice) -> Bool {
         switch profile {
         case .coaty3JSON:
@@ -117,7 +118,7 @@ public struct WireCodec: Sendable, Equatable {
                 return true
             }
             #else
-            preconditionFailure("coaty/3 JSON is unavailable in a CBOR-only build")
+            return false
             #endif
         case .axoloty1CBOR:
             return true

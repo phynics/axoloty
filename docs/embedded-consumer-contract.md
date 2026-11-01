@@ -41,13 +41,39 @@ is declared, otherwise `axoloty1CBOR`.
 `CoatyJSON` SwiftPM trait; build the package with `--disable-default-traits` to
 link a CBOR-only `AxolotyWire`.
 
-A CBOR-only `AxolotyWire` build drops the JSON-only borrowed entry points:
-`BorrowedMessage.reader()` and `BorrowedWireEvent.init(message:)` are absent.
-Decode through `WireCodec.reader(bytes:length:)` and
-`BorrowedWireEvent.init(eventType:from:)` instead. Calling
-`WireCodec.reader(bytes:length:)` or `WireCodec.isValidBareValue(_:)` for the
-`.coaty3JSON` profile traps when `_JSONCore` is unavailable; a CBOR-only
-consumer selects `.axoloty1CBOR`.
+A CBOR-only build supports Advertise, Discover, Resolve, Deadvertise, Channel,
+Update, and Complete through `StaticRuntime`. `StaticRuntimeTests` sends encoded
+CBOR frames through a peer runtime, checks payload preservation and lifecycle
+state, and verifies Discover/Resolve and Update/Complete correlation. Complete
+closes its Update correlation; Resolve leaves Discover open for more responses.
+Wrong correlations and replayed terminal responses are rejected without delivery.
+These claims apply to the seven families above, not every JSON object-model API.
+
+`ObjectPredicate`, its operator, literal, and expression contracts and aliases,
+`ObjectPredicateMatcher`, and `CoatyFilterAdapter` are absent without `_JSONCore`.
+The Core gate independently compiles negative probes for each absence.
+The JSON `WireReader` initializers are also absent. `BorrowedMessage.reader()`,
+its workspace overload, `BorrowedMessage.ownedEvent()`, and
+`BorrowedWireEvent.init(message:)` remain available and follow the topic's
+profile. CBOR routes decode normally; JSON routes report typed decode errors.
+Direct callers can use `WireCodec.reader(bytes:length:)` and
+`BorrowedWireEvent.init(eventType:from:)`.
+
+There are no CBOR equivalents for `ObjectEnvelope` decoding,
+`ObjectFieldDecoder`, predicates, or filters. JSON envelope decoding throws
+`ObjectError(.invalidEnvelope)` without `_JSONCore`. JSON dynamic and typed
+object construction, including `BoundedObject.init(envelope:fields:)`, throws
+`ObjectError(.invalidObject)` when JSON validation is reached. The four
+`ObjectFieldDecoder` decode methods throw `ObjectDecodingError.invalidField`.
+The Core fixture executes these failure paths. Component-based envelope
+construction remains available; it does not decode JSON.
+
+Selecting `.coaty3JSON` without `_JSONCore` creates a failed reader:
+`validate()` and DTO decoding throw `WireDecodeError(.invalidValue)`, and field
+accessors return `nil`. `WireCodec.isValidBareValue(_:)` keeps its `Bool`
+signature and returns `false` for the unavailable JSON profile.
+The JSON string-copy path also throws `invalidValue`. No CBOR implementation
+or JSON fallback is provided for these entry points.
 
 The preparation command accepts `--profile` to select a declared profile.
 Without it, the report covers every declared profile. When all selected
@@ -244,11 +270,16 @@ executable and performs a relocatable link of the resulting objects. A second
 leg compiles and links a CBOR-only consumer that imports no `_JSONCore` and
 asserts that the linked objects carry no JSON symbols. It also compiles and
 links the full five-module portable graph plus a static-runtime consumer with
-no `_JSONCore`, then checks that link for JSON symbols. Only the CBOR wire
-probe runs on the host after Embedded Swift compilation. The Core consumer is
-compiled and linked but not executed, so that leg proves the graph builds and
-links without `_JSONCore`, not runtime behavior; the host `StaticRuntimeTests`
-and `BoundedCBORObjectTests` cover behavior. A CBOR-only contract therefore
+no `_JSONCore`, then checks that link for JSON symbols. The gate also
+recompiles the full graph in Embedded Swift mode for the host
+and executes `Tests/Support/fixtures/embedded-cbor-core-consumer.swift` without
+`_JSONCore`. Its preconditions check bounded object materialization, all seven families
+through `StaticRuntime`, and the JSON-only typed failures above. The host
+executable is inspected for `_JSONCore` symbols too. Negative compilation
+probes prove the predicate and filter absences. The gate self-test injects a
+host-only precondition failure to prove execution is required. The RISC-V leg
+is compile and partial-link evidence only: the repository has no hardware-free
+RISC-V execution runner. A CBOR-only contract therefore
 omits `_JSONCore` preparation and still compiles the complete selected
 profile. The gate reads
 Core sources
@@ -262,6 +293,28 @@ library compatibility.
 The target triple and linker are test-gate implementation details. They do not
 extend the downstream contract described by
 `docs/embedded-consumer-contract.json`.
+
+## Family evidence
+
+All seven claimed families have host `StaticRuntimeTests` round-trip evidence.
+The hardware records live in `phynics/axoloty-embedded`; Core verification does
+not reproduce them or touch devices.
+
+Advertise, Discover, Resolve, and Channel have ESP32-C6 sensor-node evidence in
+[embedded issue #127](https://github.com/phynics/axoloty-embedded/issues/127).
+The `axoloty/1` CBOR record is the
+[Zenoh sensor-node runtime record](https://github.com/phynics/axoloty-embedded/blob/main/docs/evidence/esp32c6-sensor-node-zenoh-sensor-node-runtime.json):
+a host peer on the Core runtime observed Advertise, Resolve, and 55 readings
+over 11 metrics samples. Resolve answers a Discover from that peer, so Discover
+is covered through the same exchange. This document cites only the Zenoh
+record as CBOR evidence, because 1.0 Zenoh carries only `axoloty/1`.
+Deadvertise has earlier device evidence from the two-device
+[CBOR Zenoh agent exchange](https://github.com/phynics/axoloty-embedded/blob/main/docs/evidence/esp32c6-zenoh-agent-test-a.json):
+the record reports ten deterministic `axoloty/1` cases passed on ESP32-C6, and
+[the exchange validator](https://github.com/phynics/axoloty-embedded/blob/main/Tests/embedded/agent-validator.mjs)
+includes `exchange:deadvertise`. That evidence predates sensor-node and does
+not establish a sensor-node Deadvertise check. Update and Complete have host
+evidence only; neither has device evidence.
 
 ## Validate the repository cutover
 
