@@ -39,9 +39,10 @@ CBOR profile the only wire format on Zenoh. Profile routes such as
 unchanged, and the binding publishes every payload with the
 `application/cbor` Zenoh encoding. MQTT keeps the sealed `coaty/3` JSON
 profile. Zenoh `Encoding` is advisory: the binding admits every inbound sample
-and decodes it by route, and it counts a sample whose label is not
-`application/cbor` as a diagnostic. A profile-route payload that is not valid
-CBOR fails later as a structured rejection. Zenoh peers on 0.9.x do not
+and decodes it by route. A sample whose label is not `application/cbor` is
+delivered like any other, and the binding does not count the divergence. A
+profile-route payload that is not valid CBOR fails later as a structured
+rejection. Zenoh peers on 0.9.x do not
 interoperate with 1.0 Zenoh peers.
 
 ### Axoloty Zenoh binding
@@ -64,7 +65,7 @@ bytes and payloads up to 2,048 bytes. Configuration can lower the key and
 payload limits. Frames above either configured limit are dropped and counted in
 `oversizedSamples`. Zenoh `Encoding` is advisory, so a sample whose label is
 not `application/cbor` is still admitted and decoded by route; the binding
-counts the label as a diagnostic but never treats it as a drop. External
+does not count the label divergence and never treats it as a drop. External
 routes admit any encoding, because the route prefix is the authoritative
 profile signal and external payloads are application-defined. Neither limit can
 be raised above the façade maximum. The façade reserves two
