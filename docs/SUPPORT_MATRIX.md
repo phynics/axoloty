@@ -21,6 +21,10 @@ product surface. Support levels use a consistent vocabulary:
 - **Unsupported** — not implemented.
 - **Planned** — tracked but not implemented.
 
+A support level describes the implementation, not the wire format. The
+`axoloty/1` wire format is frozen; a breaking change needs a new profile
+identifier. The Zenoh transport and the device path around it are experimental.
+
 ## Wire profiles
 
 The route prefix selects exactly one profile. MQTT carries the sealed
