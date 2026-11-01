@@ -69,9 +69,9 @@ Both are locked by regression tests, and neither changes a `coaty/3` byte.
   remains the validation gate. Regression: `WireCodecTests`
   (`wireCodecAppliesTheProfilesBareValueGate`) and `WireCodecParityTests`.
 - **Zenoh `Encoding` is advisory.** The binding admits every inbound sample
-  whatever its `Encoding` label, decodes it by route, and counts a label other
-  than `application/cbor` as a diagnostic. External routes admit any encoding,
-  because their payloads are application-defined and the carrier does not
+  whatever its `Encoding` label and decodes it by route. A label other than
+  `application/cbor` is delivered and is not counted. External routes admit
+  any encoding, because their payloads are application-defined and the carrier does not
   interpret them. A profile-route payload that is not valid CBOR fails as a
   structured rejection. Regression: `ZenohBindingTests`,
   `ZenohBindingReceivePumpTests`, and the `CAxolotyZenoh` contract suite.
