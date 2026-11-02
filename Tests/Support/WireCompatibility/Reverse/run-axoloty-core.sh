@@ -8,6 +8,8 @@ set -euo pipefail
 RUNTIME="${CONTAINER_RUNTIME:-podman}"
 runtime() { "$RUNTIME" "$@"; }
 runtime_bounded() { timeout "${WIRE_CONTAINER_WAIT_SECONDS:-120}s" "$RUNTIME" "$@"; }
+# shellcheck source=../container-wait.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../container-wait.sh"
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)
 REVERSE_DIR="$ROOT_DIR/Tests/Support/WireCompatibility/Reverse"
@@ -94,12 +96,7 @@ for scenario in $SCENARIOS; do
         "$DEV_IMAGE" swift test -Xswiftc -module-cache-path -Xswiftc "$SWIFTPM_MODULECACHE_OVERRIDE" \
         --skip-build --scratch-path /swift-build --cache-path /swiftpm-cache --disable-automatic-resolution --filter AxolotyCoreProducerTests
 
-    if ! runtime_bounded wait "$CONSUMER" >/dev/null; then
-        runtime logs "$CONSUMER" >&2 || true
-        runtime stop -t 1 "$CONSUMER" >/dev/null 2>&1 || true
-        runtime kill "$CONSUMER" >/dev/null 2>&1 || true
-        exit 1
-    fi
+    wait_for_success "$CONSUMER" || exit 1
     runtime logs "$CONSUMER" >"$CONSUMER_LOG" 2>&1
     cat "$CONSUMER_LOG"
     grep -q '"state":"ack"' "$CONSUMER_LOG"

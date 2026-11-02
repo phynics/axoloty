@@ -14,6 +14,8 @@ esac
 RUNTIME="${CONTAINER_RUNTIME:-podman}"
 runtime() { "$RUNTIME" "$@"; }
 runtime_bounded() { timeout "${WIRE_CONTAINER_WAIT_SECONDS:-120}s" "$RUNTIME" "$@"; }
+# shellcheck source=../../container-wait.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../../container-wait.sh"
 create_runtime_id() {
     local variable="$1" created_id
     shift
@@ -290,7 +292,7 @@ else
     if [ "$SCENARIO" != "offline-queueing" ]; then publish_probe; fi
 fi
 
-runtime_bounded wait "$SUBJECT_ID" >/dev/null
+wait_for_success "$SUBJECT_ID" || exit 1
 runtime logs "$SUBJECT_ID" 2>&1 >"$RAW_LOG"
 grep -E '^\{"state":' "$RAW_LOG" >"$APPLICATION_LOG" || true
 remove_owned_container "$PROBE_ID"

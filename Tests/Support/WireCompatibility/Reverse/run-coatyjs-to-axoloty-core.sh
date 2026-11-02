@@ -9,14 +9,8 @@ set -euo pipefail
 RUNTIME="${CONTAINER_RUNTIME:-podman}"
 runtime() { "$RUNTIME" "$@"; }
 runtime_bounded() { timeout "${WIRE_CONTAINER_WAIT_SECONDS:-120}s" "$RUNTIME" "$@"; }
-# `podman wait` prints the container's exit status and exits 0 whatever that
-# status is. Read the printed status so a failed Swift test fails the script.
-# Returns 1 for a nonzero or unreadable status and 124 when the wait times out.
-wait_for_success() {
-    local status
-    status=$(runtime_bounded wait "$1") || return 124
-    [ "$status" = "0" ] || { echo "Container $1 exited with status ${status:-unknown}" >&2; return 1; }
-}
+# shellcheck source=../container-wait.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../container-wait.sh"
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)
 LIVE_DIR="$ROOT_DIR/Tests/Support/WireCompatibility/Live"
@@ -122,12 +116,7 @@ for scenario in $SCENARIOS; do
         -e SCENARIO="$scenario" -e SCENARIO_SETTLE_MS=1500 \
         "$JS_IMAGE" "$requester_script" >"$requester_log" 2>&1
 
-    if ! wait_for_success "$CONSUMER"; then
-        runtime logs "$CONSUMER" >&2 || true
-        runtime stop -t 1 "$CONSUMER" >/dev/null 2>&1 || true
-        runtime kill "$CONSUMER" >/dev/null 2>&1 || true
-        exit 1
-    fi
+    wait_for_success "$CONSUMER" || exit 1
     runtime logs "$CONSUMER" >"$consumer_log" 2>&1
     runtime rm "$CONSUMER" >/dev/null
     CONSUMER=""
