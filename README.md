@@ -10,13 +10,14 @@ version](https://img.shields.io/badge/swift-6.4-%23F05138?logo=swift)](https://d
 MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 
 > **Core 1.0.** [`VERSION`](./VERSION) identifies the current release
-> (`1.0.0`). The six Core products `Axoloty`, `AxolotyWire`, `AxolotyProtocol`,
+> (`1.0.1`). The six Core products `Axoloty`, `AxolotyWire`, `AxolotyProtocol`,
 > `AxolotyObjectModel`, `AxolotyStaticRuntime`, and `AxolotyMQTT` follow the
 > [versioning and deprecation policy](./docs/versioning.md). Everything else,
 > including Zenoh, is experimental. Linux is the validated host. The
 > embedded device profiles are qualified per Core release in
 > `phynics/axoloty-embedded`, and their 1.0 certificates are not yet issued;
-> see the [1.0.0 release notes](./docs/releases/1.0.0.md).
+> see the [1.0.1](./docs/releases/1.0.1.md) and
+> [1.0.0](./docs/releases/1.0.0.md) release notes.
 
 ## About Axoloty
 
@@ -97,7 +98,7 @@ Add Axoloty to your `Package.swift`:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/phynics/axoloty", from: "1.0.0"),
+    .package(url: "https://github.com/phynics/axoloty", from: "1.0.1"),
 ],
 targets: [
     .executableTarget(
@@ -113,7 +114,7 @@ For a wire target in a consumer that already resolves the root package:
 
 ```swift
 dependencies: [
-    .package(url: "https://github.com/phynics/axoloty", from: "1.0.0"),
+    .package(url: "https://github.com/phynics/axoloty", from: "1.0.1"),
 ],
 targets: [
     .executableTarget(
@@ -249,9 +250,9 @@ swift run --package-path ../axoloty-debug axoloty-inspect discover --core-type I
 See the [axoloty-debug inspector reference](https://github.com/phynics/axoloty-debug/blob/main/docs/inspector.md)
 for the full reference.
 
-For the current release's changes, see
-[1.0.0 release notes](./docs/releases/1.0.0.md). The `axoloty/1` CBOR profile
-is recorded in [protocol/axoloty-1.md](./docs/protocol/axoloty-1.md). For
+For the current release's changes, see the
+[1.0.1](./docs/releases/1.0.1.md) and [1.0.0](./docs/releases/1.0.0.md)
+release notes. The `axoloty/1` CBOR profile is recorded in [protocol/axoloty-1.md](./docs/protocol/axoloty-1.md). For
 migrating from 0.x to the frozen 1.0 API, see
 [the pre-1.0 migration note](./docs/migration/pre-1.0-to-1.0.md). For migrating from legacy
 CoatySwift, see [the 0.2 migration guide](./docs/migration/from-coatyswift-to-0.2.md).

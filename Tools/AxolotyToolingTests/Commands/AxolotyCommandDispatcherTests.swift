@@ -184,7 +184,7 @@ func versionCommandPrintsVersion() {
     let result = AxolotyCommandDispatcher().run(arguments: ["--version"])
 
     #expect(result.exitCode == 0)
-    #expect(result.standardOutput == "axoloty-tool 1.0.0")
+    #expect(result.standardOutput == "axoloty-tool 1.0.1")
     #expect(result.standardError.isEmpty)
 }
 

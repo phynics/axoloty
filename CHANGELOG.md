@@ -9,23 +9,32 @@ fork, through CoatySwift 2.4.0, remain documented in the
 
 ## [Unreleased]
 
-Targets the 1.0.1 patch release. It changes no wire bytes and no public
-declaration.
+## [1.0.1] - 2026-11-02
+
+Axoloty 1.0.1 is a patch release. It changes no wire bytes and no public
+declaration. See `docs/releases/1.0.1.md`.
 
 ### Fixed
 
 - A runtime that connected after a peer advertised never learned the peer was
   gone, including from the broker last will, because `ProtocolProcessor`
   rejected an inbound Deadvertise unless its object table already held an
-  entry. An inbound, well-formed Deadvertise is now accepted and delivered even
-  with no table match, on both `coaty/3` and `axoloty/1`, as in the pinned
-  CoatyJS 2.4.0, which keeps no object table and delivers any `objectIds` array
-  of non-empty strings. An empty array, an unknown identifier, and a string
-  that is not a UUID are delivered. The unmatched case creates and removes no
-  state, a payload removes only the entries its own source owns, a malformed
-  `objectIds` is still rejected, and a local deadvertise of an object never
-  announced is still rejected (#1067). The first fix delivered only a payload
-  naming its own source identity.
+  entry. An inbound, well-formed Deadvertise is now delivered whether or not it
+  matches, on both `coaty/3` and `axoloty/1`, as pinned CoatyJS 2.4.0 does
+  (`src/com/deadvertise.ts`, `src/model/types.ts` at 4a77168). Well-formed means
+  `objectIds` is an array of non-empty strings, so an empty array, an unknown
+  identifier, and a string that is not a UUID are delivered. A missing field, a
+  non-array, an empty string, and a non-string element are still rejected. A
+  delivery creates nothing and removes only entries its own source owns. A
+  repeated Deadvertise is delivered each time. A local Deadvertise stays strict:
+  UUIDs only, naming at least one announced local object (#1067, #1068, #1071).
+
+### Changed
+
+- The live wire scripts under `Tests/Support/WireCompatibility` now fail on a
+  nonzero container exit status. `podman wait` exits 0 whatever the status, so
+  a failed Swift test could print `PASS`. This changes no shipped code
+  (#1070, #1072, #1073).
 
 ## [1.0.0] - 2026-11-01
 
@@ -740,7 +749,8 @@ and reproducible compatibility and resource evidence.
 Initial Axoloty prerelease as an independently maintained, modernized fork of
 CoatySwift.
 
-[Unreleased]: https://github.com/phynics/axoloty/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/phynics/axoloty/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/phynics/axoloty/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/phynics/axoloty/compare/v0.10.0...v1.0.0
 [0.10.0]: https://github.com/phynics/axoloty/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/phynics/axoloty/compare/v0.8.2...v0.9.0
