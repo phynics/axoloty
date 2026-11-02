@@ -70,6 +70,59 @@ test("a timeout returns 124, shows the log, and stops the container", () => {
   assert.match(result.calls, /^kill subject$/m);
 });
 
+// Returns the lines that wait on a container through any runtime spelling the
+// scripts use, without reading the printed status. It joins backslash
+// continuations first and skips comment lines. The runtime may be quoted
+// ("$RUNTIME"), braced (${RUNTIME}), a wrapper function, or a literal CLI name,
+// and may be preceded by `timeout 120s` or followed by options.
+const runtimeWord = String.raw`(?:"?\$\{?(?:CONTAINER_)?RUNTIME\}?"?|runtime_bounded|runtime|podman|docker)`;
+const bareWait = new RegExp(String.raw`(?<![\w$./-])${runtimeWord}\s+(?:-\S+\s+)*wait(?![\w-])`);
+
+export function findBareWaits(text) {
+  return text
+    .replace(/\\\r?\n\s*/g, " ")
+    .split("\n")
+    .filter((line) => !line.trimStart().startsWith("#"))
+    .filter((line) => bareWait.test(line));
+}
+
+test("the bare-wait guard recognizes every runtime spelling", () => {
+  for (const line of [
+    'runtime wait "$SUBJECT"',
+    'if ! runtime_bounded wait "$CONSUMER" >/dev/null; then',
+    '"$RUNTIME" wait "$SUBJECT" >/dev/null',
+    '"${RUNTIME}" wait "$SUBJECT"',
+    '$RUNTIME wait "$SUBJECT"',
+    '${RUNTIME} wait "$SUBJECT"',
+    '"$CONTAINER_RUNTIME" wait "$SUBJECT"',
+    'timeout 120s "$RUNTIME" wait "$SUBJECT"',
+    'timeout "${WIRE_CONTAINER_WAIT_SECONDS:-120}s" podman wait "$SUBJECT"',
+    'podman wait "$SUBJECT" >/dev/null',
+    'docker wait "$SUBJECT"',
+    'podman  wait   "$SUBJECT"',
+    'podman --remote wait "$SUBJECT"',
+    'status=$(podman wait "$SUBJECT")',
+    'runtime_bounded \\\n    wait "$SUBJECT"',
+    '"$RUNTIME" \\\n  wait "$SUBJECT" >/dev/null',
+    'runtime_bounded \\\r\n\twait "$SUBJECT"',
+  ]) {
+    assert.equal(findBareWaits(line).length, 1, `should reject: ${JSON.stringify(line)}`);
+  }
+});
+
+test("the bare-wait guard accepts the shared helper and unrelated text", () => {
+  for (const line of [
+    'wait_for_success "$SUBJECT" || exit 1',
+    "# runtime wait is documented here",
+    'wait "$pid" >/dev/null 2>&1 || true',
+    'runtime logs "$SUBJECT" >"$RAW_LOG"',
+    'runtime_bounded run --rm --network "$NETWORK" wait-image',
+    'wait_for "subject reconnect" "subject_reported reconnected"',
+  ]) {
+    assert.equal(findBareWaits(line).length, 0, `should accept: ${JSON.stringify(line)}`);
+  }
+});
+
 test("no live script waits on a container without reading its status", () => {
   const scripts = [];
   const visit = (directory) => {
@@ -77,19 +130,19 @@ test("no live script waits on a container without reading its status", () => {
       if (entry.name === "node_modules") continue;
       const entryPath = path.join(directory, entry.name);
       if (entry.isDirectory()) visit(entryPath);
-      else if (entry.name.endsWith(".sh") && !["container-wait.sh"].includes(entry.name)) scripts.push(entryPath);
+      else if (entry.name.endsWith(".sh") && entry.name !== "container-wait.sh") scripts.push(entryPath);
     }
   };
   visit(wireDirectory);
   // probe-broker-signals.sh waits for a SIGTERM'd broker and asserts the
   // `exited` state instead of a status, which is not a pass/fail signal.
   const exempt = new Set(["probe-broker-signals.sh"]);
-  for (const script of scripts.filter((s) => !exempt.has(path.basename(s)))) {
-    const text = fs.readFileSync(script, "utf8");
-    assert.doesNotMatch(
-      text,
-      /(runtime|runtime_bounded|podman|docker|\$RUNTIME)\s+wait\s/,
-      `${path.relative(wireDirectory, script)} discards the container exit status`,
+  const offenders = scripts
+    .filter((script) => !exempt.has(path.basename(script)))
+    .flatMap((script) =>
+      findBareWaits(fs.readFileSync(script, "utf8")).map((line) => `${path.relative(wireDirectory, script)}: ${line.trim()}`),
     );
-  }
+  assert.deepEqual(offenders, [], "these scripts discard the container exit status");
+  const probe = fs.readFileSync(path.join(wireDirectory, "Lifecycle/Live/probe-broker-signals.sh"), "utf8");
+  assert.equal(findBareWaits(probe).length, 1, "the exemption should still be needed");
 });
