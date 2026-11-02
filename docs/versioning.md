@@ -68,6 +68,10 @@ Deprecation is announced before removal so consumers have time to migrate.
 A change that keeps a symbol but changes its behavior is a breaking change and
 follows the version rules above, not the deprecation window.
 
+A correction that brings behavior in line with the wire authority or a documented
+contract is a bug fix and may ship in a patch release, even when previously
+rejected input is now accepted. The release notes must state the change.
+
 The deprecation window does not apply to:
 
 - experimental products, which may change or be removed in any release;
