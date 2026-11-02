@@ -15,8 +15,9 @@ MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/
 > [versioning and deprecation policy](./docs/versioning.md). Everything else,
 > including Zenoh, is experimental. Linux is the validated host. The
 > embedded device profiles are qualified per Core release in
-> `phynics/axoloty-embedded`, and their 1.0 certificates are not yet issued;
-> see the [1.0.1](./docs/releases/1.0.1.md) and
+> `phynics/axoloty-embedded`. Their current certificates are in
+> [`v1.0.1-embedded.1`](https://github.com/phynics/axoloty-embedded/releases/tag/v1.0.1-embedded.1)
+> on Core v1.0.1. See the Core [1.0.1](./docs/releases/1.0.1.md) and
 > [1.0.0](./docs/releases/1.0.0.md) release notes.
 
 ## About Axoloty

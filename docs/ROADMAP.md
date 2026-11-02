@@ -11,7 +11,7 @@ record; this document summarizes the active strategy.
 
 Historical release outcomes are preserved in [`docs/releases/`](./releases/) and [`CHANGELOG.md`](../CHANGELOG.md). They do not define current strategy.
 
-## Active direction: Core 1.0 and the embedded relock
+## Active direction: Core 1.0 and embedded v1
 
 Axoloty 1.0.0 freezes the six Core products. It builds on 0.10.0, which shipped
 the `axoloty/1` CBOR profile
@@ -26,13 +26,19 @@ are [`docs/releases/1.0.1.md`](./releases/1.0.1.md),
 ownership contracts are in
 [ADR 0012](./adr/0012-approved-product-and-ownership-contracts.md).
 
-Device evidence trails the Core tag. `esp32c6-zenoh` and `esp32c6-mqtt` are
-certified in `phynics/axoloty-embedded` at `0.10.0-embedded.2` on Core v0.10.0.
-Embedded relocks to the 1.0 line and requalifies both profiles under
+Device evidence follows the Core tag. `esp32c6-zenoh` and `esp32c6-mqtt` are
+certified in `phynics/axoloty-embedded` at
+[`1.0.1-embedded.1`](https://github.com/phynics/axoloty-embedded/releases/tag/v1.0.1-embedded.1)
+on Core v1.0.1. That release closed
 [phynics/axoloty-embedded#73](https://github.com/phynics/axoloty-embedded/issues/73).
-Until then, no device certificate names Core 1.0.0 or 1.0.1. The `sensor-node` reference
-profiles keep their evidence and budgets and are not certified. The debug
-products re-pin to 1.0 under
+The `sensor-node` reference profiles keep their evidence and budgets and are not
+certified. Embedded v1 stays open under
+[phynics/axoloty-embedded#61](https://github.com/phynics/axoloty-embedded/issues/61),
+which still needs recovery under load
+([phynics/axoloty-embedded#107](https://github.com/phynics/axoloty-embedded/issues/107))
+and the independence exercises
+([phynics/axoloty-embedded#79](https://github.com/phynics/axoloty-embedded/issues/79)).
+The debug products require Core 1.0 as of `axoloty-debug` v0.1.0, which closed
 [phynics/axoloty-debug#6](https://github.com/phynics/axoloty-debug/issues/6).
 Items kept out of 1.0 are
 [#1061](https://github.com/phynics/axoloty/issues/1061),
