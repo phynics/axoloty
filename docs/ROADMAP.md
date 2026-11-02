@@ -7,7 +7,7 @@ record; this document summarizes the active strategy.
 
 ## Current checkpoint
 
-[`VERSION`](../VERSION) identifies the current released version (`1.0.0`). The six Core products listed under [1.0 scope](#10-scope) are frozen and follow the [versioning and deprecation policy](./versioning.md). Everything else remains experimental and may change in any release.
+[`VERSION`](../VERSION) identifies the current released version (`1.0.1`). The six Core products listed under [1.0 scope](#10-scope) are frozen and follow the [versioning and deprecation policy](./versioning.md). Everything else remains experimental and may change in any release.
 
 Historical release outcomes are preserved in [`docs/releases/`](./releases/) and [`CHANGELOG.md`](../CHANGELOG.md). They do not define current strategy.
 
@@ -19,7 +19,8 @@ the `axoloty/1` CBOR profile
 encoding, and 0.9.0, which closed
 [epic #845](https://github.com/phynics/axoloty/issues/845) and moved firmware
 and device qualification into `phynics/axoloty-embedded`. The release records
-are [`docs/releases/1.0.0.md`](./releases/1.0.0.md),
+are [`docs/releases/1.0.1.md`](./releases/1.0.1.md),
+[`docs/releases/1.0.0.md`](./releases/1.0.0.md),
 [`docs/releases/0.10.0.md`](./releases/0.10.0.md), and
 [`docs/releases/0.9.0.md`](./releases/0.9.0.md). The approved product and
 ownership contracts are in
@@ -27,9 +28,9 @@ ownership contracts are in
 
 Device evidence trails the Core tag. `esp32c6-zenoh` and `esp32c6-mqtt` are
 certified in `phynics/axoloty-embedded` at `0.10.0-embedded.2` on Core v0.10.0.
-Embedded relocks to 1.0.0 and requalifies both profiles under
+Embedded relocks to the 1.0 line and requalifies both profiles under
 [phynics/axoloty-embedded#73](https://github.com/phynics/axoloty-embedded/issues/73).
-Until then, no device certificate names Core 1.0.0. The `sensor-node` reference
+Until then, no device certificate names Core 1.0.0 or 1.0.1. The `sensor-node` reference
 profiles keep their evidence and budgets and are not certified. The debug
 products re-pin to 1.0 under
 [phynics/axoloty-debug#6](https://github.com/phynics/axoloty-debug/issues/6).
