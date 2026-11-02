@@ -23,6 +23,8 @@ esac
 RUNTIME="${CONTAINER_RUNTIME:-podman}"
 runtime() { "$RUNTIME" "$@"; }
 runtime_bounded() { timeout "${WIRE_CONTAINER_WAIT_SECONDS:-120}s" "$RUNTIME" "$@"; }
+# shellcheck source=../../container-wait.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../../container-wait.sh"
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../../.." && pwd)
 HERE="$ROOT/Tests/Support/WireCompatibility/Lifecycle/Live"
 REVERSE="$ROOT/Tests/Support/WireCompatibility/Reverse"
@@ -136,12 +138,7 @@ runtime run -d -t --name "$SUBJECT" --network "$NETWORK" \
     --filter "$TEST_NAME" >/dev/null
 
 # Wait for the Swift test to complete.
-if ! runtime_bounded wait "$SUBJECT" >/dev/null; then
-    runtime logs "$SUBJECT" >&2 || true
-    runtime stop -t 1 "$SUBJECT" >/dev/null 2>&1 || true
-    runtime kill "$SUBJECT" >/dev/null 2>&1 || true
-    exit 1
-fi
+wait_for_success "$SUBJECT" || exit 1
 runtime logs "$SUBJECT" >"$RAW_LOG" 2>&1
 grep -E '^\{"state":' "$RAW_LOG" >"$APPLICATION_LOG" || true
 

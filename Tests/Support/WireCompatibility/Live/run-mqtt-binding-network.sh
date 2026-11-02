@@ -8,6 +8,8 @@ set -euo pipefail
 RUNTIME="${CONTAINER_RUNTIME:-podman}"
 runtime() { "$RUNTIME" "$@"; }
 runtime_bounded() { timeout "${WIRE_CONTAINER_WAIT_SECONDS:-120}s" "$RUNTIME" "$@"; }
+# shellcheck source=../container-wait.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../container-wait.sh"
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../../../.." && pwd)
 LIVE="$ROOT/Tests/Support/WireCompatibility/Live"
 TOOL=/tool/dist/index.js
@@ -119,12 +121,9 @@ runtime_bounded run --rm --network "$NETWORK" "${RUNTIME_LABELS[@]}" --entrypoin
     -v "$LIVE/coatyjs-advertise-runner.js:/agent/coatyjs-advertise-runner.js:ro" \
     -e BROKER_URL="mqtt://$BROKER:1883" -e COATY_NAMESPACE="$NAMESPACE" \
     -e SCENARIO_SETTLE_MS=500 "$JS_IMAGE" /agent/coatyjs-advertise-runner.js \
-    >"$PEER_LOG" 2>&1
+    >"$PEER_LOG" 2>&1 || { echo "CoatyJS peer failed; log follows" >&2; cat "$PEER_LOG" >&2; exit 1; }
 
-if ! runtime_bounded wait "$SUBJECT" >/dev/null; then
-    runtime logs "$SUBJECT" >&2 || true
-    exit 1
-fi
+wait_for_success "$SUBJECT" || exit 1
 collect_diagnostics
 
 test -s "$APPLICATION_LOG" || { echo "Swift application log is missing or empty: $APPLICATION_LOG" >&2; exit 1; }
