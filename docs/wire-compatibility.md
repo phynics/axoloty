@@ -110,6 +110,40 @@ normalized topic and publishes the owned action. This preserves the canonical
 Coaty/3 Deadvertise envelope (`{"objectIds":["..."]}`) and keeps lifecycle
 state updates on the same bounded processor path as application publications.
 
+### Inbound Deadvertise delivery matches CoatyJS
+
+Pinned CoatyJS 2.4.0 keeps no object table. It delivers any inbound
+Deadvertise whose `objectIds` passes `DeadvertiseEventData._hasValidParameters`
+(`src/com/deadvertise.ts` lines 57-60): `CoreTypes.isStringArray(objectIds)`
+(`src/model/types.ts` line 107, an array whose every element is a non-empty
+string) and `length > 0` for each element. Nothing else decides delivery
+(`CommunicationManager._createEventInstance`, `src/com/communication-manager.ts`
+line 1208). An empty array, an identifier no peer advertised, and a string that
+is not a UUID are all well-formed. A missing field, a non-array, an empty
+string, and a non-string element throw `TypeError`, and the manager logs and
+drops the event.
+
+`ProtocolProcessor` now does the same for an inbound Deadvertise on both
+profiles. Before this change it also required either a table match or the
+source's own identity in `objectIds` (#1068), so a consumer that joined after a
+peer advertised could miss a peer's departure or a broker last will naming
+other ids. The earlier rule was a captured discrepancy and is removed.
+
+- A well-formed inbound Deadvertise is delivered even when it matches nothing.
+  It creates nothing and removes only entries owned by its own source,
+  whatever it names.
+- A malformed `objectIds` (missing, not an array, an empty string, a
+  non-string element) is still rejected.
+- A local Deadvertise stays strict: an array of UUIDs naming at least one
+  announced local object. A local deadvertise of an object never announced is
+  still rejected.
+- On `axoloty/1` an element is a non-empty text string or a tag-37 UUID item.
+
+No wire bytes change. Regression: `ProtocolProcessorTests` late-join
+Deadvertise tests (both profiles), `WireCBORTraceParityTests`
+(`lateJoinIdentityDeadvertiseParity`), and `AxolotyRuntimeTests` late-join
+Deadvertise tests.
+
 ### G2 external-route semantics
 
 The binding-owned external-route fixture is exactly

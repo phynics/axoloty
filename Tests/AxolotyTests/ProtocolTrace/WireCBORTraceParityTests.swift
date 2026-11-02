@@ -626,8 +626,10 @@ struct WireCBORTraceParityTests {
             try Self.lateJoinCase(id: "late-join-identity", ids: [source], rejection: nil),
             // The identity among other unknown ids still delivers and owns nothing else.
             try Self.lateJoinCase(id: "late-join-mixed", ids: [foreign1, source, foreign2], rejection: nil),
-            // Only other unknown ids: the old rule holds on both profiles.
-            try Self.lateJoinCase(id: "late-join-foreign-only", ids: [foreign1, foreign2], rejection: .malformed)
+            // Only other unknown ids, and an empty array: CoatyJS keeps no
+            // object table, so both are delivered on both profiles.
+            try Self.lateJoinCase(id: "late-join-foreign-only", ids: [foreign1, foreign2], rejection: nil),
+            try Self.lateJoinCase(id: "late-join-empty", ids: [], rejection: nil)
         ]
         for item in cases {
             let jsonRun = try await Self.replayHostJSON(item.trace)
@@ -635,7 +637,7 @@ struct WireCBORTraceParityTests {
             #expect(Self.normalize(jsonRun) == Self.normalize(cborRun), "case \(item.id)")
             Self.assertOracle(jsonRun, item: item, leg: "JSON")
             Self.assertOracle(cborRun, item: item, leg: "CBOR")
-            // Accepted or rejected, the table is untouched: no object appears.
+            // Delivered, the table is untouched: no object appears.
             #expect(cborRun.observations[0].nextState.activeObjectIDs.isEmpty, "case \(item.id)")
             #expect(jsonRun.observations[0].nextState.activeObjectIDs.isEmpty, "case \(item.id)")
         }

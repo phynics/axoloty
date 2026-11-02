@@ -170,6 +170,11 @@ object = {
 }
 ```
 
+The shared processor delivers an inbound Deadvertise with any `objectIds` array
+of non-empty strings or UUID items, matching `coaty/3`, even when it names no
+known object. It removes only entries its own source owns. See
+[`docs/wire-compatibility.md`](../wire-compatibility.md).
+
 The CDDL shows the emitted field set. Map keys are sorted by their
 deterministic encoded bytes, so key order in a payload is not the order above.
 An object payload keeps unknown fields and numeric lexemes, matching the
