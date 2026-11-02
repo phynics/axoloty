@@ -84,6 +84,9 @@ public struct CBORReader: ~Sendable {
 
     /// The number of unread bytes.
     public var remaining: Int { max(0, byteCount - offset) }
+
+    /// The major type of the next item without consuming it, or `nil` at the end.
+    var peekMajorType: UInt8? { offset < byteCount ? bytes[offset] >> 5 : nil }
 }
 
 extension CBORReader {

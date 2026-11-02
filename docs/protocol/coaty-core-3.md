@@ -30,6 +30,11 @@ runtime capability set exposes only a subset. Payload semantics remain
 inherited from the pinned reference; the shared processor and trace replay
 cover all 13 family transitions without promoting a runtime API.
 
+An inbound Deadvertise is delivered when `objectIds` is an array of non-empty
+strings, as in CoatyJS, even when it names no object the receiver knows. It
+creates nothing and removes only entries its own source owns. See
+[`docs/wire-compatibility.md`](../wire-compatibility.md).
+
 ## Compatibility rule
 
 **Status: Complete.**

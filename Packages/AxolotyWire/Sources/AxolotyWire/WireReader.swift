@@ -634,6 +634,40 @@ public struct WireReader: ~Sendable {
         _ key: StaticString,
         _ body: (UUID16) throws(WireDecodeError) -> Void
     ) throws(WireDecodeError) {
+        try visitIdentifierElements(key, allowOpaque: false) { (identifier: UUID16?) throws(WireDecodeError) in
+            if let identifier { try body(identifier) }
+        }
+    }
+
+    /// Visits every identifier element of an array field the way CoatyJS
+    /// accepts it: each element is a non-empty string, whether or not the
+    /// string is a UUID.
+    ///
+    /// The visitor receives the decoded ``UUID16`` when the element is a UUID
+    /// and `nil` for any other non-empty string. An empty array is valid. An
+    /// absent field, a non-array field, an empty string, or a non-string
+    /// element is a structured decode failure, as in CoatyJS
+    /// `CoreTypes.isStringArray`. The CBOR engine also accepts a tag-37 UUID
+    /// item.
+    ///
+    /// - Parameters:
+    ///   - key: The array field to read.
+    ///   - body: A synchronous visitor receiving each element's UUID, or `nil`.
+    /// - Throws: ``WireDecodeError`` when the field is missing, is not an
+    ///   array, or holds an empty or non-string element.
+    @_spi(AxolotyProtocol)
+    public func readIdentifierElements(
+        _ key: StaticString,
+        _ body: (UUID16?) throws(WireDecodeError) -> Void
+    ) throws(WireDecodeError) {
+        try visitIdentifierElements(key, allowOpaque: true, body)
+    }
+
+    private func visitIdentifierElements(
+        _ key: StaticString,
+        allowOpaque: Bool,
+        _ body: (UUID16?) throws(WireDecodeError) -> Void
+    ) throws(WireDecodeError) {
         guard index.failure == nil, let slot = index.find(bytes: bytes, key: key) else {
             throw WireDecodeError(.missingField, field: key)
         }
@@ -650,7 +684,15 @@ public struct WireReader: ~Sendable {
                 do throws(WireDecodeError) {
                     let elementCount = try reader.readArrayHeader()
                     for _ in 0..<elementCount {
-                        try body(try reader.readUUID())
+                        if allowOpaque, let first = reader.peekMajorType, first == 3 {
+                            let text = try reader.readTextString()
+                            guard text.length > 0 else {
+                                throw WireDecodeError(.typeMismatch(expected: "non-empty string"), field: key)
+                            }
+                            try body(UUID16(parsing: text))
+                        } else {
+                            try body(try reader.readUUID())
+                        }
                     }
                     guard reader.isAtEnd else {
                         throw WireDecodeError(.typeMismatch(expected: "uuid array"), field: key)
@@ -666,8 +708,14 @@ public struct WireReader: ~Sendable {
         var failure: WireDecodeError?
         do throws(WireDecodeError) {
             try value.withArrayElements { element in
-                guard element.wireValueKind == .string, element.length >= 2,
-                      let objectID = UUID16(parsing: element.subSlice(from: 1, length: element.length - 2)) else {
+                guard element.wireValueKind == .string, element.length >= (allowOpaque ? 3 : 2) else {
+                    if failure == nil {
+                        failure = WireDecodeError(.typeMismatch(expected: allowOpaque ? "non-empty string" : "uuid string"), field: key)
+                    }
+                    return
+                }
+                let objectID = UUID16(parsing: element.subSlice(from: 1, length: element.length - 2))
+                guard allowOpaque || objectID != nil else {
                     if failure == nil {
                         failure = WireDecodeError(.typeMismatch(expected: "uuid string"), field: key)
                     }
