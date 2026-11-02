@@ -9,6 +9,22 @@ fork, through CoatySwift 2.4.0, remain documented in the
 
 ## [Unreleased]
 
+Targets the 1.0.1 patch release. It changes no wire bytes and no public
+declaration.
+
+### Fixed
+
+- A runtime that connected after a peer advertised never learned the peer was
+  gone, including from the broker last will, because `ProtocolProcessor`
+  rejected an inbound Deadvertise unless its object table already held an
+  entry. An inbound, valid Deadvertise whose `objectIds` contains its own
+  source identity is now accepted and delivered even with no table match, on
+  both `coaty/3` and `axoloty/1`. The unmatched case creates and removes no
+  state, a payload removes only the entries its source owns, a local
+  deadvertise of an object never announced is still rejected, and a
+  Deadvertise that names only other unknown identities is still rejected
+  (#1067).
+
 ## [1.0.0] - 2026-11-01
 
 Axoloty 1.0.0 freezes the six Core products (`Axoloty`, `AxolotyWire`,
