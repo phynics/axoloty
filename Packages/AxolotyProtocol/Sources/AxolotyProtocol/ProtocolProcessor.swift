@@ -935,7 +935,14 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
             return .accepted(.insert(freeIndex, sourceID, objectID, local, role), deadvertiseMask)
         case .deadvertise:
             let result = markDeadvertisedObjects(payload, sourceID: sourceID, into: &deadvertiseMask)
-            guard result.valid, result.matched > 0 else {
+            // An inbound peer may announce its own departure to a consumer that
+            // joined after the peer advertised, so the table holds no entry.
+            // That consumer still needs the event, for example the broker last
+            // will. The source identity is the only unmatched name accepted, and
+            // only inbound: a local deadvertise of an object never announced
+            // stays rejected. Matching never creates or removes anything extra.
+            let namesOwnIdentity = !local && result.namesSource
+            guard result.valid, result.matched > 0 || namesOwnIdentity else {
                 return .rejected(.malformedFrame)
             }
             return .accepted(.none, deadvertiseMask)
@@ -1073,13 +1080,15 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
         _ payload: ByteSlice,
         sourceID: UUID16,
         into mask: inout InlineArray<capacity, Bool>
-    ) -> (valid: Bool, matched: Int) {
+    ) -> (valid: Bool, matched: Int, namesSource: Bool) {
         var valid = true
         var matched = 0
+        var namesSource = false
         payload.withBytes { pointer, length in
             let reader = codec.reader(bytes: pointer.assumingMemoryBound(to: UInt8.self), length: length)
             do throws(WireDecodeError) {
                 try reader.readUUIDElements("objectIds") { objectID in
+                    if objectID == sourceID { namesSource = true }
                     for index in 0..<capacity where objects[index].active && !mask[index] {
                         guard objects[index].sourceID == sourceID, objects[index].id == objectID else { continue }
                         mask[index] = true
@@ -1090,7 +1099,7 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
                 valid = false
             }
         }
-        return (valid, matched)
+        return (valid, matched, valid && namesSource)
     }
 
     private func pendingSlot(for correlationID: UUID16) -> Int? {

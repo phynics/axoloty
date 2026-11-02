@@ -558,4 +558,86 @@ struct WireCBORTraceParityTests {
         #expect(cborRun.observations[1].rejection != nil)
         #expect(cborRun.observations[1].nextState == Self.afterAdvertise)
     }
+
+    // MARK: - Late-join identity deadvertise
+
+    /// Mirrors the replay's source-identity derivation so a payload can name
+    /// the routed source: the DAD source is the hash identity of the step's
+    /// `objectID`, and a late-joining consumer has no table entry for it.
+    private static func replaySourceText(_ label: String) -> String {
+        var hash: UInt32 = 2_166_136_261
+        for byte in label.utf8 { hash = (hash ^ UInt32(byte)) &* 16_777_619 }
+        return String(
+            format: "%02x%02x%02x%02x-0000-4000-8000-000000000001",
+            UInt8(truncatingIfNeeded: hash >> 24), UInt8(truncatingIfNeeded: hash >> 16),
+            UInt8(truncatingIfNeeded: hash >> 8), UInt8(truncatingIfNeeded: hash)
+        )
+    }
+
+    /// Encodes `{"objectIds":[...]}` as `axoloty/1` CBOR with the production writer.
+    private static func cborDeadvertise(_ ids: [String]) throws -> [UInt8] {
+        let outer = UnsafeMutablePointer<UInt8>.allocate(capacity: 512)
+        let array = UnsafeMutablePointer<UInt8>.allocate(capacity: 256)
+        defer { outer.deallocate(); array.deallocate() }
+        let codec = WireCodec(profile: .axoloty1CBOR)
+        var arrayWriter = codec.writer(buffer: array, capacity: 256)
+        try arrayWriter.beginArray()
+        for (index, id) in ids.enumerated() {
+            if index > 0 { try arrayWriter.writeComma() }
+            try arrayWriter.writeUUIDValue(try #require(UUID16(parsing: id)))
+        }
+        try arrayWriter.endArray()
+        var writer = codec.writer(buffer: outer, capacity: 512)
+        try writer.beginObject()
+        try writer.writeRawField("objectIds", ByteSlice(bytes: array, length: arrayWriter.position))
+        try writer.endObject()
+        return Array(UnsafeBufferPointer(start: outer, count: writer.position))
+    }
+
+    private static func lateJoinCase(
+        id: String,
+        ids: [String],
+        rejection: TraceRejectionCode?
+    ) throws -> ParityCase {
+        let json = "{\"objectIds\":[" + ids.map { "\"\($0)\"" }.joined(separator: ",") + "]}"
+        return ParityCase(
+            id: id,
+            families: [.deadvertise],
+            trace: ProtocolTrace(
+                id: "wire-cbor-\(id)",
+                description: "Deadvertise reaches a consumer whose table never held the peer",
+                initialState: TraceState(),
+                steps: [
+                    step(sequence: 1, family: .deadvertise, direction: .inbound, payload: json, objectID: "late-peer")
+                ]
+            ),
+            cborBySequence: [1: try cborDeadvertise(ids)],
+            rejections: rejection.map { [1: $0] } ?? [:]
+        )
+    }
+
+    @Test("A late joiner's identity deadvertise is delivered identically by host and static legs")
+    func lateJoinIdentityDeadvertiseParity() async throws {
+        let source = Self.replaySourceText("late-peer")
+        let foreign1 = "11111111-1111-4111-8111-111111111111"
+        let foreign2 = "22222222-2222-4222-8222-222222222222"
+        let cases = [
+            // The peer names its own identity; the table is empty.
+            try Self.lateJoinCase(id: "late-join-identity", ids: [source], rejection: nil),
+            // The identity among other unknown ids still delivers and owns nothing else.
+            try Self.lateJoinCase(id: "late-join-mixed", ids: [foreign1, source, foreign2], rejection: nil),
+            // Only other unknown ids: the old rule holds on both profiles.
+            try Self.lateJoinCase(id: "late-join-foreign-only", ids: [foreign1, foreign2], rejection: .malformed)
+        ]
+        for item in cases {
+            let jsonRun = try await Self.replayHostJSON(item.trace)
+            let cborRun = try await Self.replayStaticCBOR(item)
+            #expect(Self.normalize(jsonRun) == Self.normalize(cborRun), "case \(item.id)")
+            Self.assertOracle(jsonRun, item: item, leg: "JSON")
+            Self.assertOracle(cborRun, item: item, leg: "CBOR")
+            // Accepted or rejected, the table is untouched: no object appears.
+            #expect(cborRun.observations[0].nextState.activeObjectIDs.isEmpty, "case \(item.id)")
+            #expect(jsonRun.observations[0].nextState.activeObjectIDs.isEmpty, "case \(item.id)")
+        }
+    }
 }
