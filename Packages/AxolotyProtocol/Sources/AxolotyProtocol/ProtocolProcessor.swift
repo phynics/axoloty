@@ -1,6 +1,6 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
-import AxolotyWire
+@_spi(AxolotyProtocol) import AxolotyWire
 
 /// Shared fixed-inline protocol processor for host and Embedded bindings.
 public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
@@ -934,15 +934,7 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
             }
             return .accepted(.insert(freeIndex, sourceID, objectID, local, role), deadvertiseMask)
         case .deadvertise:
-            let result = markDeadvertisedObjects(payload, sourceID: sourceID, into: &deadvertiseMask)
-            // An inbound peer may announce its own departure to a consumer that
-            // joined after the peer advertised, so the table holds no entry.
-            // That consumer still needs the event, for example the broker last
-            // will. The source identity is the only unmatched name accepted, and
-            // only inbound: a local deadvertise of an object never announced
-            // stays rejected. Matching never creates or removes anything extra.
-            let namesOwnIdentity = !local && result.namesSource
-            guard result.valid, result.matched > 0 || namesOwnIdentity else {
+            guard markDeadvertisedObjects(payload, sourceID: sourceID, local: local, into: &deadvertiseMask) else {
                 return .rejected(.malformedFrame)
             }
             return .accepted(.none, deadvertiseMask)
@@ -1076,19 +1068,34 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
         return true
     }
 
+    /// Marks the objects an inbound or local Deadvertise removes and reports
+    /// whether the payload is acceptable.
+    ///
+    /// An inbound Deadvertise is acceptable when `objectIds` is an array of
+    /// non-empty strings, as CoatyJS `DeadvertiseEventData` validates it
+    /// (`CoreTypes.isStringArray`). CoatyJS keeps no object table, so it
+    /// delivers an empty array, an unknown identifier, or a string that is not a
+    /// UUID. This processor delivers them too and creates or removes nothing for
+    /// them, because a consumer that joined after the peer advertised, or a
+    /// broker last will, has no entry. A source removes only entries it owns,
+    /// whatever the payload names. A local Deadvertise stays strict: it must be
+    /// an array of UUIDs and name at least one active local entry.
     private func markDeadvertisedObjects(
         _ payload: ByteSlice,
         sourceID: UUID16,
+        local: Bool,
         into mask: inout InlineArray<capacity, Bool>
-    ) -> (valid: Bool, matched: Int, namesSource: Bool) {
+    ) -> Bool {
         var valid = true
         var matched = 0
-        var namesSource = false
         payload.withBytes { pointer, length in
             let reader = codec.reader(bytes: pointer.assumingMemoryBound(to: UInt8.self), length: length)
             do throws(WireDecodeError) {
-                try reader.readUUIDElements("objectIds") { objectID in
-                    if objectID == sourceID { namesSource = true }
+                try reader.readIdentifierElements("objectIds") { objectID in
+                    guard let objectID else {
+                        if local { valid = false }
+                        return
+                    }
                     for index in 0..<capacity where objects[index].active && !mask[index] {
                         guard objects[index].sourceID == sourceID, objects[index].id == objectID else { continue }
                         mask[index] = true
@@ -1099,7 +1106,7 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
                 valid = false
             }
         }
-        return (valid, matched, valid && namesSource)
+        return valid && (!local || matched > 0)
     }
 
     private func pendingSlot(for correlationID: UUID16) -> Int? {

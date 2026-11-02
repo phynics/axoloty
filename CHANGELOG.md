@@ -17,13 +17,15 @@ declaration.
 - A runtime that connected after a peer advertised never learned the peer was
   gone, including from the broker last will, because `ProtocolProcessor`
   rejected an inbound Deadvertise unless its object table already held an
-  entry. An inbound, valid Deadvertise whose `objectIds` contains its own
-  source identity is now accepted and delivered even with no table match, on
-  both `coaty/3` and `axoloty/1`. The unmatched case creates and removes no
-  state, a payload removes only the entries its source owns, a local
-  deadvertise of an object never announced is still rejected, and a
-  Deadvertise that names only other unknown identities is still rejected
-  (#1067).
+  entry. An inbound, well-formed Deadvertise is now accepted and delivered even
+  with no table match, on both `coaty/3` and `axoloty/1`, as in the pinned
+  CoatyJS 2.4.0, which keeps no object table and delivers any `objectIds` array
+  of non-empty strings. An empty array, an unknown identifier, and a string
+  that is not a UUID are delivered. The unmatched case creates and removes no
+  state, a payload removes only the entries its own source owns, a malformed
+  `objectIds` is still rejected, and a local deadvertise of an object never
+  announced is still rejected (#1067). The first fix delivered only a payload
+  naming its own source identity.
 
 ## [1.0.0] - 2026-11-01
 

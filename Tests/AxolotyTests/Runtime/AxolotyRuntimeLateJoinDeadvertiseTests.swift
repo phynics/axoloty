@@ -37,18 +37,29 @@ extension AxolotyRuntimeTests {
         await runtime.stop()
     }
 
-    @Test("a deadvertisement naming only other unknown identities is still rejected")
-    func lateJoinerRejectsForeignOnlyDeadvertisement() async throws {
+    @Test("a deadvertisement naming only other unknown identities is delivered as CoatyJS does")
+    func lateJoinerReceivesForeignOnlyDeadvertisement() async throws {
         let peerText = "00000000-0000-4000-8000-0000000009a2"
         var builder = try RuntimeBuilder(sourceID: .zero, namespace: "late-join")
-        _ = try builder.events(matching: .family(.deadvertise), buffering: .dropOldest(capacity: 4))
+        let stream = try builder.events(matching: .family(.deadvertise), buffering: .dropOldest(capacity: 4))
         let runtime = AxolotyRuntime(definition: try builder.finish(), transport: TestTransport())
         try await runtime.start()
 
+        let route = "coaty/3/late-join/DAD/\(peerText)"
         let payload = Array(#"{"objectIds":["00000000-0000-4000-8000-0000000009ff"]}"#.utf8)
-        #expect(await runtime.receive(
-            .profile(route: "coaty/3/late-join/DAD/\(peerText)", payload: payload, nowMS: 1)
-        ) == .rejected(.protocol(.malformedFrame)))
+        #expect(await runtime.receive(.profile(route: route, payload: payload, nowMS: 1)) == .accepted)
+        var iterator = stream.makeAsyncIterator()
+        #expect(try await nextValue(&iterator).value == payload)
+
+        // An empty array is well-formed in CoatyJS too.
+        let empty = Array(#"{"objectIds":[]}"#.utf8)
+        #expect(await runtime.receive(.profile(route: route, payload: empty, nowMS: 2)) == .accepted)
+        #expect(try await nextValue(&iterator).value == empty)
+
+        // A malformed payload is still rejected.
+        let malformed = Array(#"{"objectIds":["00000000-0000-4000-8000-0000000009ff",""]}"#.utf8)
+        #expect(await runtime.receive(.profile(route: route, payload: malformed, nowMS: 3))
+            == .rejected(.protocol(.malformedFrame)))
         await runtime.stop()
     }
 

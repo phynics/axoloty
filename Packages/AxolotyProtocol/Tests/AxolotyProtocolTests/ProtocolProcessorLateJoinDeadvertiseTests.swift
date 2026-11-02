@@ -6,8 +6,10 @@ import AxolotyWire
 
 /// A consumer that connects after a peer advertised holds no table entry for
 /// that peer, yet it must still learn the peer is gone, for example from the
-/// broker last will. These tests pin the inbound identity rule on both wire
-/// profiles through the one shared processor.
+/// broker last will. CoatyJS keeps no object table and delivers every
+/// well-formed Deadvertise (`objectIds` is an array of non-empty strings). These
+/// tests pin that inbound rule on both wire profiles through the one shared
+/// processor.
 fileprivate enum LateJoinProfile: CaseIterable, CustomTestStringConvertible {
     case coaty3
     case axoloty1
@@ -33,6 +35,49 @@ fileprivate enum LateJoinProfile: CaseIterable, CustomTestStringConvertible {
         var writer = WireCodec(profile: wireProfile).writer(buffer: outer, capacity: 512)
         try writer.beginObject()
         try writer.writeRawField("objectIds", ByteSlice(bytes: array, length: arrayWriter.position))
+        try writer.endObject()
+        return Array(UnsafeBufferPointer(start: outer, count: writer.position))
+    }
+
+    /// One `objectIds` array element for a hand-built Deadvertise payload.
+    enum Element {
+        case uuid(UUID16)
+        case text(StaticString)
+        case integer(Int)
+    }
+
+    /// Encodes `{"objectIds":[...]}` from arbitrary elements, including shapes
+    /// the UUID-only helper cannot express.
+    func deadvertisePayload(elements: [Element]) throws -> [UInt8] {
+        let outer = UnsafeMutablePointer<UInt8>.allocate(capacity: 512)
+        let array = UnsafeMutablePointer<UInt8>.allocate(capacity: 256)
+        defer { outer.deallocate(); array.deallocate() }
+        var arrayWriter = WireCodec(profile: wireProfile).writer(buffer: array, capacity: 256)
+        try arrayWriter.beginArray()
+        for (index, element) in elements.enumerated() {
+            if index > 0 { try arrayWriter.writeComma() }
+            switch element {
+            case .uuid(let id): try arrayWriter.writeUUIDValue(id)
+            case .text(let text):
+                try arrayWriter.writeEncodedStringValue(ByteSlice(bytes: text.utf8Start, length: text.utf8CodeUnitCount))
+            case .integer(let value): try arrayWriter.writeInt(value)
+            }
+        }
+        try arrayWriter.endArray()
+        var writer = WireCodec(profile: wireProfile).writer(buffer: outer, capacity: 512)
+        try writer.beginObject()
+        try writer.writeRawField("objectIds", ByteSlice(bytes: array, length: arrayWriter.position))
+        try writer.endObject()
+        return Array(UnsafeBufferPointer(start: outer, count: writer.position))
+    }
+
+    /// Encodes `{"objectIds":<scalar>}`, a non-array `objectIds`.
+    func nonArrayDeadvertisePayload() throws -> [UInt8] {
+        let outer = UnsafeMutablePointer<UInt8>.allocate(capacity: 64)
+        defer { outer.deallocate() }
+        var writer = WireCodec(profile: wireProfile).writer(buffer: outer, capacity: 64)
+        try writer.beginObject()
+        try writer.writeIntField("objectIds", 7)
         try writer.endObject()
         return Array(UnsafeBufferPointer(start: outer, count: writer.position))
     }
@@ -158,18 +203,57 @@ extension ProtocolProcessorTests {
         #expect(processor.state.generation == 0)
     }
 
-    @Test("a deadvertisement naming only other unknown identities stays rejected",
+    @Test("a deadvertisement naming only other unknown identities is delivered as CoatyJS does",
           arguments: LateJoinProfile.allCases)
-    fileprivate func unmatchedForeignIdsStayRejected(profile: LateJoinProfile) throws {
+    fileprivate func unmatchedForeignIdsAreDelivered(profile: LateJoinProfile) throws {
         var processor = profile.makeProcessor()
         let payload = try profile.deadvertisePayload([unknown1, unknown2])
         let result = try profile.receive(.deadvertise, from: peerA, payload: payload, into: &processor)
-        #expect(result.outcome == .rejected(.malformedFrame))
-        #expect(result.delivered.isEmpty)
+        #expect(result.outcome == .accepted)
+        #expect(result.delivered == [payload])
+        // It creates and removes nothing.
+        #expect(processor.state.activeObjects == 0)
+        #expect(processor.state.activeAssociations == 0)
+    }
+
+    @Test("an empty objectIds array is a well-formed deadvertisement and is delivered",
+          arguments: LateJoinProfile.allCases)
+    fileprivate func emptyIdArrayIsDelivered(profile: LateJoinProfile) throws {
+        var processor = profile.makeProcessor()
+        let payload = try profile.deadvertisePayload([])
+        let result = try profile.receive(.deadvertise, from: peerA, payload: payload, into: &processor)
+        #expect(result.outcome == .accepted)
+        #expect(result.delivered == [payload])
+        #expect(processor.state.activeObjects == 0)
+    }
+
+    @Test("a non-empty string that is not a UUID is a well-formed object id and is delivered",
+          arguments: LateJoinProfile.allCases)
+    fileprivate func nonUUIDStringIdIsDelivered(profile: LateJoinProfile) throws {
+        var processor = profile.makeProcessor()
+        let payload = try profile.deadvertisePayload(elements: [.text("not-a-uuid"), .uuid(unknown1)])
+        let result = try profile.receive(.deadvertise, from: peerA, payload: payload, into: &processor)
+        #expect(result.outcome == .accepted)
+        #expect(result.delivered == [payload])
+        #expect(processor.state.activeObjects == 0)
+    }
+
+    @Test("a malformed deadvertisement is rejected whatever it names",
+          arguments: LateJoinProfile.allCases)
+    fileprivate func malformedDeadvertiseStaysRejected(profile: LateJoinProfile) throws {
+        var processor = profile.makeProcessor()
+        let malformed: [[UInt8]] = [
+            try profile.deadvertisePayload(elements: [.uuid(peerA), .text("")]),
+            try profile.deadvertisePayload(elements: [.uuid(peerA), .integer(7)]),
+            try profile.nonArrayDeadvertisePayload(),
+        ]
+        for payload in malformed {
+            let result = try profile.receive(.deadvertise, from: peerA, payload: payload, into: &processor)
+            #expect(result.outcome == .rejected(.malformedFrame))
+            #expect(result.delivered.isEmpty)
+        }
         #expect(processor.state.generation == 0)
-        let empty = try profile.deadvertisePayload([])
-        let none = try profile.receive(.deadvertise, from: peerA, payload: empty, into: &processor)
-        #expect(none.outcome == .rejected(.malformedFrame))
+        #expect(processor.state.activeObjects == 0)
     }
 
     @Test("a payload naming the source and other unknown ids creates and removes nothing",
@@ -228,29 +312,17 @@ extension ProtocolProcessorTests {
             == .rejected(.malformedFrame))
     }
 
-    @Test("an identity deadvertisement with a malformed id array stays rejected",
+    @Test("a local deadvertise naming a non-UUID id stays rejected",
           arguments: LateJoinProfile.allCases)
-    fileprivate func malformedIdArrayStaysRejected(profile: LateJoinProfile) throws {
+    fileprivate func localNonUUIDIdStaysRejected(profile: LateJoinProfile) throws {
         var processor = profile.makeProcessor()
-        // The source id is named first, then a non-UUID element follows.
-        let storage = UnsafeMutablePointer<UInt8>.allocate(capacity: 256)
-        let array = UnsafeMutablePointer<UInt8>.allocate(capacity: 128)
-        defer { storage.deallocate(); array.deallocate() }
-        var arrayWriter = WireCodec(profile: profile.wireProfile).writer(buffer: array, capacity: 128)
-        try arrayWriter.beginArray()
-        try arrayWriter.writeUUIDValue(peerA)
-        try arrayWriter.writeComma()
-        let text: StaticString = "not-a-uuid"
-        try arrayWriter.writeEncodedStringValue(ByteSlice(bytes: text.utf8Start, length: text.utf8CodeUnitCount))
-        try arrayWriter.endArray()
-        var writer = WireCodec(profile: profile.wireProfile).writer(buffer: storage, capacity: 256)
-        try writer.beginObject()
-        try writer.writeRawField("objectIds", ByteSlice(bytes: array, length: arrayWriter.position))
-        try writer.endObject()
-        let payload = Array(UnsafeBufferPointer(start: storage, count: writer.position))
-        let result = try profile.receive(.deadvertise, from: peerA, payload: payload, into: &processor)
-        #expect(result.outcome != .accepted)
-        #expect(result.delivered.isEmpty)
-        #expect(processor.state.generation == 0)
+        let advertise = try profile.advertisePayload(peerA)
+        #expect(try profile.send(.advertise, from: peerA, payload: advertise, into: &processor) == .accepted)
+        // A local payload must be an array of UUIDs even when it names the
+        // announced identity.
+        let payload = try profile.deadvertisePayload(elements: [.uuid(peerA), .text("not-a-uuid")])
+        #expect(try profile.send(.deadvertise, from: peerA, payload: payload, into: &processor)
+            == .rejected(.malformedFrame))
+        #expect(processor.state.activeObjects == 1)
     }
 }
