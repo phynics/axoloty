@@ -33,7 +33,7 @@ load and loss; its findings 3 and 4 say a stall can expire the session and that
 
 Every figure in this ADR carries one label.
 
-- **measured**: produced by code I ran for this ADR, with the command below.
+- **measured**: produced by code run for this ADR, with the command below.
 - **derived**: arithmetic from stated assumptions or from reading source.
 - **assumed**: a planning value nobody has measured.
 - **issue**: quoted from #1060 or its linked issues; not reproducible here.
@@ -41,7 +41,7 @@ Every figure in this ADR carries one label.
 ### The issue's processor claims, tested
 
 The issue says its processor findings are "from reading the code; not tested".
-I tested all three. **None of the three claims was wrong.** The evidence is a
+All three were tested. **None of the three claims was wrong.** The evidence is a
 throwaway Swift Testing file, `ZZThrowawayPresenceEvidenceTests.swift`, added
 under `Packages/AxolotyProtocol/Tests/AxolotyProtocolTests/` for the run and
 deleted before commit. Command (pinned `axoloty-dev` image, run directly in
@@ -137,7 +137,7 @@ Two further points:
 - A pub/sub heartbeat is also N² in aggregate (every device receives every other
   device's heartbeat). Only a router-assisted mechanism such as Zenoh liveliness
   is linear in N. So the real comparison is soft-state against liveliness,
-  which #796 excludes from v1. I did not measure liveliness cost.
+  which #796 excludes from v1. Liveliness cost was not measured.
 - On a device the binding is bounded before traffic is. The profile table holds
   `ProtocolBufferConfig.Preset.esp32C6Static = 16` objects in total
   (`ProtocolBufferConfig.swift:20`), local objects included, and the binding's
@@ -173,9 +173,8 @@ application data, so it belongs in the envelope. Measured: current and
 Advertise (Claim 3). B puts protocol state inside an application object. The
 object model preserves unknown fields, so shipped handlers would see it, and a
 user schema could collide with the name. C adds a fourteenth member to the closed
-capability inventory, may consume one of the two subscriber slots the Zenoh façade
-reserves for profile subscriptions ([`zenoh.md`](../transports/zenoh.md); I
-did not verify the count), and still needs a full Advertise to introduce an object. It has one real
+capability inventory, may need a subscriber slot beyond the two of eight the Zenoh façade
+reserves for profile subscriptions ([`zenoh.md`](../transports/zenoh.md)), and still needs a full Advertise to introduce an object. It has one real
 advantage, that shipped peers never subscribe to the new route and see no
 noise (see Compatibility). D partitions the fleet. A route prefix is the
 authoritative profile signal, ADR 0009 allows exactly one profile per binding,
@@ -319,7 +318,7 @@ miss tolerance.
 **What would change this.** Owners who need host hang detection should get option
 C: an optional runtime setting under which refresh continues only while the
 application has signalled liveness within an interval. That is more public
-surface; I recommend deferring it until someone asks.
+surface; defer it until someone asks.
 
 ### 5. Late Deadvertise and resurrection
 
@@ -327,7 +326,7 @@ Two races, treated differently.
 
 **Refresh behind a Deadvertise (resurrection).** The owner publishes a refresh,
 then a graceful Deadvertise. They travel on different keys
-(`ADV` and `DAD`). I assume, without having verified it, that Zenoh gives no
+(`ADV` and `DAD`). This ADR assumes, unverified, that Zenoh gives no
 ordering guarantee across different key expressions, and a `DROP` publish can
 also be lost, so the refresh can arrive second and re-insert a ghost, via
 decision 2 row 2.
@@ -374,7 +373,7 @@ lease runs out, `N ≤ ⌊C / M⌋ − 1`:
 **Traffic bound.** Per-device receive rate is `r = (N−1)·M/R` (table above).
 The binding bounds are four queued frames per subscription and 2,048-byte
 payloads; the device cost per frame and the drop rate at a given r are
-unmeasured. I assume a refresh frame is on the order of 200 bytes (assumed), so
+unmeasured. A refresh frame is taken to be on the order of 200 bytes (assumed), so
 r = 1.1 /s at N = 12, M = 1 is about 220 B/s, a small bandwidth that still wakes
 the radio and the receive path about once a second. Whether that is acceptable
 is a power and queue question that needs device evidence.
@@ -464,7 +463,7 @@ The plan leaves every existing golden byte-identical (no existing `*.json` or
   independently with `cbor-x`.
 - The corpus pairs a JSON golden with each CBOR case. Presence is
   `axoloty/1`-only, so these cases need either a CBOR-only manifest entry
-  (a small schema change) or a documented surrogate. I recommend CBOR-only
+  (a small schema change) or a documented surrogate. The recommendation is CBOR-only
   entries; the owner decides (question 6).
 - `docs/wire-compatibility.md` gets a row in the `axoloty/1` change table with
   `coaty/3` effect "None; presence is off for `coaty/3` and the fields are not
@@ -492,8 +491,8 @@ generation, so there is no third field.
 The processor's total grows about 380 B per capacity unit across its three
 tables (measured: 6,112 to 24,352 B over 48 slots), so the object table
 accounts for under a tenth of that (36 of about 380 B; derived). The static
-runtime embeds the processor, so I expect the same per-slot growth there; I did
-not measure the static runtime. All of this is host layout only. Heap, stack,
+runtime embeds the processor, so the same per-slot growth is expected there; the
+static runtime was not measured. All of this is host layout only. Heap, stack,
 and image size on the ESP32-C6 are not measured here and need device evidence. The processor keeps the "no allocation" rule: all new
 state is fixed inline and filled by the owner, and the sink-based expiry
 action carries identifiers only.
@@ -505,7 +504,7 @@ This changes no ownership rule in `AGENTS.md`.
 - `AxolotyWire`: the two optional Advertise fields and their bounds; golden
   vectors.
 - `AxolotyProtocol`: the presence policy, two fixed `UInt32` fields per object
-  record, the refresh transition, the expiry pass, and the new action kind.
+  record, the refresh transition, the expiry pass, and the expiry reporting surface (see question 4).
   Time comes from the caller; there is no allocation, task, or timer.
 - `Source/Runtime`: the host timer, the expiry evidence case, and delivery to
   event streams. It exposes no raw MQTT or raw route API.
@@ -550,16 +549,23 @@ design target, heap, stack, and image size with the new fields.
 2. Field names and bounds: `leaseMs` and `isRefresh`, 1,000 to 3,600,000 ms.
 3. Should a silent renew be `.accepted` with zero actions, or does the owner
    want a new `ProtocolProcessOutcome` case?
-4. Public API additions are source-affecting for exhaustive `switch`es: a new
-   `ProtocolAction` case for expiry and a new `RuntimePresenceEvidence` case.
-   Accept these in a minor release, or hold them for a major one?
+4. `BorrowedProtocolAction`, `OwnedProtocolAction`, and
+   `RuntimePresenceEvidence` are public enums in the frozen Core 1.0 symbol
+   inventory (`docs/api/core-1.0-public-symbols.json`). A new case breaks a
+   consumer's exhaustive `switch`, and
+   [`versioning.md`](../versioning.md) allows only backward-compatible API in a
+   minor release. As written, the expiry action and evidence case therefore
+   read as major-release changes. Choose one: ship them in the next major, or
+   ship in a minor by reporting expiry through new additive API, such as a
+   dedicated expiry sink and event, leaving these enums unchanged. The
+   recommendation is the additive form, so presence need not wait for a major.
 5. Decision 7: retain leased peers across a reset, or keep discarding them and
    reword the acceptance item?
 6. Corpus: CBOR-only golden entries, or surrogate JSON?
 7. Support claim: 7 devices at M ≤ 2 on `esp32C6Static` until measured?
 8. Out of scope but adjacent: a lost peer's Associate entries also hold slots
    with no timer, the same leak class as Claim 1. Expiring a peer's objects does
-   not release them. I recommend a separate issue; I did not file one.
+   not release them. This belongs in a separate issue; none is filed.
 
 ## Consequences
 
