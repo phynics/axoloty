@@ -77,7 +77,7 @@ jobs:
 
       - name: Offline smoke suite
         run: |
-          swift test --cache-path .swiftpm-cache --skip-build --filter "AxolotyObjectModelTests|WireCodecTests|WireDTOBoundaryTests|ErrorKitPolicyTests|WireCaptureContractTests|WireCaptureFixtureTests"
+          swift test -Xswiftc -warnings-as-errors --cache-path .swiftpm-cache --filter "AxolotyObjectModelTests|WireCodecTests|WireDTOBoundaryTests|ErrorKitPolicyTests|WireCaptureContractTests|WireCaptureFixtureTests"
 
       - name: Save SwiftPM dependency cache
         if: github.ref == 'refs/heads/main' && steps.swiftpm_cache.outputs.cache-hit != 'true'
