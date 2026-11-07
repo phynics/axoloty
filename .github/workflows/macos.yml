@@ -66,6 +66,21 @@ jobs:
           path: .swiftpm-cache
           key: ${{ env.SWIFTPM_CACHE_KEY }}
 
+      - name: Select Xcode toolchain
+        run: |
+          echo "=== Installed Xcode versions ==="
+          ls -d /Applications/Xcode* 2>/dev/null || true
+          for app in $(ls -rd /Applications/Xcode*.app 2>/dev/null); do
+            ver=$("$app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/swift" --version 2>/dev/null | head -n 1 || true)
+            echo "$app -> $ver"
+            if echo "$ver" | grep -qE "version 6\.[4-9]|version [7-9]\."; then
+              echo "Selecting $app"
+              sudo xcode-select -s "$app"
+              break
+            fi
+          done
+          swift --version
+
       - name: Focused build
         run: |
           swift build -Xswiftc -warnings-as-errors --cache-path .swiftpm-cache
