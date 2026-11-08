@@ -1,0 +1,102 @@
+name: macOS smoke
+
+# Runs a focused build and offline smoke suite on macOS.
+#
+# Platform Support Contract:
+# - Linux: validated platform (authoritative CI gates in ci.yml)
+# - macOS: best effort
+# - iOS: experimental / unvalidated
+#
+# This workflow is informational and reports separately from Linux's validated
+# support guarantee. It does NOT expand Core 1.0 support claims beyond best effort.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "Package.swift"
+      - "Package.resolved"
+      - "Packages/**"
+      - "Source/**"
+      - "Tests/**"
+      - "Tools/**"
+      - ".github/workflows/macos.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "Package.swift"
+      - "Package.resolved"
+      - "Packages/**"
+      - "Source/**"
+      - "Tests/**"
+      - "Tools/**"
+      - ".github/workflows/macos.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # Head refs are only branch names and can collide across forked PRs. Use
+  # the PR number for pull requests so one contributor cannot cancel or queue
+  # behind another contributor's identically named branch. Pushes retain the
+  # branch ref, and are never cancelled, preserving main evidence.
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  macos-smoke:
+    name: macOS focused build and offline smoke
+    # Xcode 27 ships the Swift 6.4 toolchain and the matching Swift Testing
+    # library. An older Xcode lacks Swift Testing 6.4 APIs (for example
+    # `CustomTestReflectable`) that the test targets require.
+    runs-on: xcode-27
+    timeout-minutes: 30
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Compute SwiftPM cache key
+        run: |
+          echo "SWIFTPM_CACHE_KEY=swiftpm-macos-xcode-27-${{ hashFiles('Package.resolved') }}" >> "$GITHUB_ENV"
+
+      - name: Restore SwiftPM dependency cache
+        id: swiftpm_cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .swiftpm-cache
+          key: ${{ env.SWIFTPM_CACHE_KEY }}
+
+      - name: Report toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+
+      - name: Focused build
+        run: |
+          swift build -Xswiftc -warnings-as-errors --cache-path .swiftpm-cache
+
+      - name: Offline smoke suite
+        run: |
+          swift test -Xswiftc -warnings-as-errors --cache-path .swiftpm-cache --filter "AxolotyObjectModelTests|WireCodecTests|WireDTOBoundaryTests|ErrorKitPolicyTests|WireCaptureContractTests|WireCaptureFixtureTests"
+
+      - name: Save SwiftPM dependency cache
+        if: github.ref == 'refs/heads/main' && steps.swiftpm_cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .swiftpm-cache
+          key: ${{ env.SWIFTPM_CACHE_KEY }}
+
+      - name: Report smoke result summary
+        if: always()
+        run: |
+          {
+            echo "### macOS smoke check (Best effort)"
+            echo "macOS validation is informational and best-effort. Linux remains the sole canonical validated platform with authoritative CI gates."
+            echo ""
+            echo "- Host build: \`swift build -Xswiftc -warnings-as-errors\`"
+            echo "- Smoke suite: \`AxolotyObjectModelTests\`, \`WireCodecTests\`, \`WireDTOBoundaryTests\`, \`ErrorKitPolicyTests\`, \`WireCaptureContractTests\`, \`WireCaptureFixtureTests\`"
+            echo "- Qualification level: Best effort (Core 1.0 support claims are unchanged)"
+          } >> "$GITHUB_STEP_SUMMARY"

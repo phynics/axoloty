@@ -85,7 +85,7 @@ Axoloty is distributed via Swift Package Manager only.
 | Platform | Deployment requirement | Support and evidence |
 | -------- | ---------------------- | -------------------- |
 | iOS | 26.0+ | Experimental, unvalidated. No dedicated device/simulator tests or CI. |
-| macOS | 26.0+ | Best effort. Manual verification; no macOS CI. |
+| macOS | 26.0+ | Best effort. Automated smoke suite runs in separate informational CI; full verification remains manual. |
 | Linux | Pinned container | Validated in Linux CI. |
 | ESP32-C6 | Embedded Swift | Advertise/Deadvertise and Discover/Resolve. See the support matrix for qualification scope. |
 
@@ -217,8 +217,10 @@ Linux, the pinned container provides a stable launcher that builds the
 mounted-worktree product in the worktree-specific cache via the lightweight
 Makefile and `.devcontainer/run.sh`.
 On macOS, run the host and offline-wire checks with native Swift. macOS support
-is best effort; iOS is experimental and unvalidated. Record macOS verification with the
-[manual macOS procedure](./docs/testing.md#manual-macos-oracle).
+is best effort; iOS is experimental and unvalidated. A separate informational CI
+workflow (`.github/workflows/macos.yml`) runs a focused build and offline smoke suite
+without expanding support claims beyond best effort. Comprehensive verification remains
+manual: record verification with the [manual macOS procedure](./docs/testing.md#manual-macos-oracle).
 
 ```sh
 make worktree-bootstrap  # resolve dependencies into the shared SwiftPM cache
