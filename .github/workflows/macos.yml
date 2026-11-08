@@ -47,7 +47,10 @@ concurrency:
 jobs:
   macos-smoke:
     name: macOS focused build and offline smoke
-    runs-on: macos-latest
+    # Xcode 27 ships the Swift 6.4 toolchain and the matching Swift Testing
+    # library. An older Xcode lacks Swift Testing 6.4 APIs (for example
+    # `CustomTestReflectable`) that the test targets require.
+    runs-on: xcode-27
     timeout-minutes: 30
     steps:
       - name: Checkout repository
@@ -57,7 +60,7 @@ jobs:
 
       - name: Compute SwiftPM cache key
         run: |
-          echo "SWIFTPM_CACHE_KEY=swiftpm-macos-14-${{ hashFiles('Package.resolved') }}" >> "$GITHUB_ENV"
+          echo "SWIFTPM_CACHE_KEY=swiftpm-macos-xcode-27-${{ hashFiles('Package.resolved') }}" >> "$GITHUB_ENV"
 
       - name: Restore SwiftPM dependency cache
         id: swiftpm_cache
@@ -66,10 +69,10 @@ jobs:
           path: .swiftpm-cache
           key: ${{ env.SWIFTPM_CACHE_KEY }}
 
-      - name: Setup Swift 6.4
-        uses: swift-actions/setup-swift@364295d9c23900ce04d4e5cc708387921b4e50f9 # v3.0.0-beta.1
-        with:
-          swift-version: "6.4"
+      - name: Report toolchain
+        run: |
+          xcodebuild -version
+          swift --version
 
       - name: Focused build
         run: |
