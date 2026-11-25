@@ -229,8 +229,11 @@ struct InProcessBrokerBindingTests {
         }
 
         // The delayed CONNACK completes the connect after stop began. The
-        // client must have closed that connection before stop returned.
-        #expect(broker.connections().contains { $0.id == connectionID && $0.active } == false)
+        // client must have closed that connection before stop returned; the
+        // broker observes the close on its event loop.
+        try await waitUntil("connection closed after stop", timeout: timeout) {
+            broker.connections().contains { $0.id == connectionID && $0.active } == false
+        }
         #expect(await start.value)
     }
 
