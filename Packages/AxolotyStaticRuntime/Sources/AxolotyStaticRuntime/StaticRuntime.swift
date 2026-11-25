@@ -324,7 +324,15 @@ public struct StaticRuntime<let capacity: Int, let payloadCapacity: Int>: ~Copya
                         receiveContext: receiveContext
                     )
                 case .associationChanged(let transition):
-                    _ = subscriptions.dispatch(action)
+                    // A Deadvertise that removes an association endpoint also
+                    // reports the released slots, but its delivery is that
+                    // Deadvertise frame. Only a wire Associate frame is an
+                    // Association event; dispatch the synthesized release to
+                    // the source-state cleanup below, never a second time to
+                    // Deadvertise subscribers.
+                    if transition.delivery.routingKey.capability == .associate {
+                        _ = subscriptions.dispatch(action)
+                    }
                     let sourceID = transition.sourceID
                     if let slot = ioRegistry.sourceSlot(forID: ObjectID(uuid: sourceID)) {
                         cleanupSources[slot] = true

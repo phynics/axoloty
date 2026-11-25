@@ -374,6 +374,21 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
         case .rejected(let code):
             return .rejected(code)
         }
+        var releaseMask = InlineArray<capacity, Bool>(repeating: false)
+        var releaseCount = 0
+        var externalReleaseCount = 0
+        if frame.routingKey.capability == .deadvertise {
+            for objectIndex in 0..<capacity where deadvertiseMask[objectIndex] {
+                let removedID = objects[objectIndex].id
+                for index in 0..<capacity where !releaseMask[index]
+                    && associations[index].active
+                    && (associations[index].sourceID == removedID || associations[index].actorID == removedID) {
+                    releaseMask[index] = true
+                    releaseCount += 1
+                    if associations[index].routeKind == .external { externalReleaseCount += 1 }
+                }
+            }
+        }
         let associationLifecycleCount: Int
         if frame.routingKey.capability == .associate {
             associationLifecycleCount = lifecycleEffectCount(for: plan)
@@ -382,7 +397,7 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
         }
         let actionCount = frame.routingKey.capability == .associate
             ? 1 + associationLifecycleCount
-            : max(1, ioActorActionCount)
+            : max(1, ioActorActionCount) + releaseCount + externalReleaseCount
         let frameDeliveryKey = deliveryKey(for: frame)
         guard Self.deliveryKeyFits(frameDeliveryKey) else { return .rejected(.capacityExceeded) }
         // Classification and all rejection-only validation precede sink
@@ -478,21 +493,55 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
                 ))) else { return .rejected(.capacityExceeded) }
             }
         } else {
-            let action = BorrowedProtocolAction.deliver(BorrowedProtocolDelivery(
+            let delivery = BorrowedProtocolDelivery(
                 routingKey: frame.routingKey,
                 deliveryKey: frameDeliveryKey,
                 routeClassification: routeClassification,
                 topic: frame.topic,
                 payload: frame.payload
-            ))
-            guard sink.append(action) else { return .rejected(.capacityExceeded) }
+            )
+            guard sink.append(.deliver(delivery)) else { return .rejected(.capacityExceeded) }
+            // A Deadvertise removes the advertised identities the sender owns.
+            // An association endpoint is one of those identities: a lost peer
+            // must not hold its Associate slots forever. The release is
+            // reported against the Deadvertise frame that caused it, never as a
+            // forged Associate delivery, so runtimes must not dispatch these
+            // transitions as wire Associate events.
+            for index in 0..<capacity where releaseMask[index] {
+                let association = associations[index]
+                // An active row normally carries a route, but the transition
+                // itself models an absent route. Emit the release regardless so
+                // clearing the slot never happens without an observer report.
+                let route = associationRouteSnapshot(association)
+                if association.routeKind == .external, let route {
+                    guard sink.append(.externalRouteDeactivated(BorrowedExternalRouteTransition(
+                        sourceID: association.sourceID,
+                        actorID: association.actorID,
+                        route: route
+                    ))) else { return .rejected(.capacityExceeded) }
+                }
+                let transition = BorrowedIoAssociationTransition(
+                    delivery: delivery,
+                    sourceID: association.sourceID,
+                    actorID: association.actorID,
+                    change: .removed,
+                    route: route,
+                    routeClassification: association.routeKind.classification
+                )
+                guard sink.append(.associationChanged(transition)) else { return .rejected(.capacityExceeded) }
+            }
         }
         if let responsePlan {
             if Self.isTerminalResponse(frame.routingKey.capability) {
                 pending[responsePlan.index].state = .resolved
             }
         }
-        commitTransition(associationPlan: plan, objectPlan: objectPlan, deadvertiseMask: deadvertiseMask)
+        commitTransition(
+            associationPlan: plan,
+            objectPlan: objectPlan,
+            deadvertiseMask: deadvertiseMask,
+            releaseMask: releaseMask
+        )
         return .accepted
     }
 
@@ -700,7 +749,12 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
                 state: .active(Self.requestKind(for: operation.capability))
             )
         }
-        commitTransition(associationPlan: plan, objectPlan: objectPlan, deadvertiseMask: deadvertiseMask)
+        commitTransition(
+            associationPlan: plan,
+            objectPlan: objectPlan,
+            deadvertiseMask: deadvertiseMask,
+            releaseMask: InlineArray(repeating: false)
+        )
         return .accepted
     }
 
@@ -946,11 +1000,15 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
     private mutating func commitTransition(
         associationPlan: AssociationPlan,
         objectPlan: ObjectPlan,
-        deadvertiseMask: InlineArray<capacity, Bool>
+        deadvertiseMask: InlineArray<capacity, Bool>,
+        releaseMask: InlineArray<capacity, Bool>
     ) {
         apply(associationPlan)
         for index in 0..<capacity where deadvertiseMask[index] {
             objects[index] = ObjectRecord()
+        }
+        for index in 0..<capacity where releaseMask[index] {
+            associations[index] = Association()
         }
         apply(objectPlan)
         generation &+= 1

@@ -172,7 +172,10 @@ object = {
 
 The shared processor delivers an inbound Deadvertise with any `objectIds` array
 of non-empty strings or UUID items, matching `coaty/3`, even when it names no
-known object. It removes only entries its own source owns. See
+known object. It removes only entries its own source owns. Removing an object
+that is an association endpoint also releases the Associate rows that named it
+as source or actor, and each release is reported against the Deadvertise frame
+rather than a forged Associate frame. See
 [`docs/wire-compatibility.md`](../wire-compatibility.md).
 
 The CDDL shows the emitted field set. Map keys are sorted by their

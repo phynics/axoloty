@@ -32,7 +32,11 @@ cover all 13 family transitions without promoting a runtime API.
 
 An inbound Deadvertise is delivered when `objectIds` is an array of non-empty
 strings, as in CoatyJS, even when it names no object the receiver knows. It
-creates nothing and removes only entries its own source owns. See
+creates nothing and removes only entries its own source owns. When a removed
+object is an association endpoint, the processor also releases the Associate
+rows that named it as source or actor and reports each release as an
+association change delivered against the Deadvertise frame. Runtimes must not
+re-dispatch those synthesized changes as Associate events. See
 [`docs/wire-compatibility.md`](../wire-compatibility.md).
 
 ## Compatibility rule

@@ -565,7 +565,10 @@ design target, heap, stack, and image size with the new fields.
 7. Support claim: 7 devices at M ≤ 2 on `esp32C6Static` until measured?
 8. Out of scope but adjacent: a lost peer's Associate entries also hold slots
    with no timer, the same leak class as Claim 1. Expiring a peer's objects does
-   not release them. This belongs in a separate issue; none is filed.
+   not release them. A Deadvertise that removes an advertised endpoint now
+   releases the rows that endpoint owned
+   ([#1077](https://github.com/phynics/axoloty/issues/1077)); release for a peer
+   lost without any absence signal still needs this issue's owner decisions.
 
 ## Consequences
 
