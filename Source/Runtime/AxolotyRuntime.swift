@@ -1163,9 +1163,15 @@ actor ProtocolExecutor {
                 dispatchToHandler(action, operation: operationName(for: delivery))
                 dispatchIoActorIfRegistered(action, nowMS: nowMS)
             case .associationChanged(let transition):
-                recordInboundResponse(transition.delivery)
-                emitRegisteredEvents(for: transition.delivery, owned: action, nowMS: nowMS)
-                dispatchToHandler(action, operation: operationName(for: transition.delivery))
+                // A Deadvertise that removes an association endpoint reports
+                // the released slots against the Deadvertise frame. That frame
+                // already reached handlers and event streams as a delivery, so
+                // only a wire Associate frame dispatches again here.
+                if transition.delivery.routingKey.capability == .associate {
+                    recordInboundResponse(transition.delivery)
+                    emitRegisteredEvents(for: transition.delivery, owned: action, nowMS: nowMS)
+                    dispatchToHandler(action, operation: operationName(for: transition.delivery))
+                }
                 changedSourceIDs.insert(ObjectID(uuid: transition.sourceID))
                 changedActorIDs.insert(ObjectID(uuid: transition.actorID))
             case .publish(let publication):

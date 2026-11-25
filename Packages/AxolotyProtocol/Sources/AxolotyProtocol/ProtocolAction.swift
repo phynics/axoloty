@@ -238,12 +238,20 @@ public enum ProtocolIoAssociationChange: Sendable, Equatable {
     /// An existing association changed route or metadata.
     case updated
     /// An existing association was removed.
+    ///
+    /// A removal caused by an inbound Deadvertise reports the Deadvertise
+    /// frame as its delivery context, not a forged Associate frame.
     case removed
 }
 
 /// A borrowed association transition with its complete delivery context.
 public struct BorrowedIoAssociationTransition: ~Sendable {
-    /// The delivery context for the Associate frame.
+    /// The delivery context for the explaining frame.
+    ///
+    /// This is the Associate frame for an establishment, update, or
+    /// disassociation. It is the Deadvertise frame that removed an association
+    /// endpoint for a release, so runtimes must not dispatch that transition as
+    /// a wire Association event.
     public let delivery: BorrowedProtocolDelivery
     /// The source endpoint identity.
     public let sourceID: UUID16
