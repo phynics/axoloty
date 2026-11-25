@@ -145,6 +145,54 @@ extension ProtocolProcessorTests {
         #expect(processor.ioAssociationState(forSource: UUID16(parsing: Self.releasedSource)!).hasAssociations == false)
     }
 
+    @Test("one deadvertise releases every association its source owns")
+    func deadvertiseReleasesMultipleAssociations() throws {
+        let owner = "00000000-0000-4000-8000-0000000000e1"
+        let firstObject = "00000000-0000-4000-8000-0000000000e2"
+        let secondObject = "00000000-0000-4000-8000-0000000000e3"
+        var processor = ProtocolProcessor<2>()
+
+        // One source may advertise several identities; each can be an
+        // association endpoint.
+        for object in [firstObject, secondObject] {
+            try withBorrowedFrame(
+                topic: "coaty/3/test/ADV/\(owner)",
+                payload: Self.advertises(object)
+            ) { frame in
+                var sink = InlineProtocolActionSink<4>()
+                #expect(processor.processInbound(.profile(frame), nowMS: 1, sink: &sink) == .accepted)
+            }
+        }
+        try Self.associate(firstObject, Self.releasedActor, into: &processor)
+        try Self.associate(secondObject, Self.liveActor, into: &processor)
+        #expect(processor.state.activeAssociations == 2)
+
+        try withBorrowedFrame(
+            topic: "coaty/3/test/DAD/\(owner)",
+            payload: "{\"objectIds\":[\"\(firstObject)\",\"\(secondObject)\"]}"
+        ) { frame in
+            var sink = InlineProtocolActionSink<8>()
+            let outcome = processor.processInbound(.profile(frame), nowMS: 2, sink: &sink)
+            #expect(outcome == .accepted)
+            #expect(sink.count == 3)
+            for index in 1..<sink.count {
+                guard case .associationChanged(let transition) = sink[index] else {
+                    Issue.record("action \(index) was not a released association")
+                    return
+                }
+                #expect(transition.change == .removed)
+            }
+        }
+        #expect(processor.state.activeObjects == 0)
+        #expect(processor.state.activeAssociations == 0)
+
+        // Both released slots are reusable.
+        try Self.associate(Self.freshSource, Self.freshActor, into: &processor) { outcome in
+            #expect(outcome == .accepted)
+        }
+        #expect(processor.state.activeAssociations == 1)
+    }
+
     @Test("another peer cannot release a live peer's associations")
     func unrelatedDeadvertiseKeepsAssociations() throws {
         var processor = ProtocolProcessor<2>()

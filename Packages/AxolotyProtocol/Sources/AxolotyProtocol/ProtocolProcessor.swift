@@ -509,8 +509,11 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
             // transitions as wire Associate events.
             for index in 0..<capacity where releaseMask[index] {
                 let association = associations[index]
-                guard let route = associationRouteSnapshot(association) else { continue }
-                if association.routeKind == .external {
+                // An active row normally carries a route, but the transition
+                // itself models an absent route. Emit the release regardless so
+                // clearing the slot never happens without an observer report.
+                let route = associationRouteSnapshot(association)
+                if association.routeKind == .external, let route {
                     guard sink.append(.externalRouteDeactivated(BorrowedExternalRouteTransition(
                         sourceID: association.sourceID,
                         actorID: association.actorID,
