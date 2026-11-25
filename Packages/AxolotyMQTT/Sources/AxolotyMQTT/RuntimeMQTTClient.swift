@@ -124,9 +124,7 @@ final class RuntimeMQTTClient: RuntimeMQTTClientAdapter, @unchecked Sendable {
     func disconnect() async {
         let pending = lock.withLock { () -> EventLoopFuture<Bool>? in
             intentionalDisconnect = true
-            let attempt = connectAttempt
-            connectAttempt = nil
-            return attempt
+            return connectAttempt
         }
         // Intentional teardown is not a transport failure. In particular, a
         // clean reconnect may begin while the old connection has already
@@ -136,8 +134,14 @@ final class RuntimeMQTTClient: RuntimeMQTTClientAdapter, @unchecked Sendable {
         guard let pending else { return }
         // A connect that has not assigned a connection yet ignores the first
         // disconnect. Wait for the attempt to settle, then close a connection
-        // it created so no socket can outlive this call with no owner.
+        // it created so no socket can outlive this call with no owner. Keep the
+        // future visible until it settles so a concurrent caller, such as the
+        // start failure path and stop, waits for the same attempt instead of
+        // treating it as already handled.
         _ = try? await pending.get()
+        lock.withLock {
+            if connectAttempt === pending { connectAttempt = nil }
+        }
         _ = try? await client.disconnect()
     }
 
