@@ -28,6 +28,11 @@ protocol RuntimeMQTTClientDelegate: AnyObject, Sendable {
 /// binding initializer.
 protocol RuntimeMQTTClientAdapter: AnyObject, Sendable {
     func connect(will: RuntimeTransportLastWill?)
+    /// Closes the connection and waits for an in-flight connect attempt.
+    ///
+    /// When this returns, a connect issued before the call must have settled
+    /// and any connection it created must be closed. A later `connect` remains
+    /// valid.
     func disconnect() async
     func publish(topic: String, payload: [UInt8]) async throws
 
@@ -57,6 +62,7 @@ final class RuntimeMQTTClient: RuntimeMQTTClientAdapter, @unchecked Sendable {
 
     private let client: MQTTClient
     private var intentionalDisconnect = false
+    private var connectAttempt: EventLoopFuture<Bool>?
 
     init(configuration: MQTTBindingConfiguration, delegate: RuntimeMQTTClientDelegate) throws {
         self.delegate = delegate
@@ -103,7 +109,9 @@ final class RuntimeMQTTClient: RuntimeMQTTClientAdapter, @unchecked Sendable {
             buffer.writeBytes($0.payload)
             return (topicName: $0.topic, payload: buffer, qos: .atMostOnce, retain: false)
         }
-        client.connect(cleanSession: true, will: mqttWill).whenComplete { [weak self] result in
+        let attempt = client.connect(cleanSession: true, will: mqttWill)
+        lock.withLock { connectAttempt = attempt }
+        attempt.whenComplete { [weak self] result in
             switch result {
             case .success:
                 self?.delegate.runtimeMQTTClientDidBecomeOnline()
@@ -114,11 +122,22 @@ final class RuntimeMQTTClient: RuntimeMQTTClientAdapter, @unchecked Sendable {
     }
 
     func disconnect() async {
-        lock.withLock { intentionalDisconnect = true }
+        let pending = lock.withLock { () -> EventLoopFuture<Bool>? in
+            intentionalDisconnect = true
+            let attempt = connectAttempt
+            connectAttempt = nil
+            return attempt
+        }
         // Intentional teardown is not a transport failure. In particular, a
         // clean reconnect may begin while the old connection has already
         // disappeared; forwarding that expected no-connection result would
         // race and fail the fresh start continuation.
+        _ = try? await client.disconnect()
+        guard let pending else { return }
+        // A connect that has not assigned a connection yet ignores the first
+        // disconnect. Wait for the attempt to settle, then close a connection
+        // it created so no socket can outlive this call with no owner.
+        _ = try? await pending.get()
         _ = try? await client.disconnect()
     }
 

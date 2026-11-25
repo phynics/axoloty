@@ -197,7 +197,6 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
                 }
                 delegate.setStartContinuation(continuation)
                 delegate.armStartTimeout(milliseconds: connectionTimeoutMS)
-                delegate.beginConnectAttempt()
                 client.connect(will: lastWill)
             }
             let (sink, isReconnect) = lock.withLock { () -> (RuntimeTransportDiagnostics?, Bool) in
@@ -278,25 +277,28 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
 
     /// Stops the MQTT connection and releases callback admission.
     ///
-    /// Besides closing the current connection, this waits for any connect
-    /// attempt that was in flight to settle. A connect future can complete
-    /// after its start caller was already failed, and the transport would then
-    /// own a live connection with no runtime. Once the attempt settles, a
-    /// second disconnect closes a connection it created.
+    /// The adapter's disconnect closes any connection and waits for an
+    /// in-flight connect attempt, so a connect that completes after its start
+    /// caller was failed cannot leave an unowned connection behind.
+    ///
+    /// - Note: The host runtime serializes start and stop on one binding. A
+    ///   caller that drives the binding directly must do the same; stop clears
+    ///   callbacks only while it still owns the transport epoch.
     public func stop() async {
-        lock.withLock {
+        let stopEpoch = lock.withLock { () -> UInt64 in
             started = false
             transportEpoch &+= 1
             activeNamespace = nil
             externalRoutes.removeAll(keepingCapacity: true)
             diagnostics?.setActiveExternalSubscriptions(0)
+            return transportEpoch
         }
         delegate.failStart(AxolotyError.runtime(code: .cancelled, reason: "MQTT binding stopped while connecting"))
         await client.disconnect()
-        if await delegate.waitForConnectSettlement() {
-            await client.disconnect()
-        }
+        let stillOwnsStop = lock.withLock { transportEpoch == stopEpoch && !started }
+        guard stillOwnsStop else { return }
         delegate.clearReceive()
+        delegate.clearFailureHandler()
         delegate.clearFailureObserver()
     }
 
@@ -609,8 +611,6 @@ final class RuntimeMQTTDelegate: RuntimeMQTTClientDelegate, @unchecked Sendable 
     private var receive: (@Sendable (String, [UInt8], UInt32) -> Void)?
     private var startContinuation: CheckedContinuation<Void, Error>?
     private var startTimeoutTask: Task<Void, Never>?
-    private var connectAttemptActive = false
-    private var connectSettlementWaiters: [CheckedContinuation<Void, Never>] = []
 
     func setReceive(_ receive: @escaping @Sendable (String, [UInt8], UInt32) -> Void) {
         lock.withLock { self.receive = receive }
@@ -622,43 +622,6 @@ final class RuntimeMQTTDelegate: RuntimeMQTTClientDelegate, @unchecked Sendable 
 
     func setStartContinuation(_ continuation: CheckedContinuation<Void, Error>) {
         lock.withLock { startContinuation = continuation }
-    }
-
-    /// Marks the start of a connect attempt whose settlement `stop()` awaits.
-    func beginConnectAttempt() {
-        lock.withLock { connectAttemptActive = true }
-    }
-
-    /// Waits until the active connect attempt reports online, offline, or
-    /// failure.
-    ///
-    /// - Returns: `true` when this call had to wait, so a connection may exist
-    ///   and the caller must close it again; `false` when no attempt was in
-    ///   flight.
-    func waitForConnectSettlement() async -> Bool {
-        let needsWait = lock.withLock { connectAttemptActive }
-        guard needsWait else { return false }
-        await withCheckedContinuation { continuation in
-            let stillNeedsWait = lock.withLock { () -> Bool in
-                guard connectAttemptActive else { return false }
-                connectSettlementWaiters.append(continuation)
-                return true
-            }
-            if !stillNeedsWait { continuation.resume() }
-        }
-        return true
-    }
-
-    /// Marks the active connect attempt as settled and wakes its waiters.
-    private func settleConnectAttempt() {
-        let waiters = lock.withLock { () -> [CheckedContinuation<Void, Never>] in
-            guard connectAttemptActive else { return [] }
-            connectAttemptActive = false
-            let waiters = connectSettlementWaiters
-            connectSettlementWaiters.removeAll(keepingCapacity: true)
-            return waiters
-        }
-        for waiter in waiters { waiter.resume() }
     }
 
     func armStartTimeout(milliseconds: UInt32) {
@@ -680,12 +643,10 @@ final class RuntimeMQTTDelegate: RuntimeMQTTClientDelegate, @unchecked Sendable 
     }
 
     func runtimeMQTTClientDidBecomeOnline() {
-        settleConnectAttempt()
         finishStart(.success(()))
     }
 
     func runtimeMQTTClientDidBecomeOffline() {
-        settleConnectAttempt()
         let error = AxolotyError.runtime(
             code: .brokerUnavailable,
             reason: "MQTT broker connection failed before the runtime became online"
@@ -694,7 +655,6 @@ final class RuntimeMQTTDelegate: RuntimeMQTTClientDelegate, @unchecked Sendable 
     }
 
     func runtimeMQTTClientDidFail(_ error: Error) {
-        settleConnectAttempt()
         if !finishStart(.failure(error)) { emitFailure(error) }
     }
 
@@ -704,6 +664,10 @@ final class RuntimeMQTTDelegate: RuntimeMQTTClientDelegate, @unchecked Sendable 
 
     func setFailureHandler(_ handler: @escaping @Sendable (RuntimeTransportFailure) -> Void) {
         lock.withLock { failure = handler }
+    }
+
+    func clearFailureHandler() {
+        lock.withLock { failure = nil }
     }
 
     func setFailureObserver(_ observer: @escaping @Sendable () -> Void) {

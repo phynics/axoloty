@@ -48,7 +48,15 @@ final class BrokerConnectionHandler: ChannelInboundHandler, @unchecked Sendable 
                 will: connect.will,
                 cleanSession: connect.cleanSession
             )
-            channel.writeAndFlush(MQTTPacketEncoder.connack(sessionPresent: resumed), promise: nil)
+            let connack = MQTTPacketEncoder.connack(sessionPresent: resumed)
+            let delay = broker.connackDelayMilliseconds
+            if delay == 0 {
+                channel.writeAndFlush(connack, promise: nil)
+            } else {
+                _ = channel.eventLoop.scheduleTask(in: .milliseconds(Int64(delay))) {
+                    channel.writeAndFlush(connack, promise: nil)
+                }
+            }
 
         case let .subscribe(subscribe):
             guard let clientID else { return }

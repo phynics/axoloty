@@ -362,6 +362,14 @@ actor ProtocolExecutor {
                 activateProfileInterest: true,
                 cause: .requested
             )
+            // Cancellation can land after the transport started but before or
+            // during recovery. Close the connection this attempt opened so a
+            // caller that abandons the attempt does not leave it running.
+            guard reconnectAttemptIsCurrent(epoch) else { return }
+            guard !Task.isCancelled else {
+                await transport.stop()
+                return
+            }
         } catch {
             guard reconnectAttemptIsCurrent(epoch) else { return }
             // A transport failure while recovering is no more terminal than one

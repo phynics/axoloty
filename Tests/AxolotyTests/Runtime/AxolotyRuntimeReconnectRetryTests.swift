@@ -99,6 +99,69 @@ actor BlockingDeactivationTransport: AxolotyRuntimeTransport {
     func stopAttempts() -> Int { stopCount }
 }
 
+/// A transport that suspends recovery-callback installation so a test can stop
+/// the runtime before the initial start reaches `transport.start()`.
+actor BlockingStartInstallTransport: AxolotyRuntimeTransport {
+    nonisolated var capabilities: RuntimeTransportCapabilities { [] }
+    private var startCount = 0
+    private var stopCount = 0
+    private var shouldBlockRecoveryInstall = false
+    private var installWaiters: [CheckedContinuation<Void, Never>] = []
+    private var blockedInstall: CheckedContinuation<Void, Never>?
+
+    func blockNextRecoveryInstall() { shouldBlockRecoveryInstall = true }
+
+    func start(
+        receive: @escaping @Sendable (RuntimeInboundFrame) -> Void,
+        lastWill: RuntimeTransportLastWill?
+    ) async throws(AxolotyError) {
+        _ = (receive, lastWill)
+        startCount += 1
+    }
+
+    func setFailureHandler(_ handler: @escaping @Sendable (RuntimeTransportFailure) -> Void) async { _ = handler }
+
+    func setRecoveryHandler(_ handler: @escaping @Sendable () -> Void) async {
+        _ = handler
+        guard shouldBlockRecoveryInstall else { return }
+        shouldBlockRecoveryInstall = false
+        await withCheckedContinuation { continuation in
+            blockedInstall = continuation
+            let waiters = installWaiters
+            installWaiters.removeAll()
+            for waiter in waiters { waiter.resume() }
+        }
+    }
+
+    func perform(_ effect: RuntimeTransportEffect) async throws(AxolotyError) { _ = effect }
+
+    func stop() async {
+        stopCount += 1
+    }
+
+    func activateProfileInterest(namespace: String) async throws(AxolotyError) { _ = namespace }
+    func deactivateProfileInterest(namespace: String) async throws(AxolotyError) { _ = namespace }
+
+    func waitForBlockedInstall() async {
+        if blockedInstall != nil { return }
+        await withCheckedContinuation { continuation in
+            if blockedInstall != nil {
+                continuation.resume()
+            } else {
+                installWaiters.append(continuation)
+            }
+        }
+    }
+
+    func releaseInstall() {
+        blockedInstall?.resume()
+        blockedInstall = nil
+    }
+
+    func startAttempts() -> Int { startCount }
+    func stopAttempts() -> Int { stopCount }
+}
+
 extension AxolotyRuntimeTests {
     @Test("soft recovery drains pumps before replacing them during an explicit reconnect")
     func softRecoveryRacingExplicitReconnectDrainsExistingPumps() async throws {
@@ -186,6 +249,34 @@ extension AxolotyRuntimeTests {
         #expect(await runtime.state() == .running)
         #expect((await transport.lifecycle).filter { $0 == "start" }.count == 3)
         await runtime.stop()
+    }
+
+    @Test("a stop during initial start never opens a connection")
+    func stopDuringInitialStartPreventsConnection() async throws {
+        let transport = BlockingStartInstallTransport()
+        let runtime = AxolotyRuntime(definition: try makeDefinition(), transport: transport)
+        await transport.blockNextRecoveryInstall()
+
+        let start = Task { () -> Bool in
+            do {
+                try await runtime.start()
+                return false
+            } catch {
+                return true
+            }
+        }
+        try await waitUntil("start callback installation to block") {
+            await transport.waitForBlockedInstall()
+            return true
+        }
+
+        await runtime.stop()
+        #expect(await runtime.state() == .stopped)
+
+        await transport.releaseInstall()
+        #expect(await start.value)
+        #expect(await transport.startAttempts() == 0)
+        #expect(await transport.stopAttempts() == 1)
     }
 
     @Test("a reconnect suspended before start never opens a connection after stop")
