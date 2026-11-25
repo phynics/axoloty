@@ -51,6 +51,44 @@ struct MQTTBindingAdapterSeamTests {
         #expect(recorder.snapshot().isEmpty)
     }
 
+    @Test("stop waits for an in-flight connect and closes the late connection")
+    func stopClosesInFlightConnect() async throws {
+        let delegate = RuntimeMQTTDelegate()
+        let client = FakeMQTTClient(delegate: delegate, connectsImmediately: false)
+        let binding = try makeBinding(
+            client: client,
+            delegate: delegate,
+            connectionTimeoutMS: 5_000
+        )
+        let probe = StopProbe()
+
+        let start = Task { () -> Bool in
+            do {
+                try await binding.start(receive: { _ in }, lastWill: nil)
+                return false
+            } catch {
+                return true
+            }
+        }
+        await client.waitForConnect()
+
+        let stop = Task {
+            await binding.stop()
+            await probe.markStopped()
+        }
+        try await Task.sleep(for: .milliseconds(20))
+        #expect(await probe.hasStopped() == false)
+        #expect(client.disconnectCount() >= 1)
+
+        // The connect completes after its start caller was failed. Stop must
+        // observe that settlement and close the connection before it returns.
+        delegate.runtimeMQTTClientDidBecomeOnline()
+        await stop.value
+        #expect(await probe.hasStopped())
+        #expect(client.disconnectCount() >= 2)
+        #expect(await start.value)
+    }
+
     @Test("MQTTBinding satisfies the shared runtime transport contract")
     func sharedTransportContract() async throws {
         let delegate = RuntimeMQTTDelegate()
@@ -352,6 +390,13 @@ private final class ErrorRecorder: @unchecked Sendable {
     }
 }
 
+private actor StopProbe {
+    private var stopped = false
+
+    func markStopped() { stopped = true }
+    func hasStopped() -> Bool { stopped }
+}
+
 final class FakeMQTTClient: RuntimeMQTTClientAdapter, @unchecked Sendable {
     private let lock = NSLock()
     private let delegate: RuntimeMQTTDelegate
@@ -376,6 +421,11 @@ final class FakeMQTTClient: RuntimeMQTTClientAdapter, @unchecked Sendable {
 
     func connectCount() -> Int { locked { connectCountValue } }
     func disconnectCount() -> Int { locked { disconnectCountValue } }
+    func waitForConnect() async {
+        while locked({ connectCountValue == 0 }) {
+            try? await Task.sleep(for: .milliseconds(1))
+        }
+    }
     func subscribeTopics() -> [String] { locked { subscribeTopicsValue } }
     func unsubscribeTopics() -> [String] { locked { unsubscribeTopicsValue } }
     func lastWill() -> RuntimeTransportLastWill? { locked { lastWillValue } }

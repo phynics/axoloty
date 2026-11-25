@@ -37,6 +37,68 @@ actor RestartingBrokerTransport: AxolotyRuntimeTransport {
     func startAttempts() -> Int { startCount }
 }
 
+/// A transport that suspends the first reconnect deactivation so a test can
+/// stop the runtime while a reconnect is waiting to call `start()` again.
+actor BlockingDeactivationTransport: AxolotyRuntimeTransport {
+    nonisolated var capabilities: RuntimeTransportCapabilities { [] }
+    private var startCount = 0
+    private var stopCount = 0
+    private var shouldBlockNextDeactivation = false
+    private var deactivationWaiters: [CheckedContinuation<Void, Never>] = []
+    private var blockedDeactivation: CheckedContinuation<Void, Never>?
+
+    func blockNextDeactivation() { shouldBlockNextDeactivation = true }
+
+    func start(
+        receive: @escaping @Sendable (RuntimeInboundFrame) -> Void,
+        lastWill: RuntimeTransportLastWill?
+    ) async throws(AxolotyError) {
+        _ = (receive, lastWill)
+        startCount += 1
+    }
+
+    func setFailureHandler(_ handler: @escaping @Sendable (RuntimeTransportFailure) -> Void) async { _ = handler }
+    func setRecoveryHandler(_ handler: @escaping @Sendable () -> Void) async { _ = handler }
+    func perform(_ effect: RuntimeTransportEffect) async throws(AxolotyError) { _ = effect }
+
+    func stop() async {
+        stopCount += 1
+    }
+
+    func activateProfileInterest(namespace: String) async throws(AxolotyError) { _ = namespace }
+
+    func deactivateProfileInterest(namespace: String) async throws(AxolotyError) {
+        _ = namespace
+        guard shouldBlockNextDeactivation else { return }
+        shouldBlockNextDeactivation = false
+        await withCheckedContinuation { continuation in
+            blockedDeactivation = continuation
+            let waiters = deactivationWaiters
+            deactivationWaiters.removeAll()
+            for waiter in waiters { waiter.resume() }
+        }
+    }
+
+    func waitForBlockedDeactivation() async {
+        if blockedDeactivation != nil { return }
+        await withCheckedContinuation { continuation in
+            if blockedDeactivation != nil {
+                continuation.resume()
+            } else {
+                deactivationWaiters.append(continuation)
+            }
+        }
+    }
+
+    func releaseDeactivation() {
+        blockedDeactivation?.resume()
+        blockedDeactivation = nil
+    }
+
+    func startAttempts() -> Int { startCount }
+    func stopAttempts() -> Int { stopCount }
+}
+
 extension AxolotyRuntimeTests {
     @Test("soft recovery drains pumps before replacing them during an explicit reconnect")
     func softRecoveryRacingExplicitReconnectDrainsExistingPumps() async throws {
@@ -96,6 +158,59 @@ extension AxolotyRuntimeTests {
         #expect((await transport.lifecycle).filter { $0 == "stop" }.count == 1)
         #expect(await transport.deliveredMessages().count == 3)
         await runtime.stop()
+    }
+
+    @Test("a cancelled reconnect closes the transport it opened and stays retryable")
+    func cancelledReconnectClosesTransportAndStaysRetryable() async throws {
+        let transport = TestTransport()
+        let runtime = AxolotyRuntime(definition: try makeDefinition(), transport: transport)
+        try await runtime.start()
+
+        await transport.blockNextStart()
+        let attempt = Task { await runtime.reconnect() }
+        try await waitUntil("reconnect transport start to block") {
+            await transport.waitingForStart()
+        }
+        attempt.cancel()
+        await transport.releaseStart()
+        await attempt.value
+
+        // A cancelled attempt must not leave the connection it opened running,
+        // and it must not complete the recovery.
+        #expect(await runtime.state() == .reconnecting)
+        #expect((await transport.lifecycle).filter { $0 == "start" }.count == 2)
+        #expect((await transport.lifecycle).filter { $0 == "stop" }.count == 2)
+
+        // The caller can retry the same runtime after cancelling.
+        await runtime.reconnect()
+        #expect(await runtime.state() == .running)
+        #expect((await transport.lifecycle).filter { $0 == "start" }.count == 3)
+        await runtime.stop()
+    }
+
+    @Test("a reconnect suspended before start never opens a connection after stop")
+    func stopBeforeReconnectStartPreventsNewConnection() async throws {
+        let transport = BlockingDeactivationTransport()
+        let runtime = AxolotyRuntime(definition: try makeDefinition(), transport: transport)
+        try await runtime.start()
+
+        await transport.blockNextDeactivation()
+        let attempt = Task { await runtime.reconnect() }
+        try await waitUntil("reconnect deactivation to block") {
+            await transport.waitForBlockedDeactivation()
+            return true
+        }
+
+        // Stop completes while the reconnect is suspended before its start.
+        await runtime.stop()
+        #expect(await runtime.state() == .stopped)
+
+        await transport.releaseDeactivation()
+        await attempt.value
+
+        // The stopped host must not get a new connection from the old attempt.
+        #expect(await transport.startAttempts() == 1)
+        #expect(await transport.stopAttempts() == 1)
     }
 
     @Test("a reconnect that cannot reach the broker stays retryable instead of ending the runtime")

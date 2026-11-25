@@ -154,7 +154,12 @@ public protocol AxolotyRuntimeTransport: AnyObject, Sendable {
     /// Stops the transport and releases its callbacks.
     ///
     /// This operation is idempotent. After it returns, the adapter must not
-    /// invoke a callback installed by the runtime.
+    /// invoke a callback installed by the runtime, and no connection may
+    /// outlive the call. An in-flight ``start(receive:lastWill:)`` must have
+    /// settled and any connection it created must be closed, so a connect that
+    /// completes after its caller was cancelled cannot leave an unowned
+    /// connection behind. A later ``start(receive:lastWill:)`` remains valid;
+    /// the adapter may restart on the same instance after this call.
     func stop() async
 
     /// Activates interest in the profile namespace before identity is advertised.
