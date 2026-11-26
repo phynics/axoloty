@@ -15,7 +15,10 @@ it is implemented stays with the epic's measured go/no-go gate.
 
 `axoloty/1` is the first Axoloty extension profile. It carries the Coaty Core
 Profile 3 event families and object semantics unchanged, encoded as CBOR
-(RFC 8949) instead of JSON. Only the encoding differs.
+(RFC 8949) instead of JSON. Only the encoding differs. An optional, ignorable
+envelope field is an additive extension, not a second encoding; [ADR
+0015](./0015-axoloty-1-soft-state-presence.md) adds `leaseMs` and
+`ownerEpoch` to Advertise on this basis.
 
 - **Routes.** `axoloty/1` messages use routes of the form
   `axoloty/1/<namespace>/<event>/<sourceId>[/<correlationId>]`, with the same

@@ -23,6 +23,10 @@ From 1.0:
 - a minor release adds backward-compatible public API and may deprecate API;
 - a patch release contains only backward-compatible fixes.
 
+An optional, ignorable field added to an existing wire profile is a
+backward-compatible extension, not a new profile; [ADR 0015](./adr/0015-axoloty-1-soft-state-presence.md)
+records the presence fields as the first such `axoloty/1` extension.
+
 The frozen products listed below are versioned together under the repository
 `VERSION`. Their normal-import public API is the set of declarations reachable
 through each published product. Implementation-only `@_spi` declarations are

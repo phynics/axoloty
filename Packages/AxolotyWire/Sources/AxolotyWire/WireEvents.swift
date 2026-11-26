@@ -75,7 +75,13 @@ public enum BorrowedWireEvent {
     ///   wrong shape, or is not a legal value of `profile`.
     public func owned(profile: WireProfile) throws(WireDecodeError) -> OwnedWireEvent {
         switch self {
-        case .advertise(let x): return .advertise(try OwnedAdvertiseWireData(profile: profile, object: x.object.ownedBytes(), privateData: x.privateData.map { $0.ownedBytes() }))
+        case .advertise(let x): return .advertise(try OwnedAdvertiseWireData(
+            profile: profile,
+            object: x.object.ownedBytes(),
+            privateData: x.privateData.map { $0.ownedBytes() },
+            leaseMS: x.leaseMS,
+            ownerEpoch: x.ownerEpoch
+        ))
         case .deadvertise(let x): return .deadvertise(try OwnedDeadvertiseWireData(profile: profile, objectIds: x.objectIds.ownedBytes()))
         case .channel(let x): return .channel(try OwnedChannelWireData(profile: profile, object: x.object.map { $0.ownedBytes() }, objects: x.objects.map { $0.ownedBytes() }, privateData: x.privateData.map { $0.ownedBytes() }))
         case .associate(let x): return .associate(try OwnedAssociateWireData(profile: profile, ioSourceId: x.ioSourceId, ioActorId: x.ioActorId, associatingRoute: x.associatingRoute.map { $0.ownedBytes() }, isExternalRoute: x.isExternalRoute, updateRate: x.updateRate))

@@ -82,13 +82,28 @@ public struct AdvertiseWireData: WireDecodable, WireEncodable, Equatable {
     public let object: ByteSlice
     /// The optional private data as raw wire bytes.
     public let privateData: ByteSlice?
+    /// The optional presence lease in milliseconds.
+    ///
+    /// Only `axoloty/1` senders with presence enabled emit this field.
+    public let leaseMS: Int?
+    /// The optional owner incarnation counter.
+    ///
+    /// A new value marks a restart; the owner reuses it for every refresh in
+    /// one process lifetime. Only `axoloty/1` senders with presence enabled
+    /// emit this field.
+    public let ownerEpoch: Int?
 
     /// Decodes an advertise event from `reader`.
     ///
-    /// `object` is required; `privateData` is optional.
+    /// `object` is required; `privateData`, `leaseMs`, and `ownerEpoch` are
+    /// optional. An explicit `null` is treated as absent. A present presence
+    /// field must be an integer; range validation belongs to the presence
+    /// policy, not this DTO, so presence-off processors keep accepting the
+    /// frames they accept today.
     ///
     /// - Parameter reader: A ``WireReader`` over the payload bytes.
-    /// - Throws: ``WireDecodeError`` if the `object` field is missing.
+    /// - Throws: ``WireDecodeError`` if the `object` field is missing, or if a
+    ///   presence field is present and not an integer.
     public init(from reader: WireReader) throws(WireDecodeError) {
         try reader.validate()
         guard let obj = reader.readField("object") else {
@@ -96,16 +111,34 @@ public struct AdvertiseWireData: WireDecodable, WireEncodable, Equatable {
         }
         self.object = obj
         self.privateData = reader.readOptionalRaw("privateData")
+        self.leaseMS = try Self.optionalInteger("leaseMs", from: reader)
+        self.ownerEpoch = try Self.optionalInteger("ownerEpoch", from: reader)
+    }
+
+    private static func optionalInteger(_ field: StaticString, from reader: WireReader) throws(WireDecodeError) -> Int? {
+        guard reader.readOptionalRaw(field) != nil else { return nil }
+        guard let value = reader.readInt(field) else {
+            throw WireDecodeError(.invalidValue, field: field)
+        }
+        return value
     }
 
     /// Encodes this event into `writer` as an object wrapping `object`,
-    /// writing `privateData` only when present.
+    /// writing optional fields only when present.
     ///
     /// - Parameter writer: The ``WireWriter`` to encode into.
     /// - Throws: ``WireEncodeError`` if the buffer overflows.
     public func encode(to writer: inout WireWriter) throws(WireEncodeError) {
         try writer.beginObject()
         try writer.writeTrustedRawField("object", object)
+        if let leaseMS {
+            try writer.writeComma()
+            try writer.writeIntField("leaseMs", leaseMS)
+        }
+        if let ownerEpoch {
+            try writer.writeComma()
+            try writer.writeIntField("ownerEpoch", ownerEpoch)
+        }
         if let pd = privateData {
             try writer.writeComma()
             try writer.writeTrustedRawField("privateData", pd)

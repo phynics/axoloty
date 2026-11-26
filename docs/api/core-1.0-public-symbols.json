@@ -4391,10 +4391,17 @@
           "classification": "intentional-stable-api"
         },
         {
-          "identifier": "s:11AxolotyWire014OwnedAdvertiseB4DataV6object07privateE0ACSays5UInt8VG_AHSgtAA0B11DecodeErrorVYKcfc",
-          "name": "init(object:privateData:)",
+          "identifier": "s:11AxolotyWire014OwnedAdvertiseB4DataV10ownerEpochSiSgvp",
+          "name": "ownerEpoch",
+          "kind": "swift.property",
+          "declaration": "let ownerEpoch: Int?",
+          "classification": "intentional-stable-api"
+        },
+        {
+          "identifier": "s:11AxolotyWire014OwnedAdvertiseB4DataV6object07privateE07leaseMS10ownerEpochACSays5UInt8VG_AJSgSiSgALtAA0B11DecodeErrorVYKcfc",
+          "name": "init(object:privateData:leaseMS:ownerEpoch:)",
           "kind": "swift.init",
-          "declaration": "init(object: [UInt8], privateData: [UInt8]?) throws(WireDecodeError)",
+          "declaration": "init(object: [UInt8], privateData: [UInt8]?, leaseMS: Int? = nil, ownerEpoch: Int? = nil) throws(WireDecodeError)",
           "classification": "intentional-stable-api"
         },
         {
@@ -4405,10 +4412,17 @@
           "classification": "intentional-stable-api"
         },
         {
-          "identifier": "s:11AxolotyWire014OwnedAdvertiseB4DataV7profile6object07privateE0AcA0B7ProfileO_Says5UInt8VGAKSgtAA0B11DecodeErrorVYKcfc",
-          "name": "init(profile:object:privateData:)",
+          "identifier": "s:11AxolotyWire014OwnedAdvertiseB4DataV7leaseMSSiSgvp",
+          "name": "leaseMS",
+          "kind": "swift.property",
+          "declaration": "let leaseMS: Int?",
+          "classification": "intentional-stable-api"
+        },
+        {
+          "identifier": "s:11AxolotyWire014OwnedAdvertiseB4DataV7profile6object07privateE07leaseMS10ownerEpochAcA0B7ProfileO_Says5UInt8VGAMSgSiSgAOtAA0B11DecodeErrorVYKcfc",
+          "name": "init(profile:object:privateData:leaseMS:ownerEpoch:)",
           "kind": "swift.init",
-          "declaration": "init(profile: WireProfile, object: [UInt8], privateData: [UInt8]?) throws(WireDecodeError)",
+          "declaration": "init(profile: WireProfile, object: [UInt8], privateData: [UInt8]?, leaseMS: Int? = nil, ownerEpoch: Int? = nil) throws(WireDecodeError)",
           "classification": "intentional-stable-api"
         },
         {
@@ -5287,6 +5301,13 @@
           "classification": "intentional-stable-api"
         },
         {
+          "identifier": "s:11AxolotyWire09AdvertiseB4DataV10ownerEpochSiSgvp",
+          "name": "ownerEpoch",
+          "kind": "swift.property",
+          "declaration": "let ownerEpoch: Int?",
+          "classification": "intentional-stable-api"
+        },
+        {
           "identifier": "s:11AxolotyWire09AdvertiseB4DataV4fromAcA0B6ReaderV_tAA0B11DecodeErrorVYKcfc",
           "name": "init(from:)",
           "kind": "swift.init",
@@ -5305,6 +5326,13 @@
           "name": "object",
           "kind": "swift.property",
           "declaration": "let object: ByteSlice",
+          "classification": "intentional-stable-api"
+        },
+        {
+          "identifier": "s:11AxolotyWire09AdvertiseB4DataV7leaseMSSiSgvp",
+          "name": "leaseMS",
+          "kind": "swift.property",
+          "declaration": "let leaseMS: Int?",
           "classification": "intentional-stable-api"
         },
         {

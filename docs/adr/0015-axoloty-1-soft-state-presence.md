@@ -1,14 +1,15 @@
 ---
-status: proposed
+status: accepted
 ---
 
 # Soft-state presence for `axoloty/1`
 
-Proposed for [#1060](https://github.com/phynics/axoloty/issues/1060). This ADR
-is a draft for the repository owner. It is not accepted and nothing here is
-implemented. It resolves the six decisions the issue lists and adds one the
-issue did not list (transport reset, decision 7). Implementation follows only
-after the owner accepts or amends it.
+Accepted for [#1060](https://github.com/phynics/axoloty/issues/1060) on
+2026-11-26, with the amendments recorded below. The original draft resolved the
+six decisions the issue lists and added a seventh (transport reset). The owner
+accepted the additive wire fields, the owner-epoch refresh signal, longer lease,
+reset suspension, CBOR-only corpus, and additive expiry reporting. Implementation
+follows this document.
 
 ## Context
 
@@ -65,13 +66,12 @@ removes nothing. Either way it frees no slot.
 Confirmed (measured).** A `ProtocolProcessor<4>` received four peers' Advertise
 frames (`activeObjects=4`). With no further traffic, `expire(nowMS: 600000)`
 (ten minutes later) returned `false` and `activeObjects` stayed `4`: `expire`
-at `ProtocolProcessor.swift:196` walks only pending request correlations, never
-objects. A fifth peer's Advertise was `rejected(capacityExceeded)` and
-delivered nothing (`ProtocolProcessor.swift:932`). A Deadvertise from a
+walks only pending request correlations, never objects. A fifth peer's Advertise was `rejected(capacityExceeded)` and
+delivered nothing (`ProtocolProcessor.swift`, object planning). A Deadvertise from a
 different source was `accepted` (at `v0.10.0`: `rejected(malformedFrame)`) but
 removed nothing, because an inbound
 Deadvertise removes only entries its own source owns
-(`markDeadvertisedObjects`, `:1083`). The owning source's Deadvertise freed
+(`markDeadvertisedObjects`). The owning source's Deadvertise freed
 exactly one slot and the fifth peer then fit. `resetTransport()` (`:226`)
 discarded all four. Identical under both profiles. So only a Deadvertise from
 the owner or a local transport reset ever frees a lost peer's slot.
@@ -79,7 +79,7 @@ the owner or a local transport reset ever frees a lost peer's slot.
 **Claim 2: a repeated Advertise for the same source and object is rejected as
 `.duplicate`. Confirmed (measured), and stronger than the issue states.**
 `planObjectTransition` returns `.rejected(.duplicate)` at
-`ProtocolProcessor.swift:923` for any active entry with the same `sourceID` and
+`ProtocolProcessor.swift`, object planning, for any active entry with the same `sourceID` and
 `objectID` unless it is a local, not-yet-announced replay. In the run the
 identical repeat, a repeat with a changed `name`, and a repeat carrying an extra
 envelope field were all `rejected(duplicate)` with zero deliveries, and
@@ -88,7 +88,7 @@ therefore refreshes nothing today, and neither does a changed object: a
 re-Advertise cannot update a held entry.
 
 **Claim 3: an older decoder ignores an unknown Advertise envelope field.
-Confirmed (measured) for current code and for `v0.10.0`.** `AdvertiseWireData(from:)` reads `object` and `privateData` only
+Confirmed (measured) for `v0.10.0` and for the code before this ADR's wire fields.** `AdvertiseWireData(from:)` reads `object` and `privateData` only
 (`WireDTOs.swift:80`). With an extra `leaseMs` field next to `object`,
 `AdvertiseWireData` returned byte-identical `object` bytes and a `nil`
 `privateData`, and the processor returned `accepted` with one delivery, under
@@ -156,50 +156,61 @@ Two further points:
 - C. A new event code (for example a presence event) beside Advertise.
 - D. A new profile, `axoloty/2`.
 
-**Recommendation: A**, with two optional fields, both `axoloty/1` only:
+**Accepted: A**, with two optional fields, both `axoloty/1` only:
 
 ```cddl
 advertise = {
   "object": object,
   ? "privateData": any,
   ? "leaseMs": uint,       ; presence lease the owner promises to refresh within
-  ? "isRefresh": true,     ; present only on a periodic refresh, never on an announce
+  ? "ownerEpoch": uint,    ; per-process incarnation; changes on every start
 }
 ```
 
 **Reason.** The field is protocol metadata about the announcement, not
 application data, so it belongs in the envelope. Measured: current and
 `v0.10.0` decoders ignore an unknown envelope field and still deliver the
-Advertise (Claim 3). B puts protocol state inside an application object. The
-object model preserves unknown fields, so shipped handlers would see it, and a
-user schema could collide with the name. C adds a fourteenth member to the closed
-capability inventory, may need a subscriber slot beyond the two of eight the Zenoh façade
-reserves for profile subscriptions ([`zenoh.md`](../transports/zenoh.md)), and still needs a full Advertise to introduce an object. It has one real
-advantage, that shipped peers never subscribe to the new route and see no
-noise (see Compatibility). D partitions the fleet. A route prefix is the
-authoritative profile signal, ADR 0009 allows exactly one profile per binding,
-and a node on `axoloty/2` could not hear a shipped `axoloty/1` device at all.
+Advertise (Claim 3). B puts protocol state inside an application object, where
+shipped handlers would see it and a user schema could collide with the name. C
+adds a fourteenth member to the closed capability inventory, may need a
+subscriber slot beyond the two of eight the Zenoh façade reserves, and still
+needs a full Advertise to introduce an object. D partitions the fleet. A route
+prefix is the authoritative profile signal, ADR 0009 allows exactly one profile
+per binding, and a node on `axoloty/2` could not hear a shipped `axoloty/1`
+device at all.
 
-**Bounds.** `leaseMs` is accepted in 1,000 to 3,600,000 (one hour). A smaller,
-larger, non-integer, or non-positive value, or `isRefresh` without `leaseMs`,
-is a structured `malformedPayload` rejection with no state change. The upper
-bound keeps a lease inside the signed 32-bit window of the processor's wrapping
-time comparison (`ProtocolProcessor.swift:1198`, about 24.8 days; derived). The
-new decoder may be strict because only new senders produce these fields.
-`isRefresh` is emitted only when true, like `isExternalRoute`.
+`ownerEpoch` replaces the draft's `isRefresh` flag. A frame cannot prove whether
+it is the last one an owner sends: a lost announce followed by refreshes would
+keep a reboot masked. A per-process epoch is carried on every leased
+Advertise, so any later frame reveals a restart. It costs four bytes per slot
+and about the same on the wire.
+
+**Bounds.** `leaseMs` is accepted in 1,000 to 3,600,000 (one hour).
+`ownerEpoch` is accepted in 1 to 2,147,483,647. Both fields are present
+together or absent together; one without the other, a non-integer or
+out-of-range value, or a zero lease is a structured `malformedPayload`
+rejection with no state change when presence is on. The upper lease bound keeps
+a lease inside the signed 32-bit window of the processor's wrapping time
+comparison (`ProtocolProcessor.swift`, about 24.8 days; derived). The new
+decoder may be strict because only new senders produce these fields.
 
 **Opt-in is a processor policy, not an encoding conditional.** Presence
 handling is off by default. A processor constructed as today ignores both
 fields and behaves exactly as it does now, so `coaty/3` bindings and every
 shipped composition are byte- and behaviour-identical. An `axoloty/1` binding
 that wants presence passes a presence policy at construction, in the same way
-it passes `ProtocolCapabilities`. Bounds on `leaseMs` apply only when the
-policy is on.
+it passes `ProtocolCapabilities`. Bounds on the fields apply only when the
+policy is on. Decoding itself never throws for these fields; the policy path
+validates them, so a presence-off or `coaty/3` receiver keeps accepting frames
+it accepts today.
 
-**What would change this.** If the owner reads ADR 0008's "only the encoding
-differs" as forbidding additive fields, choose C, accept the new capability
-and slot, and revisit D only if additive fields are ruled out entirely. If a
-future field needs to be mandatory, that is `axoloty/2`.
+A presence policy on a `coaty/3` codec is a construction error: `coaty/3` stays
+sealed and a `coaty/3` Advertise carrying the fields is stored and delivered
+exactly like one without them and never expires.
+
+**What would change this.** If a future field needs to be mandatory, that is
+`axoloty/2`. If reordering is measured to be harmful beyond the bounded ghost
+window, a separate ordered field is needed.
 
 ### 2. Refresh semantics versus duplicates
 
@@ -208,64 +219,64 @@ future field needs to be mandatory, that is `axoloty/2`.
 - A. Every repeat of a held (source, object) is a silent renew.
 - B. Compare a stored digest of the object bytes: renew silently if equal,
   deliver if different.
-- **C. The owner declares the refresh** with `isRefresh`.
+- **C. The owner epoch** on the Advertise identifies the incarnation.
 
-**Recommendation: C.** With presence on, for an inbound Advertise whose
-(source, object) matches a held entry:
+**Accepted: an owner epoch**, replacing the draft's owner-declared refresh
+flag. For an inbound Advertise whose (source, object) matches a held entry:
 
 | Inbound Advertise | Held entry | Result |
 |---|---|---|
-| `leaseMs` and `isRefresh` | present | Renew `lastSeen`, store the declared lease, deliver nothing, no state-generation change. |
-| `leaseMs` and `isRefresh` | absent | Treat as an announce: insert and deliver. A late joiner is healed within one refresh interval. |
-| `leaseMs`, no `isRefresh` | present | Re-announce: replace, renew, deliver. A restarted owner is seen even if the object bytes are identical. |
-| `leaseMs`, no `isRefresh` | absent | Ordinary announce with a lease. |
-| no `leaseMs` | present | Unchanged: `rejected(duplicate)`. |
-| no `leaseMs` | absent | Unchanged: insert and deliver, no lease, never expires. |
+| same `ownerEpoch`, lease present | present | Renew `lastSeen` and the declared lease, deliver nothing, no state-generation change. |
+| different `ownerEpoch`, lease present | present | Re-announce: replace, renew, deliver, and release the rows naming the object. A restarted owner is seen even if the object bytes are identical. |
+| lease present | absent | Announce: insert and deliver. A late joiner is healed within one refresh interval. |
+| no lease | present leased entry | Re-announce without a lease: replace, deliver, clear the lease, and release rows. A firmware rollback is visible and never expires. |
+| no lease | present unleased entry | Unchanged: `rejected(duplicate)`. |
+| no lease | absent | Unchanged: insert and deliver, no lease, never expires. |
+| lease present | present local entry | Unchanged: `rejected(duplicate)`. The owner's own echo never refreshes itself. |
 
-A refresh carries the complete object, not a stub, so the "absent" rows deliver
-a real object, including to a shipped late joiner. The owner must therefore
-retain the object bytes (the host runtime does; the static runtime's caller
-does). The processor still stores no payload.
+A refresh carries the complete object, not a stub, so the absent rows deliver a
+real object, including to a shipped late joiner. The owner must therefore retain
+the object bytes (the host runtime does; the static runtime's caller does). The
+processor still stores no payload.
 
-**Reason.** A is wrong for restarts: a rebooted owner with an identical
-identity object would be indistinguishable from a periodic refresh, and
-observers would never learn that the peer lost its Associate and IoState
-(those are per-peer state that does not survive a reboot). B hides the same
-restart when the bytes match, and costs 8 to 16 bytes per slot plus a hash
-whose collision silently drops an update. C needs no per-slot digest and puts
-the knowledge where it exists: the owner knows whether it is announcing or
-refreshing. The cost is that an owner that lies (`isRefresh` with changed
-bytes) leaves peers with stale content until the next announce; that is an owner
-bug, not a protocol hole.
+**Reason.** The draft's `isRefresh` flag could not distinguish a lost announce
+from a periodic refresh; one dropped announce hid a reboot until the next
+announce. An epoch is carried on every leased Advertise, so any later frame
+reveals the restart, and the owner can retransmit identical bytes. The receiver
+needs no digest. A changed object under the same epoch is an owner bug; the
+renew wins and the stale content is not delivered. An owner that lies about its
+epoch can still hide a restart; the wire cannot prove otherwise.
 
-**Outcome signalling is an open API choice.** A silent renew should be
-`.accepted` with no delivery action, which needs no new
-`ProtocolProcessOutcome` case. Today an accepted inbound Advertise always
-yields one delivery, so the host and static runtimes must tolerate
-`.accepted` with zero actions. The owner decides in the questions below.
+**Outcome signalling.** A renewed entry is `.accepted` with no delivery action.
+The outcome enum is unchanged; the host and static runtimes already tolerate an
+accepted inbound frame with zero actions.
 
-**What would change this.** If owners cannot track announce versus refresh
-(for example a device that cannot tell a first boot from a reconnect), use B and
-accept the digest cost and the masked restart.
+**Associate rows.** A re-announce releases the rows naming the object, the same
+way a Deadvertise does, and reports them against the Advertise frame. IO routing
+re-issues its intents for the endpoint, so a device that reboots inside its
+lease does not lose IO. A pure renew changes no rows.
+
+**What would change this.** If owners cannot provide a stable per-process
+epoch, fall back to a digest and accept the masked restart.
 
 ### 3. Lease value and miss tolerance
 
 **Options.** Refresh interval R and declared lease L, `L = k·R`.
 
 - A. R = 10 s, L = 30 s (the issue's starting point).
-- **B. R = 10 s, L = 40 s.**
+- **B. R = 10 s, L = 45 s.**
 - C. A larger R (30 s or more) for large fabrics.
 
-**Recommendation: B as the documented default; the owner declares L, so the
+**Accepted: B as the documented default; the owner declares L, so the
 default is advice, not wire policy.**
 
 **Reason (derived).** The peer's removal time is `lastSeen + L`, and a refresh
 that arrives exactly at that boundary races the expiry check. A lease of `k·R`
 therefore tolerates `k − 1` consecutive lost refreshes, not `k`. The issue's
 "3 missed refreshes, about 30 s" is `L = 3R` and tolerates 2. Tolerating 3
-needs `L > 3R`, hence 40 s. Detection after a crash falls in `[L − R, L]` after
-the crash, plus the caller's expiry polling interval: 20 to 30 s for A and 30 to
-40 s for B (derived). Consecutive-loss arithmetic with an independent per-frame
+needs `L > 3R`; 45 s gives half a period of margin, so the fourth refresh at
+40 s stays inside the lease. Detection after a crash falls in `[L − R, L]` after
+the crash, plus the caller's expiry polling interval: 35 to 45 s. Consecutive-loss arithmetic with an independent per-frame
 loss probability p (assumed; #107 plans a 1 to 10 % sweep and has not produced
 a number):
 
@@ -276,15 +287,16 @@ a number):
 | 10 % | 1.0e-3 | 2.8 h | 1.0e-4 | 27.8 h |
 
 A false expiry is not a failure of correctness: the next refresh arrives for an
-absent entry, is treated as an announce, and the object returns within R
-(decision 2, row 2). Losses are not independent in practice (a 4 s Wi-Fi drop,
+absent entry, is treated as an announce, and the object returns within R. A
+false expiry does not release Associate rows, so a transient loss does not
+become a permanent IO outage. Losses are not independent in practice (a 4 s Wi-Fi drop,
 from the issue and not reproducible here, costs at most one refresh at R =
 10 s; a longer outage costs several), so the table is an upper bound on
 comfort, not a prediction.
 
 **What would change this.** Measured loss under `DROP` congestion control from
 #107, the measured reconnect distribution, or a power budget that cannot afford
-R = 10 s. Raise R (option C) and keep L = 4R. The receiver clamps nothing
+R = 10 s. Raise R (option C) and keep `L = 4.5R`. The receiver clamps nothing
 inside 1 s to 1 h; it trusts the owner.
 
 ### 4. Who drives refresh
@@ -295,25 +307,35 @@ inside 1 s to 1 h; it trusts the owner.
 - **B. Runtime-driven on the host; caller-driven on the static runtime.**
 - C. Both, with an application keepalive gate on the host.
 
-**Recommendation: B**, and the processor stays passive. `AxolotyProtocol`
-gains pure functions of caller-supplied time: which local entries are due for a
-refresh (reported to the caller), and a peer-expiry pass over held entries. It
-owns no timer, task, or clock. The host `AxolotyRuntime` owns one bounded
-refresh timer, new work in `Source/Runtime` (the host runtime has no such timer
-today; only IO uses `Task.sleep`). On the static runtime the caller already
-owns the loop and calls the same two functions with its monotonic
-milliseconds, the contract `expire(nowMS:)` already follows.
+**Accepted: B**, and the processor stays passive. `AxolotyProtocol` gains pure
+functions of caller-supplied time: which local entries are due for a refresh
+(reported to the caller), and a peer-expiry pass over held entries. It owns no
+timer, task, or clock. The host `AxolotyRuntime` owns one bounded refresh timer,
+new work in `Source/Runtime`. On the static runtime the caller already owns the
+loop and calls the same functions with its monotonic milliseconds, the contract
+`expire(nowMS:)` already follows.
 
 **Reason.** The host cannot ask every application to remember a timer. On a
 device the refresh runs in the same loop that runs the application, so a hung
 loop stops refreshing without extra machinery, which is the "hung application,
 live transport" case the issue wants. On the host, a runtime-driven timer keeps
 refreshing for a wedged application, so the host does not detect that case.
-Refresh phase must be spread, not synchronized: derive the first offset
-deterministically from the source identifier (no random source in the portable
-core). A synchronized burst of N·M frames meets a four-frame per-subscription
-queue (`zenoh.md`), and every excess frame is a `receiveDrops` loss that eats
-miss tolerance.
+
+Refresh phase is anchored to the owner's local clock and is never restarted by
+a reconnect; otherwise a router restart re-synchronizes every owner into
+periodic N·M bursts. The first offset after boot is derived deterministically
+from the source identifier (no random source in the portable core), and a
+post-reconnect re-announce uses the same jitter. The host runtime retains the
+local Advertise bytes it needs to refresh; the static runtime's caller retains
+them. A lease declaration must fit the configured payload capacity both as an
+announce and as a refresh, because deterministic key order re-encodes the map.
+
+The host timer is one runtime-owned task over a time-parameterized processor
+function. It is cancelled and awaited before the graceful Deadvertise, is
+epoch-checked like the reconnect path (#1076), and does not refresh while
+reconnecting, where the publication would queue in offline work. The host
+passes its own monotonic clock to both inbound presence stamping and expiry, so
+there is one clock; the transport's frame timestamp is not used for presence.
 
 **What would change this.** Owners who need host hang detection should get option
 C: an optional runtime setting under which refresh continues only while the
@@ -334,8 +356,8 @@ decision 2 row 2.
 - Options: (a) owner generation or sequence number on every Advertise and
   Deadvertise; (b) a bounded tombstone table of recently removed
   (source, object) pairs; (c) accept the window.
-- **Recommendation: (c), plus an owner rule.** The ghost is bounded by the
-  lease: it expires in at most L (40 s by default) and the failure is
+- **Accepted: (c), plus an owner rule.** The ghost is bounded by the
+  lease: it expires in at most L (45 s by default) and the failure is
   self-healing, which is the point of soft state. The owner rule is: stop the
   refresh timer before publishing Deadvertise, and never refresh after it, so
   only frames already in flight can race.
@@ -350,11 +372,25 @@ decision 2 row 2.
 entry was removed; the next refresh is an announce for an absent entry and is
 delivered. That is the intended recovery and needs nothing more.
 
-**Expiry is its own event.** Expiry removes the entry and emits a distinct
-protocol action and runtime evidence case. It never fabricates a wire
-Deadvertise, and nothing is published. Per entry, the removal and its action
-commit together: if the sink cannot take the action, that entry stays and the
-next pass retries, so saturation is structured and atomic.
+**Expiry is its own local event.** Expiry removes the object entry and reports
+the removed `(sourceID, objectID)` to the caller. It never fabricates a wire
+Deadvertise, and nothing is published. Per entry, the removal and its report
+commit together: the pass returns one expired identifier per call, so work is
+bounded and there is no sink-saturation path. A false expiry must not become a
+permanent IO outage, so expiry **does not release Associate rows**. Rows are
+released by wire signals (Deadvertise, a re-announce, a router disassociation)
+and by a local transport reset. IO routing consumes the expiry report and
+locally disassociates the endpoint; the processor rows that remain when no
+router signal arrives are a documented leak, bounded by a later Deadvertise or
+reset.
+
+**Decision 8: expiry reporting.** The frozen public enums
+(`BorrowedProtocolAction`, `OwnedProtocolAction`, `RuntimePresenceEvidence`)
+gain no cases. The processor exposes a time-parameterized expiry pass returning
+identifiers only. The host runtime exposes one additive bounded expiry stream
+of an additive value struct and stores no payload. The static runtime exposes
+the same pass to its caller. This keeps presence in a minor release; a later
+major may fold the report into the action and evidence enums.
 
 ### 6. Scale and supported device count
 
@@ -378,7 +414,7 @@ r = 1.1 /s at N = 12, M = 1 is about 220 B/s, a small bandwidth that still wakes
 the radio and the receive path about once a second. Whether that is acceptable
 is a power and queue question that needs device evidence.
 
-**Recommendation.** State a design target, not a guarantee: **up to 7 devices
+**Accepted.** State a design target, not a guarantee: **up to 7 devices
 with up to 2 advertised objects each on `esp32C6Static`** (14 of 16 slots, one
 incarnation of headroom), and up to 31 on `hostDefault` at the same M. Do not
 state 12. Raise the claim only after the embedded repository measures drops and
@@ -393,21 +429,29 @@ and is out of scope here.
 ### 7. Transport reset (not in the issue's list)
 
 Today `resetTransport()` discards every peer-only entry and keeps local ones
-replayable (`ProtocolProcessor.swift:226`); the host runtime calls it on
-reconnect (`AxolotyRuntime.swift:311`, `:1507`) and reports
+replayable (`ProtocolProcessor.swift`, transport reset); the host runtime calls it on
+reconnect (`AxolotyRuntime.swift`, reconnect and ingress-pump paths) and reports
 `RuntimePresenceEvidence.transportReset`. With that behaviour a 4 s reconnect (the issue's figure for a forced
 Wi-Fi drop; not reproducible here), long enough to pass the binding's
 one-second loss debounce, drops every peer
 and holds them out until their next refresh. That conflicts with the acceptance
 item "a short reconnect inside the lease causes no departure".
 
-**Recommendation.** With presence on, `resetTransport()` retains **leased** peer
-entries and re-bases their `lastSeen` to the reset time, so a peer that does
-not refresh after the reconnect expires one lease later. Entries without a
-lease are discarded as today. Expiry is also suspended while the transport is
-down, because the observer cannot have received anything. Without this, an
+**Accepted.** With presence on, transport loss does not immediately discard
+leased peer entries. A new `suspendPresence()` call marks presence suspended,
+retains leased peers and local entries, and discards unleased peers as today.
+It does not re-base their `lastSeen`; the failure and the recovery are different
+edges. A later `resumePresence(nowMS:)` (the transport-ready call) re-bases every
+retained leased peer's `lastSeen` to that time and clears the suspension.
+Repeated suspends and resumes are idempotent. Expiry is suppressed while
+suspended, because the observer cannot have received anything. Without this, an
 observer returning from an outage longer than L would expire every peer at once
 and then re-learn them, a flap storm.
+
+Retained peers keep their slots while the transport is down, so a local
+Advertise that needs a slot may evict the oldest suspended leased peer. That is
+a bounded local recovery rule, not a wire signal; unleased peers are never
+retained and are discarded at suspend.
 
 **What would change this.** If the owner wants the existing "presence is
 uncertain after a reset" semantics to stay uniform, keep today's discard and
@@ -424,10 +468,10 @@ v1.0.1 (`git diff v0.10.0 v1.0.1`).
 - **Shipped receiver that already holds the entry.** The refresh is
   `rejected(duplicate)`: nothing is delivered and no state changes (Claim 2). The
   host runtime still emits a `.transition(.rejected(...))` event for it
-  (`AxolotyRuntime.swift:1136`), so a shipped host sees one rejected transition per
+  (`AxolotyRuntime.swift`), so a shipped host sees one rejected transition per
   refresh per held object, at rate `(N−1)·M/R` (derived). This is noise, not
-  corruption. It is the one real compatibility cost of option A and the reason
-  option C is listed as the alternative.
+  corruption. Release notes must state it. It is the one real compatibility
+  cost of option A and the reason option C is listed as the alternative.
 - **Shipped receiver that does not hold the entry** (a late joiner): the
   refresh is delivered as an ordinary Advertise. This is a benefit: a shipped
   late joiner learns peers within R, which Zenoh's lack of retention otherwise
@@ -439,15 +483,11 @@ v1.0.1 (`git diff v0.10.0 v1.0.1`).
 - **`coaty/3`.** The fields exist only in `axoloty/1`, and a processor with
   presence off ignores them even if a `coaty/3` frame carried them, so
   `coaty/3` bytes and behaviour are unchanged. A regression test must show that
-  a `coaty/3` Advertise carrying `leaseMs` is stored and delivered exactly like
-  one without it and never expires.
-- **Does this need `axoloty/2`?** [ADR 0008](./0008-axoloty-1-cbor-extension-profile.md)
-  says changing the map-key and UUID representations after release needs
-  `axoloty/2`, but it also says "only the encoding differs". Adding optional fields amends that
-  sentence. This ADR therefore asks the owner to confirm the amendment
-  (question 1 below). Accepting this ADR would add a note to ADR 0008 and
-  [`docs/protocol/axoloty-1.md`](../protocol/axoloty-1.md), not rewrite
-  the accepted ADR.
+  a `coaty/3` Advertise carrying `leaseMs` and `ownerEpoch` is stored and
+  delivered exactly like one without them and never expires.
+- **Does this need `axoloty/2`?** No. The owner accepted the additive fields as
+  an `axoloty/1` extension and directed that ADR 0008's "only the encoding
+  differs" sentence gain a note; the accepted ADR is not rewritten.
 
 ### Golden corpus and `docs/wire-compatibility.md`
 
@@ -456,15 +496,15 @@ The corpus under `Tests/AxolotyTests/WireCompatibility/Golden` is frozen and is
 The plan leaves every existing golden byte-identical (no existing `*.json` or
 `*.cbor` file may appear in the diff) and adds new cases:
 
-- CBOR cases: `advertise-lease` (`leaseMs` only), `advertise-refresh`
-  (`leaseMs` and `isRefresh`), and rejection vectors (`leaseMs` zero, above the
-  bound, non-integer, `isRefresh` without `leaseMs`). `WireGoldenCorpusTests`
-  proves round-trip identity and `npm run verify:golden` decodes them
-  independently with `cbor-x`.
+- CBOR cases: `advertise-lease` (`leaseMs` and `ownerEpoch`) and
+  `advertise-refresh` (same fields, a refresh). Rejection vectors (`leaseMs`
+  zero, above the bound, non-integer, `ownerEpoch` zero, one field without the
+  other) do not round-trip; they live in processor and trace tests.
 - The corpus pairs a JSON golden with each CBOR case. Presence is
-  `axoloty/1`-only, so these cases need either a CBOR-only manifest entry
-  (a small schema change) or a documented surrogate. The recommendation is CBOR-only
-  entries; the owner decides (question 6).
+  `axoloty/1`-only, so these cases need a CBOR-only manifest entry (a small
+  schema change). The owner accepted CBOR-only entries; the Node verifier must
+  compare the generator's logical value and reject an unpaired `.cbor` unless
+  the manifest flag is present.
 - `docs/wire-compatibility.md` gets a row in the `axoloty/1` change table with
   `coaty/3` effect "None; presence is off for `coaty/3` and the fields are not
   part of its profile" and a section recording the additive fields as a
@@ -477,25 +517,24 @@ The plan leaves every existing golden byte-identical (no existing `*.json` or
 
 ## Storage growth in fixed-capacity state
 
-Per object slot, presence adds a declared lease and a last-seen time, each
-`UInt32` milliseconds: **+8 bytes per slot**. Decision 5 chose no owner
-generation, so there is no third field.
+Per object slot, presence adds a declared lease, a last-seen time, and an owner
+epoch, each `UInt32` milliseconds or counter: **+12 bytes per slot**. A zero
+lease means no lease; a zero epoch means no epoch.
 
 | | Now | With presence | Source |
 |---|---:|---:|---|
-| `ObjectRecord` stride (replica with the same fields) | 36 B | 44 B | measured on a replica struct, because the real type is private; the field list is read from `ProtocolProcessor.swift:35` |
-| With an owner-generation `UInt32` (rejected option) | | 48 B | measured on a replica |
-| `ProtocolProcessor<1/4/16/64>` total | 416 / 1,552 / 6,112 / 24,352 B | | measured: `MemoryLayout<ProtocolProcessor<N>>.size` |
-| Growth at 16 and 64 slots | | +128 B (+2.1 %) / +512 B (+2.1 %) | derived: 8 B × capacity over the measured totals |
+| `ObjectRecord` stride (replica with the same fields) | 36 B | 48 B | measured on a replica struct, because the real type is private; the field list is read from `ProtocolProcessor.swift` |
+| `ProtocolProcessor<1/4/16/64>` total | 416 / 1,552 / 6,112 / 24,352 B | 428 / 1,600 / 6,304 / 25,120 B | measured base; growth derived as 12 B × capacity |
+| Growth at 16 and 64 slots | | +192 B (+3.1 %) / +768 B (+3.2 %) | derived |
 
 The processor's total grows about 380 B per capacity unit across its three
 tables (measured: 6,112 to 24,352 B over 48 slots), so the object table
-accounts for under a tenth of that (36 of about 380 B; derived). The static
-runtime embeds the processor, so the same per-slot growth is expected there; the
-static runtime was not measured. All of this is host layout only. Heap, stack,
-and image size on the ESP32-C6 are not measured here and need device evidence. The processor keeps the "no allocation" rule: all new
-state is fixed inline and filled by the owner, and the sink-based expiry
-action carries identifiers only.
+accounts for about a tenth of that (48 of about 386 B; derived). The static
+runtime embeds the processor, so the same per-slot growth is expected there;
+the static runtime was not measured. All of this is host layout only. Heap,
+stack, and image size on the ESP32-C6 are not measured here and need device
+evidence. The processor keeps the "no allocation" rule: all new state is fixed
+inline and filled by the owner.
 
 ## Module ownership
 
@@ -503,8 +542,9 @@ This changes no ownership rule in `AGENTS.md`.
 
 - `AxolotyWire`: the two optional Advertise fields and their bounds; golden
   vectors.
-- `AxolotyProtocol`: the presence policy, two fixed `UInt32` fields per object
-  record, the refresh transition, the expiry pass, and the expiry reporting surface (see question 4).
+- `AxolotyProtocol`: the presence policy, three fixed `UInt32` fields per object
+  record (lease, last seen, owner epoch), the refresh transition, and the expiry
+  pass and identifier report.
   Time comes from the caller; there is no allocation, task, or timer.
 - `Source/Runtime`: the host timer, the expiry evidence case, and delivery to
   event streams. It exposes no raw MQTT or raw route API.
@@ -517,13 +557,14 @@ This changes no ownership rule in `AGENTS.md`.
 
 | #1060 acceptance item | Where |
 |---|---|
-| ADR records the decisions | This ADR, once accepted |
+| ADR records the decisions | This ADR, accepted 2026-11-26 |
 | Host and static replay identical traces | Core: trace parity tests (both legs on `axoloty/1`) |
 | Lost peer's objects removed within the lease; slots reusable | Core: processor tests (extends Claim 1) |
-| Rebooted peer's next Advertise delivered | Core: processor tests (decision 2, row 3, and the post-expiry row) |
-| Short reconnect inside the lease causes no departure | Core: processor and runtime tests, **depends on decision 7** |
+| Rebooted peer's next Advertise delivered | Core: processor tests (owner-epoch re-announce and the post-expiry row) |
+| Short reconnect inside the lease causes no departure | Core: processor and runtime tests (suspend/resume) |
 | Peer with no lease is never expired | Core: processor tests |
 | `coaty/3` bytes and behaviour unchanged | Core: existing goldens untouched, plus the `coaty/3` regression test |
+| Expiry reported without breaking the frozen enums | Core: additive processor pass and host stream tests |
 | Live-wire evidence over Zenoh with an unclean client kill | **Needs device and live-router evidence**: Core `zenoh-live` for the host leg; `phynics/axoloty-embedded` for the device leg and its `presence-expiry` check beside `last-will` |
 
 Items that only the embedded repository can produce: refresh and expiry on the
@@ -541,34 +582,35 @@ design target, heap, stack, and image size with the new fields.
 - The repository validator was run before the PR; its result is recorded in the
   PR description.
 
-## Questions for the owner
+## Decisions recorded
 
-1. Is an additive, ignorable Advertise envelope field acceptable inside
-   `axoloty/1` (amending the "only the encoding differs" sentence of ADR 0008),
-   or must presence use a new event code or `axoloty/2`?
-2. Field names and bounds: `leaseMs` and `isRefresh`, 1,000 to 3,600,000 ms.
-3. Should a silent renew be `.accepted` with zero actions, or does the owner
-   want a new `ProtocolProcessOutcome` case?
-4. `BorrowedProtocolAction`, `OwnedProtocolAction`, and
-   `RuntimePresenceEvidence` are public enums in the frozen Core 1.0 symbol
-   inventory (`docs/api/core-1.0-public-symbols.json`). A new case breaks a
-   consumer's exhaustive `switch`, and
-   [`versioning.md`](../versioning.md) allows only backward-compatible API in a
-   minor release. As written, the expiry action and evidence case therefore
-   read as major-release changes. Choose one: ship them in the next major, or
-   ship in a minor by reporting expiry through new additive API, such as a
-   dedicated expiry sink and event, leaving these enums unchanged. The
-   recommendation is the additive form, so presence need not wait for a major.
-5. Decision 7: retain leased peers across a reset, or keep discarding them and
-   reword the acceptance item?
-6. Corpus: CBOR-only golden entries, or surrogate JSON?
-7. Support claim: 7 devices at M ≤ 2 on `esp32C6Static` until measured?
-8. Out of scope but adjacent: a lost peer's Associate entries also hold slots
-   with no timer, the same leak class as Claim 1. Expiring a peer's objects does
-   not release them. A Deadvertise that removes an advertised endpoint now
-   releases the rows that endpoint owned
-   ([#1077](https://github.com/phynics/axoloty/issues/1077)); release for a peer
-   lost without any absence signal still needs this issue's owner decisions.
+1. Additive, ignorable Advertise envelope fields are accepted inside
+   `axoloty/1`; ADR 0008 gets an additive-field note. No new event code or
+   profile.
+2. Field names and bounds: `leaseMs` and `ownerEpoch`; `leaseMs` in
+   1,000 to 3,600,000 ms and `ownerEpoch` in 1 to 2,147,483,647.
+3. A silent renew is `.accepted` with zero actions; no new outcome case.
+4. Expiry is reported through additive API: a processor pass returning
+   identifiers and a host expiry stream over an additive value struct. The
+   frozen public enums gain no cases, so presence can ship in a minor release.
+5. Transport loss suspends presence; a transport-ready call re-bases retained
+   leased peers and resumes. A local insert may evict the oldest suspended
+   leased peer.
+6. Golden corpus: CBOR-only entries, with the verifier comparing the logical
+   value and requiring an explicit manifest flag. Rejection vectors live in
+   processor and trace tests.
+7. Support claim: 7 agents at `M <= 2` on `esp32C6Static` until measured. `M`
+   counts the identity object; the claim is an exit-test target, not a
+   guarantee.
+8. Adjacent Associate rows: a re-announce releases them; expiry does not.
+   Release for a peer lost without any absence signal remains outside this
+   ADR.
+9. One clock: the host stamps presence time with the runtime's monotonic clock
+   for both inbound processing and expiry. The static runtime's caller supplies
+   that time.
+10. A renew emits no presence diagnostic. It does not clear the runtime's
+    `presenceUncertain` flag; only a delivered announce or deadvertisement
+    does.
 
 ## Consequences
 
@@ -578,8 +620,8 @@ design target, heap, stack, and image size with the new fields.
   object until they update.
 - Traffic grows as N²·M/R; the fixed table, not traffic, is the first limit on a
   device.
-- The processor gains two `UInt32` fields per object slot and two passive
-  functions, and still allocates nothing and owns no clock.
+- The processor gains three `UInt32` fields per object slot and passive functions, and still allocates nothing and owns no clock.
+- The frozen action and evidence enums gain no cases; expiry is additive, so this can ship in a minor release.
 - `coaty/3` is untouched, including its last will.
 
 ## Rejected alternatives
