@@ -9192,6 +9192,27 @@
           "classification": "intentional-stable-api"
         },
         {
+          "identifier": "s:15AxolotyProtocol0B14PresencePolicyO",
+          "name": "ProtocolPresencePolicy",
+          "kind": "swift.enum",
+          "declaration": "enum ProtocolPresencePolicy",
+          "classification": "intentional-stable-api"
+        },
+        {
+          "identifier": "s:15AxolotyProtocol0B14PresencePolicyO7enabledyA2CmF",
+          "name": "ProtocolPresencePolicy.enabled",
+          "kind": "swift.enum.case",
+          "declaration": "case enabled",
+          "classification": "intentional-stable-api"
+        },
+        {
+          "identifier": "s:15AxolotyProtocol0B14PresencePolicyO8disabledyA2CmF",
+          "name": "ProtocolPresencePolicy.disabled",
+          "kind": "swift.enum.case",
+          "declaration": "case disabled",
+          "classification": "intentional-stable-api"
+        },
+        {
           "identifier": "s:15AxolotyProtocol0B14ProcessOutcomeO",
           "name": "ProtocolProcessOutcome",
           "kind": "swift.enum",
@@ -9549,6 +9570,20 @@
           "classification": "intentional-stable-api"
         },
         {
+          "identifier": "s:15AxolotyProtocol0B26PresenceConfigurationErrorO",
+          "name": "ProtocolPresenceConfigurationError",
+          "kind": "swift.enum",
+          "declaration": "enum ProtocolPresenceConfigurationError",
+          "classification": "intentional-stable-api"
+        },
+        {
+          "identifier": "s:15AxolotyProtocol0B26PresenceConfigurationErrorO22unsupportedWireProfileyA2CmF",
+          "name": "ProtocolPresenceConfigurationError.unsupportedWireProfile",
+          "kind": "swift.enum.case",
+          "declaration": "case unsupportedWireProfile",
+          "classification": "intentional-stable-api"
+        },
+        {
           "identifier": "s:15AxolotyProtocol0B5ErrorV",
           "name": "ProtocolError",
           "kind": "swift.struct",
@@ -9703,6 +9738,13 @@
           "classification": "intentional-stable-api"
         },
         {
+          "identifier": "s:15AxolotyProtocol0B9ProcessorV12capabilities9wireCodec19maximumPayloadBytes0G7Objects0G19PendingCorrelations14presencePolicyACyxGAA0B12CapabilitiesV_0A4Wire0pF0VS3iAA0b8PresenceN0OtAA0bQ18ConfigurationErrorOYKcfc",
+          "name": "init(capabilities:wireCodec:maximumPayloadBytes:maximumObjects:maximumPendingCorrelations:presencePolicy:)",
+          "kind": "swift.init",
+          "declaration": "init(capabilities: ProtocolCapabilities = .coatyCore3, wireCodec: WireCodec, maximumPayloadBytes: Int = WireBufferConfig.maxPayloadSize, maximumObjects: Int = capacity, maximumPendingCorrelations: Int = capacity, presencePolicy: ProtocolPresencePolicy) throws(ProtocolPresenceConfigurationError)",
+          "classification": "intentional-stable-api"
+        },
+        {
           "identifier": "s:15AxolotyProtocol0B9ProcessorV12capabilities9wireCodec19maximumPayloadBytes0G7Objects0G19PendingCorrelationsACyxGAA0B12CapabilitiesV_0A4Wire0nF0VS3itcfc",
           "name": "init(capabilities:wireCodec:maximumPayloadBytes:maximumObjects:maximumPendingCorrelations:)",
           "kind": "swift.init",
@@ -9714,6 +9756,13 @@
           "name": "copyActorRoute(actorId:to:capacity:)",
           "kind": "swift.method",
           "declaration": "func copyActorRoute(actorId: UUID16, to output: UnsafeMutablePointer<UInt8>, capacity outputCapacity: Int) -> Int?",
+          "classification": "intentional-stable-api"
+        },
+        {
+          "identifier": "s:15AxolotyProtocol0B9ProcessorV14expirePresence5nowMS0A4Wire6UUID16V8sourceID_AH06objectK0tSgs6UInt32V_tF",
+          "name": "expirePresence(nowMS:)",
+          "kind": "swift.method",
+          "declaration": "mutating func expirePresence(nowMS: UInt32) -> (sourceID: UUID16, objectID: UUID16)?",
           "classification": "intentional-stable-api"
         },
         {
@@ -9738,6 +9787,13 @@
           "classification": "intentional-stable-api"
         },
         {
+          "identifier": "s:15AxolotyProtocol0B9ProcessorV14resumePresence5nowMSys6UInt32V_tF",
+          "name": "resumePresence(nowMS:)",
+          "kind": "swift.method",
+          "declaration": "mutating func resumePresence(nowMS: UInt32)",
+          "classification": "intentional-stable-api"
+        },
+        {
           "identifier": "s:15AxolotyProtocol0B9ProcessorV15processOutbound_5nowMS10classifier4sinkAA0B14ProcessOutcomeOAA0B14LocalOperationO_s6UInt32Vqd__qd_0_ztAA0B15RouteClassifierRd__AA0B10ActionSinkRd_0_Ri_d_0_r0_lF",
           "name": "processOutbound(_:nowMS:classifier:sink:)",
           "kind": "swift.method",
@@ -9749,6 +9805,13 @@
           "name": "processOutbound(_:nowMS:sink:)",
           "kind": "swift.method",
           "declaration": "mutating func processOutbound<S>(_ operation: ProtocolLocalOperation, nowMS: UInt32 = 0, sink: inout S) -> ProtocolProcessOutcome where S : ProtocolActionSink, S : ~Copyable",
+          "classification": "intentional-stable-api"
+        },
+        {
+          "identifier": "s:15AxolotyProtocol0B9ProcessorV15suspendPresenceyyF",
+          "name": "suspendPresence()",
+          "kind": "swift.method",
+          "declaration": "mutating func suspendPresence()",
           "classification": "intentional-stable-api"
         },
         {
@@ -11404,6 +11467,13 @@
           "classification": "intentional-stable-api"
         },
         {
+          "identifier": "s:SQsRi_zRi0_zrlE2neoiySbx_xtFZ::SYNTHESIZED::s:15AxolotyProtocol0B14PresencePolicyO",
+          "name": "!=(_:_:)",
+          "kind": "swift.func.op",
+          "declaration": "static func != (lhs: borrowing Self, rhs: borrowing Self) -> Bool",
+          "classification": "intentional-stable-api"
+        },
+        {
           "identifier": "s:SQsRi_zRi0_zrlE2neoiySbx_xtFZ::SYNTHESIZED::s:15AxolotyProtocol0B14ProcessOutcomeO",
           "name": "!=(_:_:)",
           "kind": "swift.func.op",
@@ -11454,6 +11524,13 @@
         },
         {
           "identifier": "s:SQsRi_zRi0_zrlE2neoiySbx_xtFZ::SYNTHESIZED::s:15AxolotyProtocol0B20SubscriptionSelectorO",
+          "name": "!=(_:_:)",
+          "kind": "swift.func.op",
+          "declaration": "static func != (lhs: borrowing Self, rhs: borrowing Self) -> Bool",
+          "classification": "intentional-stable-api"
+        },
+        {
+          "identifier": "s:SQsRi_zRi0_zrlE2neoiySbx_xtFZ::SYNTHESIZED::s:15AxolotyProtocol0B26PresenceConfigurationErrorO",
           "name": "!=(_:_:)",
           "kind": "swift.func.op",
           "declaration": "static func != (lhs: borrowing Self, rhs: borrowing Self) -> Bool",
