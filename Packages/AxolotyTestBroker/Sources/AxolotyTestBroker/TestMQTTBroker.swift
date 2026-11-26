@@ -20,6 +20,11 @@ public final class TestMQTTBroker: Sendable {
         public var port: Int
         /// Prevents a client from receiving publications that it publishes itself.
         public var excludesPublisherFromDelivery: Bool
+        /// Delays the CONNACK after a client CONNECT is received.
+        ///
+        /// Tests use this to hold a client in its connect attempt while they
+        /// stop it, proving that no late connection survives the close barrier.
+        public var connackDelayMS: UInt32
 
         /// Creates in-process broker settings.
         ///
@@ -28,14 +33,17 @@ public final class TestMQTTBroker: Sendable {
         ///   - port: Listening port, or `0` to request an ephemeral port.
         ///   - excludesPublisherFromDelivery: Prevents a publishing client's
         ///     own subscriptions from receiving that publication.
+        ///   - connackDelayMS: Delay before CONNACK is sent, in milliseconds.
         public init(
             host: String = "127.0.0.1",
             port: Int = 0,
-            excludesPublisherFromDelivery: Bool = false
+            excludesPublisherFromDelivery: Bool = false,
+            connackDelayMS: UInt32 = 0
         ) {
             self.host = host
             self.port = port
             self.excludesPublisherFromDelivery = excludesPublisherFromDelivery
+            self.connackDelayMS = connackDelayMS
         }
     }
 
@@ -85,6 +93,9 @@ public final class TestMQTTBroker: Sendable {
     public var port: Int {
         channel.withLockedValue { $0?.localAddress?.port } ?? 0
     }
+
+    /// How long the broker delays CONNACK after a CONNECT.
+    var connackDelayMilliseconds: UInt32 { configuration.connackDelayMS }
 
     public var host: String { configuration.host }
 

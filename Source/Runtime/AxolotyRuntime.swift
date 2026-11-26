@@ -193,6 +193,12 @@ actor ProtocolExecutor {
             await transport.setRecoveryHandler { [weak self] in
                 Task { await self?.transportRecovered() }
             }
+            // A stop may have advanced the epoch while the callbacks were
+            // installed. Starting now would open a connection after the host
+            // already stopped.
+            guard state == .starting, transportEpoch == epoch else {
+                return (.notStarted, "runtime start was superseded before the transport started")
+            }
             try await transport.start(
                 receive: transportReceiveHandler(),
                 lastWill: lastWill
@@ -302,7 +308,7 @@ actor ProtocolExecutor {
     }
 
     func reconnect() async {
-        guard state == .running || state == .reconnecting else { return }
+        guard !Task.isCancelled, state == .running || state == .reconnecting else { return }
         transition(to: .reconnecting)
         recoveryArrivedBeforeFailure = false
         softRecoveryConsumed = false
@@ -318,12 +324,15 @@ actor ProtocolExecutor {
         do {
             let lastWill = try makeTransportLastWill()
             await stopOutboundPump()
+            guard reconnectAttemptIsCurrent(epoch) else { return }
             // A broker-side close can race this explicit reconnect.  The
             // binding may therefore already have lost its subscription
             // session; deactivation is best-effort in that path and fresh
             // profile-interest activation below is authoritative.
             try? await transport.deactivateProfileInterest(namespace: definition.namespace)
+            guard reconnectAttemptIsCurrent(epoch) else { return }
             await transport.stop()
+            guard reconnectAttemptIsCurrent(epoch) else { return }
             transportExternalRoutes.removeAll()
             installOutboundPump()
             await transport.setFailureHandler { [weak self] failure in
@@ -332,18 +341,42 @@ actor ProtocolExecutor {
             await transport.setRecoveryHandler { [weak self] in
                 Task { await self?.transportRecovered() }
             }
+            // A stop or a newer lifecycle transition may have advanced the
+            // epoch while the callbacks were installed. Starting the transport
+            // here would then open a connection the host already stopped.
+            guard !Task.isCancelled, reconnectAttemptIsCurrent(epoch) else { return }
             try await transport.start(
                 receive: transportReceiveHandler(),
                 lastWill: lastWill
             )
-            guard state == .reconnecting, transportEpoch == epoch else { return }
+            // A state change means another operation owns the transport now:
+            // a soft recovery may already be running, or `stop()` is closing
+            // it. Only a still-current cancelled attempt closes what it opened.
+            // Keep this guard and the close await-free: actor isolation is the
+            // atomicity guarantee against an interleaving stop or reconnect.
+            guard reconnectAttemptIsCurrent(epoch) else { return }
+            guard !Task.isCancelled else {
+                await transport.stop()
+                return
+            }
             try await finishTransportRecovery(
                 epoch: epoch,
                 activateProfileInterest: true,
                 cause: .requested
             )
+            // Cancellation can land after the transport started but before or
+            // during recovery. Close the connection this attempt opened so a
+            // caller that abandons the attempt does not leave it running.
+            guard reconnectAttemptIsCurrent(epoch) else { return }
+            guard !Task.isCancelled else {
+                await transport.stop()
+                return
+            }
         } catch {
-            guard state == .reconnecting, transportEpoch == epoch else { return }
+            // Cancellation is operator intent, not a transport failure worth a
+            // diagnostic or a counter.
+            guard !Task.isCancelled else { return }
+            guard reconnectAttemptIsCurrent(epoch) else { return }
             // A transport failure while recovering is no more terminal than one
             // during normal operation. `transportFailed(_:)` deliberately parks
             // the executor in `.reconnecting` so the caller can restore the
@@ -355,6 +388,11 @@ actor ProtocolExecutor {
             diagnosticsSnapshotValue.transportFailures += 1
             emitTransportFailure(error)
         }
+    }
+
+    /// Whether this reconnect attempt still owns the lifecycle and transport.
+    private func reconnectAttemptIsCurrent(_ epoch: UInt64) -> Bool {
+        state == .reconnecting && transportEpoch == epoch
     }
 
     private func ingressOverflow() {
@@ -399,14 +437,15 @@ actor ProtocolExecutor {
         activateProfileInterest: Bool,
         cause: RuntimeReconnectCause
     ) async throws {
-        guard state == .reconnecting, transportEpoch == epoch else { return }
+        guard !Task.isCancelled, reconnectAttemptIsCurrent(epoch) else { return }
         if activateProfileInterest {
             try await transport.activateProfileInterest(namespace: definition.namespace)
-            guard state == .reconnecting, transportEpoch == epoch else { return }
+            guard !Task.isCancelled, reconnectAttemptIsCurrent(epoch) else { return }
         }
         try await publishLifecycleAdvertisement(nowMS: monotonicNowMS())
+        guard !Task.isCancelled, reconnectAttemptIsCurrent(epoch) else { return }
         try await publishIoAdvertisements(nowMS: monotonicNowMS())
-        guard state == .reconnecting, transportEpoch == epoch else { return }
+        guard !Task.isCancelled, reconnectAttemptIsCurrent(epoch) else { return }
         transition(to: .running)
         softRecoveryConsumed = true
         emitReconnectCompletion(cause: cause)

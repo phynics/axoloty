@@ -203,6 +203,40 @@ struct InProcessBrokerBindingTests {
         }
     }
 
+    @Test(.enabled(if: ProcessInfo.processInfo.environment["WIRE_MQTT_BINDING_NETWORK_LIVE"] != "1"))
+    func stopClosesInFlightConnect() async throws {
+        let timeout = Duration.seconds(15)
+        let broker = TestMQTTBroker(configuration: TestMQTTBroker.Configuration(connackDelayMS: 400))
+        let port = try broker.start()
+        defer { broker.stop() }
+        let binding = try makeBinding(port: port)
+
+        let start = Task { () -> Bool in
+            do {
+                try await binding.start(receive: { _ in }, lastWill: nil)
+                return false
+            } catch {
+                return true
+            }
+        }
+        try await waitUntil("broker accepted the TCP connection", timeout: timeout) {
+            broker.connections().contains { $0.active }
+        }
+        let connectionID = try #require(broker.connections().first { $0.active }?.id)
+
+        try await withTimeout("binding stop during connect", timeout: timeout) {
+            await binding.stop()
+        }
+
+        // The delayed CONNACK completes the connect after stop began. The
+        // client must have closed that connection before stop returned; the
+        // broker observes the close on its event loop.
+        try await waitUntil("connection closed after stop", timeout: timeout) {
+            broker.connections().contains { $0.id == connectionID && $0.active } == false
+        }
+        #expect(await start.value)
+    }
+
     private func makeBinding(port: Int) throws -> MQTTBinding {
         try MQTTBinding(configuration: MQTTBindingConfiguration(
             host: "127.0.0.1",

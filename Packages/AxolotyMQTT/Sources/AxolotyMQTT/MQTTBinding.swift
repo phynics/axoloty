@@ -176,20 +176,19 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
         receive: @escaping @Sendable (RuntimeInboundFrame) -> Void,
         lastWill: RuntimeTransportLastWill?
     ) async throws(AxolotyError) {
+        let admission = lock.withLock { () -> UInt64? in
+            guard !started else { return nil }
+            started = true
+            transportEpoch &+= 1
+            activeNamespace = nil
+            externalRoutes.removeAll(keepingCapacity: true)
+            return transportEpoch
+        }
+        guard let attemptEpoch = admission else {
+            throw AxolotyError.runtime(code: .notStarted, reason: "MQTT binding is already started")
+        }
         do {
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-                let admitted = lock.withLock {
-                    guard !started else { return false }
-                    started = true
-                    transportEpoch &+= 1
-                    activeNamespace = nil
-                    externalRoutes.removeAll(keepingCapacity: true)
-                    return true
-                }
-                guard admitted else {
-                    continuation.resume(throwing: AxolotyError.runtime(code: .notStarted, reason: "MQTT binding is already started"))
-                    return
-                }
                 if let diagnostics = lock.withLock({ diagnostics }) {
                     delegate.setFailureObserver { diagnostics.recordSessionFailure() }
                 }
@@ -200,14 +199,28 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
                 delegate.armStartTimeout(milliseconds: connectionTimeoutMS)
                 client.connect(will: lastWill)
             }
-            let (sink, isReconnect) = lock.withLock { () -> (RuntimeTransportDiagnostics?, Bool) in
+            let bookkeeping = lock.withLock { () -> (RuntimeTransportDiagnostics?, Bool)? in
+                // Stop may have advanced the epoch after resuming this start.
+                // A stopped binding must not record a session for it.
+                guard transportEpoch == attemptEpoch else { return nil }
                 let reconnect = hasOpenedSession
                 hasOpenedSession = true
                 return (diagnostics, reconnect)
             }
+            guard let (sink, isReconnect) = bookkeeping else {
+                throw AxolotyError.runtime(code: .cancelled, reason: "MQTT binding stopped during start")
+            }
             sink?.recordSessionOpen()
             if isReconnect { sink?.recordReconnect() }
         } catch {
+            // A concurrent stop or a newer start may already own the binding.
+            // Touching its callback, connection, or epoch here would clobber
+            // that attempt, so a superseded start only reports its failure.
+            let isCurrentAttempt = lock.withLock { transportEpoch == attemptEpoch }
+            guard isCurrentAttempt else {
+                throw error as? AxolotyError
+                    ?? AxolotyError.network(error: error, reason: "MQTT connection failed")
+            }
             let sink = lock.withLock { diagnostics }
             sink?.recordSessionFailure()
             lock.withLock {
@@ -269,17 +282,29 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
     }
 
     /// Stops the MQTT connection and releases callback admission.
+    ///
+    /// The adapter's disconnect closes any connection and waits for an
+    /// in-flight connect attempt, so a connect that completes after its start
+    /// caller was failed cannot leave an unowned connection behind.
+    ///
+    /// - Note: The host runtime serializes start and stop on one binding. A
+    ///   caller that drives the binding directly must do the same; stop clears
+    ///   callbacks only while it still owns the transport epoch.
     public func stop() async {
-        lock.withLock {
+        let stopEpoch = lock.withLock { () -> UInt64 in
             started = false
             transportEpoch &+= 1
             activeNamespace = nil
             externalRoutes.removeAll(keepingCapacity: true)
             diagnostics?.setActiveExternalSubscriptions(0)
+            return transportEpoch
         }
         delegate.failStart(AxolotyError.runtime(code: .cancelled, reason: "MQTT binding stopped while connecting"))
         await client.disconnect()
+        let stillOwnsStop = lock.withLock { transportEpoch == stopEpoch && !started }
+        guard stillOwnsStop else { return }
         delegate.clearReceive()
+        delegate.clearFailureHandler()
         delegate.clearFailureObserver()
     }
 
@@ -645,6 +670,10 @@ final class RuntimeMQTTDelegate: RuntimeMQTTClientDelegate, @unchecked Sendable 
 
     func setFailureHandler(_ handler: @escaping @Sendable (RuntimeTransportFailure) -> Void) {
         lock.withLock { failure = handler }
+    }
+
+    func clearFailureHandler() {
+        lock.withLock { failure = nil }
     }
 
     func setFailureObserver(_ observer: @escaping @Sendable () -> Void) {
