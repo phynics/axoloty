@@ -90,7 +90,7 @@ private final class PresenceTestClock: Sendable {
 }
 
 private func presenceBuilder(capacities: RuntimeCapacities? = nil) throws(AxolotyError) -> RuntimeBuilder {
-    try RuntimeBuilder(sourceID: .zero, namespace: "presence", capacities: capacities, presencePolicy: .enabled)
+    try RuntimeBuilder(sourceID: .zero, namespace: "presence", capacities: capacities, presence: try RuntimePresenceConfiguration())
 }
 
 private func presenceObject(_ objectID: UUID16, name: String = "host-presence") throws(WireEncodeError) -> [UInt8] {
@@ -154,10 +154,11 @@ extension AxolotyRuntimeTests {
             try await runtime.start()
             Issue.record("expected presence composition to fail")
         } catch let error as AxolotyError {
-            guard case let .runtime(.notStarted, reason) = error else {
+            guard case let .invalidConfiguration(option, reason) = error else {
                 Issue.record("unexpected error \(error)")
                 return
             }
+            #expect(option == "presence")
             #expect(reason == "soft-state presence requires the axoloty/1 profile")
         }
         #expect(await transport.lifecycle.isEmpty)
@@ -170,13 +171,13 @@ extension AxolotyRuntimeTests {
         let identityBuilder = RuntimeBuilder.init(identity:namespace:capacities:)
         let identity = try RuntimeIdentity(id: .zero, name: "legacy")
         let fromIdentity = try identityBuilder(identity, "presence", nil).finish()
-        #expect(fromIdentity.presencePolicy == .disabled)
+        #expect(fromIdentity.presence == nil)
         let definition = try sourceBuilder(.zero, "presence", nil, nil).finish()
-        #expect(definition.presencePolicy == .disabled)
+        #expect(definition.presence == nil)
 
         let clock = PresenceTestClock()
         let transport = TestTransport(wireProfile: profile)
-        let runtime = AxolotyRuntime(definition: definition, transport: transport, presenceClock: clock.clock)
+        let runtime = AxolotyRuntime(definition: definition, transport: transport, presence: RuntimePresenceEnvironment(clock: clock.clock))
         defer { await runtime.stop() }
         let expiries = await runtime.presenceExpiries()
         try await withTimeout("disabled presence stream to finish") {
@@ -214,7 +215,7 @@ extension AxolotyRuntimeTests {
         let definition = try presenceBuilder(capacities: capacities).finish()
         let clock = PresenceTestClock()
         let transport = TestTransport(wireProfile: .axoloty1CBOR)
-        let runtime = AxolotyRuntime(definition: definition, transport: transport, presenceClock: clock.clock)
+        let runtime = AxolotyRuntime(definition: definition, transport: transport, presence: RuntimePresenceEnvironment(clock: clock.clock))
         defer { await runtime.stop() }
         #expect(await runtime.advertise(objectID: peer, object: object, leaseMS: 1_000) == .rejected(.notRunning(.stopped)))
         try await runtime.start()
@@ -233,10 +234,10 @@ extension AxolotyRuntimeTests {
         #expect(await transport.sentCount() == 0)
     }
 
-    @Test("leased admission reserves the automatic identity and typed IO object IDs")
-    func hostLeasedAdvertiseProtectsAutomaticAdvertisements() async throws {
+    @Test("leased admission leases the automatic identity and typed IO object IDs")
+    func hostPresenceLeasesIdentityAndTypedIoAdvertisements() async throws {
         let identity = try RuntimeIdentity(id: .zero, name: "presence-owner")
-        var builder = try RuntimeBuilder(identity: identity, namespace: "presence", presencePolicy: .enabled)
+        var builder = try RuntimeBuilder(identity: identity, namespace: "presence", presence: try RuntimePresenceConfiguration())
         let sourceJSON: StaticString = #"{"objectId":"00000000-0000-4000-8000-000000000401","objectType":"coaty.IoSource","name":"source","coreType":"IoSource","valueType":"com.example.Bool"}"#
         let endpoint = try builder.ioSource(
             metadata: try Object<IoSourceMetadata>(decoding: ByteSlice(
@@ -246,26 +247,76 @@ extension AxolotyRuntimeTests {
         )
         let clock = PresenceTestClock()
         let transport = TestTransport(wireProfile: .axoloty1CBOR)
-        let runtime = AxolotyRuntime(definition: try builder.finish(), transport: transport, presenceClock: clock.clock)
+        let runtime = AxolotyRuntime(definition: try builder.finish(), transport: transport, presence: RuntimePresenceEnvironment(clock: clock.clock))
         defer { await runtime.stop() }
         try await runtime.start()
+
+        let advertisements = await advertisePublications(transport)
+        #expect(advertisements.count == 2)
+        let suffixes = advertisements.map { $0.route.split(separator: "/").last.map(String.init) }
+        #expect(suffixes == [
+            CoatyRoute.uuidString(identity.id).lowercased(),
+            CoatyRoute.uuidString(endpoint.id.uuid).lowercased()
+        ])
+        var decodedObjectIDs: [UUID16] = []
+        for advertisement in advertisements {
+            let value = try advertisement.payload.withUnsafeBufferPointer { buffer throws(WireDecodeError) in
+                let reader = WireCodec(profile: .axoloty1CBOR).reader(bytes: buffer.baseAddress!, length: buffer.count)
+                return try AdvertiseWireData(from: reader)
+            }
+            #expect(value.leaseMS == 45_000)
+            #expect(value.ownerEpoch != nil)
+            decodedObjectIDs.append(
+                value.object.ownedBytes().withUnsafeBufferPointer { buffer in
+                    WireCodec(profile: .axoloty1CBOR).reader(bytes: buffer.baseAddress!, length: buffer.count).readUUID("objectId")
+                } ?? .zero
+            )
+        }
+        #expect(decodedObjectIDs == [identity.id, endpoint.id.uuid])
 
         for id in [identity.id, endpoint.id.uuid] {
             let object = try presenceObject(id)
             #expect(await runtime.advertise(objectID: id, object: object, leaseMS: 1_000)
                     == .rejected(.protocol(.duplicate)))
         }
-        try await clock.tick(at: 250)
-        #expect(await advertisePublications(transport).count == 2)
+
+        // The timer refreshes runtime-owned objects from the same table:
+        // the IO endpoint phase is 717 ms and the identity phase is 2,933 ms.
+        try await clock.tick(at: 750)
+        try await waitForPresence("typed IO refresh") { await advertisePublications(transport).count == 3 }
+        try await clock.tick(at: 3_000)
+        try await waitForPresence("identity refresh") { await advertisePublications(transport).count == 4 }
+        let refreshed = await advertisePublications(transport)
+        #expect(try presenceAdvertisedObjectID(refreshed[2].payload) == endpoint.id.uuid)
+        #expect(try presenceAdvertisedObjectID(refreshed[3].payload) == identity.id)
+        let refreshSuffixes = refreshed[2...3].map { $0.route.split(separator: "/").last.map(String.init) }
+        #expect(refreshSuffixes == [
+            CoatyRoute.uuidString(endpoint.id.uuid).lowercased(),
+            CoatyRoute.uuidString(identity.id).lowercased()
+        ])
+
+        // A Deadvertise from the runtime source cannot retire the IO endpoint:
+        // the endpoint owns its own source identity.
+        let endpointWithdrawal = try presenceDeadvertise(endpoint.id.uuid)
+        _ = await runtime.publish(.deadvertise(endpointWithdrawal))
+        try await clock.tick(at: 10_750)
+        try await waitForPresence("IO refresh after a foreign Deadvertise") {
+            await advertisePublications(transport).count == 5
+        }
+        let afterForeignWithdrawal = await advertisePublications(transport)
+        #expect(
+            afterForeignWithdrawal[4].route.split(separator: "/").last.map(String.init)
+                == CoatyRoute.uuidString(endpoint.id.uuid).lowercased()
+        )
     }
 
     @Test("identical declarations keep their phase and changed declarations reject atomically")
     func hostLeasedAdvertiseDeduplicatesAndRejectsAtomically() async throws {
         let capacities = try RuntimeCapacities(protocolMaximumObjects: 1)
-        let clock = PresenceTestClock()
+        let clock = PresenceTestClock(nowMS: 76)
         let transport = TestTransport(wireProfile: .axoloty1CBOR)
         let runtime = AxolotyRuntime(
-            definition: try presenceBuilder(capacities: capacities).finish(), transport: transport, presenceClock: clock.clock
+            definition: try presenceBuilder(capacities: capacities).finish(), transport: transport, presence: RuntimePresenceEnvironment(clock: clock.clock)
         )
         defer { await runtime.stop() }
         try await runtime.start()
@@ -275,9 +326,9 @@ extension AxolotyRuntimeTests {
         try await waitForPresence("initial managed Advertise") { await transport.publications().count == 1 }
 
         let before = await runtime.conformanceObservation().state
-        try await clock.tick(at: 150)
-        // The next phase is 177 ms and the next timer tick is 200 ms.
-        clock.advance(to: 180)
+        try await clock.tick(at: 200)
+        // The next phase is 350 ms; a repeat keeps it unchanged.
+        clock.advance(to: 230)
         #expect(await runtime.advertise(objectID: peer, object: object, leaseMS: 1_000) == .accepted)
         #expect(await runtime.advertise(objectID: peer, object: object, leaseMS: 1_001) == .rejected(.protocol(.duplicate)))
         let changed = try presenceObject(peer, name: "changed")
@@ -288,7 +339,7 @@ extension AxolotyRuntimeTests {
         let unmanagedLease = try RuntimeWirePayload.advertiseEnvelope(
             object: other, leaseMS: 1_000, ownerEpoch: 1, profile: .axoloty1CBOR
         )
-        #expect(await runtime.publish(.advertise(unmanagedLease)) == .rejected(.protocol(.unsupportedCapability)))
+        #expect(await runtime.publish(.advertise(unmanagedLease)) == .rejected(.malformedPayload))
         #expect(await runtime.advertise(objectID: Self.secondPresencePeer, object: other, leaseMS: 1_000)
                 == .rejected(.capacityExceeded))
 
@@ -296,7 +347,9 @@ extension AxolotyRuntimeTests {
         #expect(after.state == before)
         #expect(after.actions.isEmpty)
         #expect(await transport.sentCount() == 1)
-        try await clock.tick(at: 200)
+        try await clock.tick(at: 297)
+        #expect(await transport.sentCount() == 1)
+        try await clock.tick(at: 377)
         try await waitForPresence("refresh at the original phase") { await transport.publications().count == 2 }
         let sent = await advertisePublications(transport)
         #expect(sent.first == sent.last)
@@ -309,7 +362,7 @@ extension AxolotyRuntimeTests {
         var builder = try presenceBuilder()
         let announcements = try builder.events(matching: .family(.advertise))
         let transport = TestTransport(wireProfile: .axoloty1CBOR)
-        let runtime = AxolotyRuntime(definition: try builder.finish(), transport: transport, presenceClock: clock.clock)
+        let runtime = AxolotyRuntime(definition: try builder.finish(), transport: transport, presence: RuntimePresenceEnvironment(clock: clock.clock))
         defer { await runtime.stop() }
         try await runtime.start()
 
@@ -342,7 +395,7 @@ extension AxolotyRuntimeTests {
         let clock = PresenceTestClock()
         let transport = TestTransport(wireProfile: .axoloty1CBOR)
         let runtime = AxolotyRuntime(
-            definition: try presenceBuilder(capacities: capacities).finish(), transport: transport, presenceClock: clock.clock
+            definition: try presenceBuilder(capacities: capacities).finish(), transport: transport, presence: RuntimePresenceEnvironment(clock: clock.clock)
         )
         defer { await runtime.stop() }
         try await runtime.start()
@@ -373,7 +426,7 @@ extension AxolotyRuntimeTests {
         let clock = PresenceTestClock()
         let transport = TestTransport(wireProfile: .axoloty1CBOR)
         let runtime = AxolotyRuntime(
-            definition: try presenceBuilder().finish(), transport: transport, presenceClock: clock.clock
+            definition: try presenceBuilder().finish(), transport: transport, presence: RuntimePresenceEnvironment(clock: clock.clock)
         )
         defer { await runtime.stop() }
         try await runtime.start()
@@ -406,7 +459,7 @@ extension AxolotyRuntimeTests {
         let clock = PresenceTestClock()
         let transport = TestTransport(wireProfile: .axoloty1CBOR)
         let runtime = AxolotyRuntime(
-            definition: try presenceBuilder().finish(), transport: transport, presenceClock: clock.clock
+            definition: try presenceBuilder().finish(), transport: transport, presence: RuntimePresenceEnvironment(clock: clock.clock)
         )
         defer { await runtime.stop() }
         try await runtime.start()
@@ -435,12 +488,12 @@ extension AxolotyRuntimeTests {
 extension AxolotyRuntimeTests {
     @Test("refresh uses the same wire bytes without a second local event, receipt, or presence observation")
     func hostAdvertiseRefreshesIdenticalBytesWithoutLocalRedelivery() async throws {
-        // FNV-1a of the zero source ID gives phase 177 ms modulo 222 ms.
-        let clock = PresenceTestClock(nowMS: 177)
+        // FNV-1a of the zero source and peer object gives phase 76 ms modulo 222 ms.
+        let clock = PresenceTestClock(nowMS: 76)
         var builder = try presenceBuilder()
         let announcements = try builder.events(matching: .family(.advertise), buffering: .failAfterDrop(capacity: 1))
         let transport = TestTransport(wireProfile: .axoloty1CBOR)
-        let runtime = AxolotyRuntime(definition: try builder.finish(), transport: transport, presenceClock: clock.clock)
+        let runtime = AxolotyRuntime(definition: try builder.finish(), transport: transport, presence: RuntimePresenceEnvironment(clock: clock.clock))
         defer { await runtime.close() }
         try await runtime.start()
 
@@ -459,9 +512,9 @@ extension AxolotyRuntimeTests {
         #expect(first.route.hasSuffix("/00000000-0000-0000-0000-000000000000"))
         let before = await runtime.diagnosticsSnapshot()
 
-        try await clock.tick(at: 377)
+        try await clock.tick(at: 297)
         #expect(await transport.sentCount() == 1)
-        try await clock.tick(at: 427)
+        try await clock.tick(at: 377)
         try await waitForPresence("refresh at the next phase") { await transport.publications().count == 2 }
         #expect(await transport.publications() == [first, first])
         let after = await runtime.diagnosticsSnapshot()
@@ -490,7 +543,7 @@ extension AxolotyRuntimeTests {
         let clock = PresenceTestClock()
         let transport = TestTransport(wireProfile: .axoloty1CBOR)
         let runtime = AxolotyRuntime(
-            definition: try presenceBuilder(capacities: capacities).finish(), transport: transport, presenceClock: clock.clock
+            definition: try presenceBuilder(capacities: capacities).finish(), transport: transport, presence: RuntimePresenceEnvironment(clock: clock.clock)
         )
         defer {
             await transport.releasePublication()
@@ -513,7 +566,7 @@ extension AxolotyRuntimeTests {
         try await waitForPresence("first refresh in flight") { await transport.waitingForPublication() }
         try await clock.tick(at: 450)
         let inFlight = await runtime.conformanceObservation()
-        // A second slot is available. Only the in-flight refresh was admitted.
+        // The 45 s object is not due yet; only the in-flight refresh was admitted.
         try #require(inFlight.actions.count == 1)
         #expect(await transport.sentCount() == 3)
 
@@ -523,18 +576,20 @@ extension AxolotyRuntimeTests {
         let other = try presenceObject(Self.thirdPresencePeer)
         #expect(await runtime.advertise(objectID: Self.thirdPresencePeer, object: other, leaseMS: 1_000)
                 == .rejected(.capacityExceeded))
-        // With the refresh and Deadvertise occupying both slots, the 1,221 ms
+        // With the refresh and Deadvertise occupying both slots, the 4,539 ms
         // phase for the 45 s lease passes without admitting a refresh.
-        try await clock.tick(at: 1_250)
+        try await clock.tick(at: 4_575)
         let saturated = await runtime.conformanceObservation()
         #expect(saturated.state == before)
         #expect(saturated.actions.isEmpty)
         #expect(await runtime.diagnosticsSnapshot().dispatchSaturation == 0)
 
         await transport.releasePublication()
-        try await waitForPresence("refresh and subsequent withdrawal to finish") { await transport.publications().count == 4 }
-        try await clock.tick(at: 1_300)
-        try await waitForPresence("blocked object to refresh at the next tick") { await transport.publications().count == 5 }
+        try await waitForPresence("refresh and subsequent withdrawal to finish") { await transport.publications().count >= 4 }
+        try await clock.tick(at: 4_600)
+        try await waitForPresence("blocked object to refresh after capacity frees") {
+            await transport.publications().count >= 5
+        }
         #expect(await advertisePublications(transport) == [first, second, first, second])
     }
 
@@ -543,7 +598,7 @@ extension AxolotyRuntimeTests {
         let clock = PresenceTestClock()
         let transport = TestTransport(wireProfile: .axoloty1CBOR)
         let runtime = AxolotyRuntime(
-            definition: try presenceBuilder().finish(), transport: transport, presenceClock: clock.clock
+            definition: try presenceBuilder().finish(), transport: transport, presence: RuntimePresenceEnvironment(clock: clock.clock)
         )
         defer { await runtime.stop() }
         try await runtime.start()
@@ -578,11 +633,11 @@ extension AxolotyRuntimeTests {
         #expect(await advertisePublications(transport) == [initial])
         #expect(await transport.startCount() == (hard ? 2 : 1))
 
-        // The next phase after 1,200 ms is 1,287 ms. The 50 ms timer
-        // sees it at the second tick after recovery.
-        try await clock.tick(at: 1_250)
+        // The next phase after 1,200 ms is 1,408 ms. The 50 ms timer
+        // sees it on the first tick after recovery.
+        try await clock.tick(at: 1_407)
         #expect(await advertisePublications(transport) == [initial])
-        try await clock.tick(at: 1_300)
+        try await clock.tick(at: 1_450)
         try await waitForPresence("managed refresh in the new epoch") { await advertisePublications(transport).count == 2 }
         #expect(await advertisePublications(transport) == [initial, initial])
 
@@ -601,7 +656,7 @@ extension AxolotyRuntimeTests {
         let clock = PresenceTestClock()
         let transport = TestTransport(wireProfile: .axoloty1CBOR)
         let runtime = AxolotyRuntime(
-            definition: try presenceBuilder().finish(), transport: transport, presenceClock: clock.clock
+            definition: try presenceBuilder().finish(), transport: transport, presence: RuntimePresenceEnvironment(clock: clock.clock)
         )
         defer {
             await transport.releaseStart()
@@ -640,7 +695,7 @@ extension AxolotyRuntimeTests {
         let clock = PresenceTestClock()
         let transport = TestTransport(wireProfile: .axoloty1CBOR)
         let runtime = AxolotyRuntime(
-            definition: try presenceBuilder().finish(), transport: transport, presenceClock: clock.clock
+            definition: try presenceBuilder().finish(), transport: transport, presence: RuntimePresenceEnvironment(clock: clock.clock)
         )
         defer {
             await transport.releaseStart()
@@ -679,7 +734,7 @@ extension AxolotyRuntimeTests {
         let clock = PresenceTestClock()
         let transport = TestTransport(wireProfile: .axoloty1CBOR)
         let runtime = AxolotyRuntime(
-            definition: try presenceBuilder().finish(), transport: transport, presenceClock: clock.clock
+            definition: try presenceBuilder().finish(), transport: transport, presence: RuntimePresenceEnvironment(clock: clock.clock)
         )
         defer {
             await transport.releaseStart()
@@ -709,7 +764,7 @@ extension AxolotyRuntimeTests {
         let clock = PresenceTestClock()
         let transport = TestTransport(wireProfile: .axoloty1CBOR)
         let runtime = AxolotyRuntime(
-            definition: try presenceBuilder().finish(), transport: transport, presenceClock: clock.clock
+            definition: try presenceBuilder().finish(), transport: transport, presence: RuntimePresenceEnvironment(clock: clock.clock)
         )
         defer {
             await transport.releasePublication()
@@ -759,7 +814,7 @@ extension AxolotyRuntimeTests {
         let clock = PresenceTestClock()
         let transport = TestTransport(wireProfile: .axoloty1CBOR)
         let runtime = AxolotyRuntime(
-            definition: try presenceBuilder(capacities: capacities).finish(), transport: transport, presenceClock: clock.clock
+            definition: try presenceBuilder(capacities: capacities).finish(), transport: transport, presence: RuntimePresenceEnvironment(clock: clock.clock)
         )
         defer {
             await transport.releasePublication()
@@ -792,12 +847,123 @@ extension AxolotyRuntimeTests {
         await closing.value
         let messages = await transport.publications()
         #expect(messages.map { routeEventType($0.route) } == ["ADV", "ADV", "ADV", "DAD", "DAD"])
-        #expect(messages.dropFirst(2).first == initial.first)
+        // The 69 ms phase refreshes before the 76 ms phase, so stop delivers
+        // the later declaration's refresh and skips the earlier one.
+        #expect(messages.dropFirst(2).first == initial.last)
         let firstWithdrawal = try presenceDeadvertise(Self.presencePeer)
         let secondWithdrawal = try presenceDeadvertise(Self.secondPresencePeer)
         #expect(messages.suffix(2).map(\.payload) == [firstWithdrawal, secondWithdrawal])
         #expect(await transport.deactivationPublicationCounts == [5])
         #expect(await runtime.state() == .closed)
+    }
+
+    @Test("presence configuration validates its lease bounds")
+    func presenceConfigurationValidatesLeaseBounds() throws {
+        #expect(try RuntimePresenceConfiguration().leaseMS == 45_000)
+        #expect(try RuntimePresenceConfiguration(leaseMS: 1_000).leaseMS == 1_000)
+        #expect(try RuntimePresenceConfiguration(leaseMS: 3_600_000).leaseMS == 3_600_000)
+        for leaseMS: UInt32 in [0, 999, 3_600_001] {
+            do {
+                _ = try RuntimePresenceConfiguration(leaseMS: leaseMS)
+                Issue.record("expected lease \(leaseMS) to be rejected")
+            } catch let error {
+                guard case let .invalidArgument(argument, _) = error else {
+                    Issue.record("unexpected error \(error)")
+                    continue
+                }
+                #expect(argument == "presence.leaseMS")
+            }
+        }
+    }
+
+    @Test("the owner epoch is scoped to one runtime instance")
+    func hostPresenceOwnerEpochIsPerRuntimeInstance() async throws {
+        let identity = try RuntimeIdentity(id: .zero, name: "epoch-owner")
+        let definition = try RuntimeBuilder(
+            identity: identity,
+            namespace: "presence",
+            presence: try RuntimePresenceConfiguration()
+        ).finish()
+        var observed: [Int] = []
+        for ownerEpoch in [41, 42] {
+            let clock = PresenceTestClock()
+            let transport = TestTransport(wireProfile: .axoloty1CBOR)
+            let runtime = AxolotyRuntime(
+                definition: definition,
+                transport: transport,
+                presence: RuntimePresenceEnvironment(clock: clock.clock, ownerEpoch: ownerEpoch)
+            )
+            try await runtime.start()
+            let advertisement = try #require(await advertisePublications(transport).first)
+            let value = try advertisement.payload.withUnsafeBufferPointer { buffer throws(WireDecodeError) in
+                let reader = WireCodec(profile: .axoloty1CBOR).reader(bytes: buffer.baseAddress!, length: buffer.count)
+                return try AdvertiseWireData(from: reader)
+            }
+            observed.append(try #require(value.ownerEpoch))
+            await runtime.stop()
+        }
+        #expect(observed == [41, 42])
+    }
+
+    @Test("refresh phases spread objects instead of bursting in one tick")
+    func hostPresenceSpreadsRefreshPhaseAcrossObjects() async throws {
+        let clock = PresenceTestClock()
+        let transport = TestTransport(wireProfile: .axoloty1CBOR)
+        let runtime = AxolotyRuntime(
+            definition: try presenceBuilder().finish(),
+            transport: transport,
+            presence: RuntimePresenceEnvironment(clock: clock.clock)
+        )
+        defer { await runtime.stop() }
+        try await runtime.start()
+        for id in [Self.presencePeer, Self.secondPresencePeer] {
+            try #require(await runtime.advertise(objectID: id, object: try presenceObject(id), leaseMS: 10_000) == .accepted)
+        }
+        try await waitForPresence("initial advertisements") { await advertisePublications(transport).count == 2 }
+
+        // The second object's phase is 177 ms and the first object's is 1,658 ms.
+        try await clock.tick(at: 200)
+        try await waitForPresence("second object refresh") { await advertisePublications(transport).count == 3 }
+        let firstRefresh = await advertisePublications(transport)
+        #expect(try presenceAdvertisedObjectID(firstRefresh[2].payload) == Self.secondPresencePeer)
+        try await clock.tick(at: 1_700)
+        try await waitForPresence("first object refresh") { await advertisePublications(transport).count == 4 }
+        let secondRefresh = await advertisePublications(transport)
+        #expect(try presenceAdvertisedObjectID(secondRefresh[3].payload) == Self.presencePeer)
+    }
+
+    @Test("stop aborts withdrawal after the first dead-transport failure")
+    func hostStopOnDeadTransportAbortsWithdrawalAfterFirstFailure() async throws {
+        let clock = PresenceTestClock()
+        let transport = TestTransport(wireProfile: .axoloty1CBOR)
+        let runtime = AxolotyRuntime(
+            definition: try presenceBuilder().finish(),
+            transport: transport,
+            presence: RuntimePresenceEnvironment(clock: clock.clock)
+        )
+        try await runtime.start()
+        for id in [Self.presencePeer, Self.secondPresencePeer] {
+            try #require(await runtime.advertise(objectID: id, object: try presenceObject(id), leaseMS: 1_000) == .accepted)
+        }
+        try await waitForPresence("initial advertisements") { await transport.publications().count == 2 }
+        await transport.failNextPublication()
+        await runtime.stop()
+        #expect(await runtime.state() == .stopped)
+        // Initial two Advertise publications plus exactly one attempted withdrawal.
+        #expect(await transport.sentCount() == 3)
+    }
+}
+
+private func presenceAdvertisedObjectID(_ payload: [UInt8]) throws(WireDecodeError) -> UUID16? {
+    try payload.withUnsafeBufferPointer { buffer throws(WireDecodeError) -> UUID16? in
+        let reader = WireCodec(profile: .axoloty1CBOR).reader(bytes: buffer.baseAddress!, length: buffer.count)
+        let value = try AdvertiseWireData(from: reader)
+        let object = value.object.ownedBytes()
+        return object.withUnsafeBufferPointer { objectBuffer in
+            WireCodec(profile: .axoloty1CBOR)
+                .reader(bytes: objectBuffer.baseAddress!, length: objectBuffer.count)
+                .readUUID("objectId")
+        }
     }
 }
 

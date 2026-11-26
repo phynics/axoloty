@@ -577,10 +577,10 @@
           "classification": "intentional-stable-api"
         },
         {
-          "identifier": "s:7Axoloty14RuntimeBuilderV8identity9namespace10capacities14presencePolicyAcA0B8IdentityV_SSAA0B10CapacitiesVSg0A8Protocol0k8PresenceH0OtAA0A5ErrorOYKcfc",
-          "name": "init(identity:namespace:capacities:presencePolicy:)",
+          "identifier": "s:7Axoloty14RuntimeBuilderV8identity9namespace10capacities8presenceAcA0B8IdentityV_SSAA0B10CapacitiesVSgAA0B21PresenceConfigurationVtAA0A5ErrorOYKcfc",
+          "name": "init(identity:namespace:capacities:presence:)",
           "kind": "swift.init",
-          "declaration": "init(identity: RuntimeIdentity, namespace: String, capacities: RuntimeCapacities? = nil, presencePolicy: ProtocolPresencePolicy) throws(AxolotyError)",
+          "declaration": "init(identity: RuntimeIdentity, namespace: String, capacities: RuntimeCapacities? = nil, presence: RuntimePresenceConfiguration) throws(AxolotyError)",
           "classification": "intentional-stable-api"
         },
         {
@@ -612,10 +612,10 @@
           "classification": "intentional-stable-api"
         },
         {
-          "identifier": "s:7Axoloty14RuntimeBuilderV8sourceID9namespace8identity10capacities14presencePolicyAC0A4Wire6UUID16V_SSAA0B8IdentityVSgAA0B10CapacitiesVSg0A8Protocol0o8PresenceJ0OtAA0A5ErrorOYKcfc",
-          "name": "init(sourceID:namespace:identity:capacities:presencePolicy:)",
+          "identifier": "s:7Axoloty14RuntimeBuilderV8sourceID9namespace8identity10capacities8presenceAC0A4Wire6UUID16V_SSAA0B8IdentityVSgAA0B10CapacitiesVSgAA0B21PresenceConfigurationVtAA0A5ErrorOYKcfc",
+          "name": "init(sourceID:namespace:identity:capacities:presence:)",
           "kind": "swift.init",
-          "declaration": "init(sourceID: UUID16, namespace: String, identity: RuntimeIdentity? = nil, capacities: RuntimeCapacities? = nil, presencePolicy: ProtocolPresencePolicy) throws(AxolotyError)",
+          "declaration": "init(sourceID: UUID16, namespace: String, identity: RuntimeIdentity? = nil, capacities: RuntimeCapacities? = nil, presence: RuntimePresenceConfiguration) throws(AxolotyError)",
           "classification": "intentional-stable-api"
         },
         {
@@ -1151,13 +1151,6 @@
           "classification": "intentional-stable-api"
         },
         {
-          "identifier": "s:7Axoloty17RuntimeDefinitionV14presencePolicy0A8Protocol0f8PresenceE0Ovp",
-          "name": "presencePolicy",
-          "kind": "swift.property",
-          "declaration": "var presencePolicy: ProtocolPresencePolicy { get }",
-          "classification": "intentional-stable-api"
-        },
-        {
           "identifier": "s:7Axoloty17RuntimeDefinitionV15ioEndpointCountSivp",
           "name": "ioEndpointCount",
           "kind": "swift.property",
@@ -1176,6 +1169,13 @@
           "name": "identity",
           "kind": "swift.property",
           "declaration": "let identity: RuntimeIdentity?",
+          "classification": "intentional-stable-api"
+        },
+        {
+          "identifier": "s:7Axoloty17RuntimeDefinitionV8presenceAA0B21PresenceConfigurationVSgvp",
+          "name": "presence",
+          "kind": "swift.property",
+          "declaration": "var presence: RuntimePresenceConfiguration? { get }",
           "classification": "intentional-stable-api"
         },
         {
@@ -3118,6 +3118,27 @@
           "classification": "intentional-stable-api"
         },
         {
+          "identifier": "s:7Axoloty28RuntimePresenceConfigurationV",
+          "name": "RuntimePresenceConfiguration",
+          "kind": "swift.struct",
+          "declaration": "struct RuntimePresenceConfiguration",
+          "classification": "intentional-stable-api"
+        },
+        {
+          "identifier": "s:7Axoloty28RuntimePresenceConfigurationV7leaseMSACs6UInt32V_tAA0A5ErrorOYKcfc",
+          "name": "init(leaseMS:)",
+          "kind": "swift.init",
+          "declaration": "init(leaseMS: UInt32 = 45_000) throws(AxolotyError)",
+          "classification": "intentional-stable-api"
+        },
+        {
+          "identifier": "s:7Axoloty28RuntimePresenceConfigurationV7leaseMSs6UInt32Vvp",
+          "name": "leaseMS",
+          "kind": "swift.property",
+          "declaration": "let leaseMS: UInt32",
+          "classification": "intentional-stable-api"
+        },
+        {
           "identifier": "s:7Axoloty28RuntimeTransportCapabilitiesV",
           "name": "RuntimeTransportCapabilities",
           "kind": "swift.struct",
@@ -3553,6 +3574,13 @@
         },
         {
           "identifier": "s:SQsRi_zRi0_zrlE2neoiySbx_xtFZ::SYNTHESIZED::s:7Axoloty28RuntimeCapabilityInformationV",
+          "name": "!=(_:_:)",
+          "kind": "swift.func.op",
+          "declaration": "static func != (lhs: borrowing Self, rhs: borrowing Self) -> Bool",
+          "classification": "intentional-stable-api"
+        },
+        {
+          "identifier": "s:SQsRi_zRi0_zrlE2neoiySbx_xtFZ::SYNTHESIZED::s:7Axoloty28RuntimePresenceConfigurationV",
           "name": "!=(_:_:)",
           "kind": "swift.func.op",
           "declaration": "static func != (lhs: borrowing Self, rhs: borrowing Self) -> Bool",

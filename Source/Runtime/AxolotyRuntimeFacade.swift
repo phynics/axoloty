@@ -5,6 +5,7 @@ import AxolotyWire
 import Foundation
 
 struct RuntimePresencePublicationToken: Sendable, Equatable {
+    let sourceID: UUID16
     let objectID: UUID16
     let transportEpoch: UInt64
     let batchID: UInt64
@@ -81,15 +82,19 @@ public final class AxolotyRuntime: Sendable {
 
     /// Creates a stopped runtime from an immutable definition.
     public init(definition: RuntimeDefinition, transport: AxolotyRuntimeTransport) {
-        self.executor = ProtocolExecutor(definition: definition, transport: transport, presenceClock: .uptime)
+        self.executor = ProtocolExecutor(
+            definition: definition,
+            transport: transport,
+            presence: RuntimePresenceEnvironment()
+        )
     }
 
     package init(
         definition: RuntimeDefinition,
         transport: AxolotyRuntimeTransport,
-        presenceClock: RuntimePresenceClock
+        presence environment: RuntimePresenceEnvironment
     ) {
-        self.executor = ProtocolExecutor(definition: definition, transport: transport, presenceClock: presenceClock)
+        self.executor = ProtocolExecutor(definition: definition, transport: transport, presence: environment)
     }
 
     /// The executor-backed typed IO capability.
@@ -98,7 +103,7 @@ public final class AxolotyRuntime: Sendable {
     /// Starts the runtime transport and protocol executor.
     public func start() async throws {
         if let failure = await executor.start() {
-            throw AxolotyError.runtime(code: failure.0, reason: failure.1)
+            throw failure
         }
     }
 

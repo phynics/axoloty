@@ -57,7 +57,11 @@ private final class RuntimeTransportNotificationSequence: Sendable {
 // swiftlint:disable:next type_body_length
 actor ProtocolExecutor {
     private struct LocalPresenceRecord {
+        enum Owner { case runtime, application }
+
+        let sourceID: UUID16
         let objectID: UUID16
+        let owner: Owner
         let envelope: [UInt8]
         let intervalMS: UInt64
         let phaseMS: UInt64
@@ -70,8 +74,6 @@ actor ProtocolExecutor {
         }
     }
 
-    /// One random owner epoch per host process.
-    private static let processPresenceEpoch = Int.random(in: 1...Int(Int32.max))
     private static let presenceTickMS: UInt64 = 50
 
     let definition: RuntimeDefinition
@@ -149,24 +151,27 @@ actor ProtocolExecutor {
     private let diagnosticContinuation: AsyncStream<RuntimeDiagnostic>.Continuation
     private let presencePolicy: ProtocolPresencePolicy
     private let presenceClock: RuntimePresenceClock
-    private let presenceSourceHash: UInt64
+    /// One random owner epoch per runtime instance, not per process.
+    private let presenceEpoch: Int
     private var localPresence: [LocalPresenceRecord] = []
     private var nextPresenceBatchID: UInt64 = 0
     private var presenceTask: Task<Void, Never>?
+    private var presenceRefreshDeferred = false
     private let presenceExpiryStream: AsyncStream<RuntimePresenceExpiry>
     private let presenceExpiryContinuation: AsyncStream<RuntimePresenceExpiry>.Continuation
 
-    init(definition: RuntimeDefinition, transport: AxolotyRuntimeTransport, presenceClock: RuntimePresenceClock) {
+    init(
+        definition: RuntimeDefinition,
+        transport: AxolotyRuntimeTransport,
+        presence environment: RuntimePresenceEnvironment
+    ) {
         self.definition = definition
         self.transport = transport
         let wireProfile = transport.wireProfile
         self.wireProfile = wireProfile
         self.presencePolicy = wireProfile == .axoloty1CBOR ? definition.presencePolicy : .disabled
-        self.presenceClock = presenceClock
-        // FNV-1a over the UUID's 16 bytes gives the same phase across processes.
-        self.presenceSourceHash = withUnsafeBytes(of: definition.sourceID.bytes) { bytes in
-            bytes.reduce(0xcbf29ce484222325) { ($0 ^ UInt64($1)) &* 0x100000001b3 }
-        }
+        self.presenceClock = environment.clock
+        self.presenceEpoch = environment.ownerEpoch ?? Int.random(in: 1...Int(Int32.max))
         if self.presencePolicy == .enabled {
             do {
                 self.processor = try ProtocolProcessor<64>(
@@ -220,24 +225,27 @@ actor ProtocolExecutor {
         )
     }
 
-    func start() async -> (AxolotyError.RuntimeErrorCode, String)? {
+    func start() async -> AxolotyError? {
         switch state {
         case .running:
-            return (.notStarted, "runtime is already running")
+            return .runtime(code: .notStarted, reason: "runtime is already running")
         case .closed:
-            return (.notStarted, "runtime is closed")
+            return .runtime(code: .notStarted, reason: "runtime is closed")
         case .starting, .reconnecting, .stopping:
-            return (.notStarted, "runtime lifecycle transition is already in progress")
+            return .runtime(code: .notStarted, reason: "runtime lifecycle transition is already in progress")
         case .failed:
-            return (.notStarted, "runtime failed; stop it before restarting")
+            return .runtime(code: .notStarted, reason: "runtime failed; stop it before restarting")
         case .stopped:
             guard !hasStarted else {
-                return (.notStarted, "runtime instances are single-use; construct a new instance")
+                return .runtime(code: .notStarted, reason: "runtime instances are single-use; construct a new instance")
             }
             break
         }
-        if definition.presencePolicy == .enabled, wireProfile != .axoloty1CBOR {
-            return (.notStarted, "soft-state presence requires the axoloty/1 profile")
+        if definition.presence != nil, wireProfile != .axoloty1CBOR {
+            return .invalidConfiguration(
+                option: "presence",
+                reason: "soft-state presence requires the axoloty/1 profile"
+            )
         }
         hasStarted = true
         recoveryArrivedBeforeFailure = false
@@ -255,7 +263,7 @@ actor ProtocolExecutor {
             // installed. Starting now would open a connection after the host
             // already stopped.
             guard state == .starting, transportEpoch == epoch else {
-                return (.notStarted, "runtime start was superseded before the transport started")
+                return .runtime(code: .notStarted, reason: "runtime start was superseded before the transport started")
             }
             try await transport.start(
                 receive: transportReceiveHandler(),
@@ -263,18 +271,25 @@ actor ProtocolExecutor {
             )
             guard state == .starting, transportEpoch == epoch else {
                 await transport.stop()
-                return (.notStarted, "runtime start was superseded by another lifecycle transition")
+                return .runtime(code: .notStarted, reason: "runtime start was superseded by another lifecycle transition")
             }
             try await transport.activateProfileInterest(namespace: definition.namespace)
             guard state == .starting, transportEpoch == epoch else {
                 await transport.stop()
-                return (.notStarted, "runtime start was superseded while activating profile interest")
+                return .runtime(
+                    code: .notStarted,
+                    reason: "runtime start was superseded while activating profile interest"
+                )
             }
-            try await publishLifecycleAdvertisement(nowMS: monotonicNowMS())
-            try await publishIoAdvertisements(nowMS: monotonicNowMS())
+            if presencePolicy == .enabled {
+                try await announceRuntimePresence(nowMS: presenceClock.nowMS())
+            } else {
+                try await publishLifecycleAdvertisement(nowMS: monotonicNowMS())
+                try await publishIoAdvertisements(nowMS: monotonicNowMS())
+            }
             guard state == .starting, transportEpoch == epoch else {
                 await transport.stop()
-                return (.notStarted, "runtime start was superseded during advertisement")
+                return .runtime(code: .notStarted, reason: "runtime start was superseded during advertisement")
             }
             transition(to: .running)
             if presencePolicy == .enabled {
@@ -298,7 +313,7 @@ actor ProtocolExecutor {
                     ))
                 )
             }
-            return (.brokerUnavailable, runtimeErrorDetail(error))
+            return .runtime(code: .brokerUnavailable, reason: runtimeErrorDetail(error))
         }
     }
 
@@ -334,8 +349,8 @@ actor ProtocolExecutor {
         if drainBeforeClose {
             finishOutboundPump()
             await joinOutboundPump(epoch: epoch)
-            await withdrawLocalPresence()
             do {
+                try await withdrawApplicationPresence()
                 try await publishIoDeadvertisements(nowMS: monotonicNowMS())
                 try await publishLifecycleDeadvertisement(nowMS: monotonicNowMS())
             } catch {
@@ -530,7 +545,7 @@ actor ProtocolExecutor {
             envelope = try RuntimeWirePayload.advertiseEnvelope(
                 object: object,
                 leaseMS: Int(leaseMS),
-                ownerEpoch: Self.processPresenceEpoch,
+                ownerEpoch: presenceEpoch,
                 profile: wireProfile,
                 capacity: maximumPayloadBytes
             )
@@ -543,14 +558,93 @@ actor ProtocolExecutor {
         guard localPresence.count < definition.capacities.protocolMaximumObjects else {
             return .rejected(.capacityExceeded)
         }
-        let intervalMS = max(Self.presenceTickMS, UInt64(leaseMS) * 2 / 9)
+        let intervalMS = presenceRefreshIntervalMS(leaseMS: leaseMS)
         let record = LocalPresenceRecord(
+            sourceID: definition.sourceID,
             objectID: objectID,
+            owner: .application,
             envelope: envelope,
             intervalMS: intervalMS,
-            phaseMS: presenceSourceHash % intervalMS
+            phaseMS: runtimePresencePhase(
+                sourceID: definition.sourceID,
+                objectID: objectID,
+                intervalMS: intervalMS
+            )
         )
         return publishPresenceAdvertisement(record, refreshIndex: nil, nowMS: presenceClock.nowMS())
+    }
+
+    private func presenceRefreshIntervalMS(leaseMS: UInt32) -> UInt64 {
+        max(Self.presenceTickMS, UInt64(leaseMS) * 2 / 9)
+    }
+
+    private func presenceAdvertisementError(_ error: ProtocolError) -> AxolotyError {
+        error.code == .capacityExceeded
+            ? .runtime(code: .capacityExceeded, reason: "presence advertisement exceeds the payload bound")
+            : .invalidConfiguration(option: "presence", reason: "presence advertisement could not be encoded")
+    }
+
+    /// Announces the identity and typed IO endpoints with the configured
+    /// presence lease and installs their refresh records.
+    ///
+    /// - Parameter nowMS: The presence clock time used for the refresh phase.
+    /// - Throws: ``AxolotyError`` when an envelope cannot be built or published.
+    private func announceRuntimePresence(nowMS: UInt64) async throws(AxolotyError) {
+        guard let configuration = definition.presence, presencePolicy == .enabled else { return }
+        let maximumPayloadBytes = definition.capacities.protocolMaximumPayloadBytes
+        var announcements: [(sourceID: UUID16, objectID: UUID16, envelope: [UInt8])] = []
+        if let identity = definition.identity {
+            do {
+                let envelope = try RuntimeWirePayload.cborAdvertise(
+                    identity: identity,
+                    leaseMS: Int(configuration.leaseMS),
+                    ownerEpoch: presenceEpoch,
+                    capacity: maximumPayloadBytes
+                )
+                announcements.append((identity.id, identity.id, envelope))
+            } catch {
+                throw presenceAdvertisementError(error)
+            }
+        }
+        for endpoint in typedIoState.endpointRegistrations {
+            do {
+                let envelope = try runtimeAdvertisePayload(
+                    objectBytes: endpoint.objectBytes,
+                    profile: wireProfile,
+                    leaseMS: Int(configuration.leaseMS),
+                    ownerEpoch: presenceEpoch,
+                    capacity: maximumPayloadBytes
+                )
+                announcements.append((endpoint.id.uuid, endpoint.id.uuid, envelope))
+            } catch {
+                throw presenceAdvertisementError(error)
+            }
+        }
+        localPresence.removeAll { $0.owner == .runtime }
+        guard localPresence.count + announcements.count <= definition.capacities.protocolMaximumObjects else {
+            throw .runtime(code: .capacityExceeded, reason: "the presence table is full")
+        }
+        let intervalMS = presenceRefreshIntervalMS(leaseMS: configuration.leaseMS)
+        presenceRefreshDeferred = false
+        for announcement in announcements {
+            let operation = RuntimeOperation.advertise(sourceID: announcement.sourceID, payload: announcement.envelope)
+            try await publishLifecycle(operation, nowMS: UInt32(truncatingIfNeeded: nowMS))
+            var record = LocalPresenceRecord(
+                sourceID: announcement.sourceID,
+                objectID: announcement.objectID,
+                owner: .runtime,
+                envelope: announcement.envelope,
+                intervalMS: intervalMS,
+                phaseMS: runtimePresencePhase(
+                    sourceID: announcement.sourceID,
+                    objectID: announcement.objectID,
+                    intervalMS: intervalMS
+                )
+            )
+            record.nextRefreshAtMS = record.nextPhase(after: nowMS)
+            localPresence.append(record)
+        }
+        lifecycleAdvertisementActive = definition.identity != nil
     }
 
     private func publishPresenceAdvertisement(
@@ -561,8 +655,9 @@ actor ProtocolExecutor {
         guard outboundContinuation != nil, remainingOutboundCapacity > 0 else {
             return .rejected(.capacityExceeded)
         }
-        let operation = RuntimeOperation.advertise(sourceID: definition.sourceID, payload: record.envelope)
+        let operation = RuntimeOperation.advertise(sourceID: record.sourceID, payload: record.envelope)
         let token = RuntimePresencePublicationToken(
+            sourceID: record.sourceID,
             objectID: record.objectID,
             transportEpoch: transportEpoch,
             batchID: nextPresenceBatchID
@@ -593,7 +688,8 @@ actor ProtocolExecutor {
     }
 
     private func startPresenceTimer(nowMS: UInt64) {
-        guard state == .running, presenceTask == nil else { return }
+        guard state == .running else { return }
+        presenceTask?.cancel()
         let epoch = transportEpoch
         presenceTask = Task { [weak self, clock = presenceClock] in
             var deadline = nowMS + Self.presenceTickMS
@@ -619,15 +715,31 @@ actor ProtocolExecutor {
         guard !Task.isCancelled, state == .running, transportEpoch == epoch else { return nil }
         let nowMS = presenceClock.nowMS()
         expirePeerPresence(nowMS: UInt32(truncatingIfNeeded: nowMS))
+        publishDuePresence(nowMS: nowMS)
+        return nowMS
+    }
+
+    /// Publishes every due refresh that fits the outbound budget.
+    ///
+    /// A capacity rejection leaves the record due and marks the refresh
+    /// deferred so the outbound pump retries it when it frees a slot.
+    private func publishDuePresence(nowMS: UInt64) {
+        presenceRefreshDeferred = false
         let due = localPresence.indices.filter { index in
             let record = localPresence[index]
             return record.pendingBatch == nil && record.nextRefreshAtMS <= nowMS
         }.sorted { localPresence[$0].nextRefreshAtMS < localPresence[$1].nextRefreshAtMS }
         for index in due {
-            guard state == .running, remainingOutboundCapacity > 0 else { break }
-            _ = publishPresenceAdvertisement(localPresence[index], refreshIndex: index, nowMS: nowMS)
+            guard state == .running, remainingOutboundCapacity > 0 else {
+                presenceRefreshDeferred = true
+                break
+            }
+            let receipt = publishPresenceAdvertisement(localPresence[index], refreshIndex: index, nowMS: nowMS)
+            if case .rejected(.capacityExceeded) = receipt {
+                presenceRefreshDeferred = true
+                break
+            }
         }
-        return nowMS
     }
 
     private func expirePeerPresence(nowMS: UInt32) {
@@ -649,23 +761,27 @@ actor ProtocolExecutor {
 
     private func resumePresence(nowMS: UInt64) {
         processor.resumePresence(nowMS: UInt32(truncatingIfNeeded: nowMS))
+        presenceRefreshDeferred = false
         for index in localPresence.indices {
             localPresence[index].pendingBatch = nil
             localPresence[index].nextRefreshAtMS = localPresence[index].nextPhase(after: nowMS)
         }
     }
 
-    private func withdrawLocalPresence() async {
-        for record in localPresence {
-            do {
-                try await publishDeadvertisement(
-                    objectID: record.objectID,
-                    sourceID: definition.sourceID,
-                    nowMS: monotonicNowMS()
-                )
-            } catch {
-                emitTransportFailure(error)
-            }
+    /// Withdraws application-owned leases in declaration order.
+    ///
+    /// Runtime-owned identity and typed IO withdrawals follow separately so
+    /// stop keeps its established ordering.
+    ///
+    /// - Throws: ``AxolotyError`` at the first transport failure so a dead
+    ///   transport does not wait for one publish timeout per record.
+    private func withdrawApplicationPresence() async throws(AxolotyError) {
+        for record in localPresence where record.owner == .application {
+            try await publishDeadvertisement(
+                objectID: record.objectID,
+                sourceID: definition.sourceID,
+                nowMS: monotonicNowMS()
+            )
         }
     }
 
@@ -716,11 +832,15 @@ actor ProtocolExecutor {
             try await transport.activateProfileInterest(namespace: definition.namespace)
             guard !Task.isCancelled, reconnectAttemptIsCurrent(epoch) else { return }
         }
-        try await publishLifecycleAdvertisement(nowMS: monotonicNowMS())
-        guard !Task.isCancelled, reconnectAttemptIsCurrent(epoch) else { return }
-        try await publishIoAdvertisements(nowMS: monotonicNowMS())
-        guard !Task.isCancelled, reconnectAttemptIsCurrent(epoch) else { return }
         let presenceReadyMS = presencePolicy == .enabled ? presenceClock.nowMS() : nil
+        if let presenceReadyMS {
+            try await announceRuntimePresence(nowMS: presenceReadyMS)
+        } else {
+            try await publishLifecycleAdvertisement(nowMS: monotonicNowMS())
+            guard !Task.isCancelled, reconnectAttemptIsCurrent(epoch) else { return }
+            try await publishIoAdvertisements(nowMS: monotonicNowMS())
+        }
+        guard !Task.isCancelled, reconnectAttemptIsCurrent(epoch) else { return }
         if let presenceReadyMS { resumePresence(nowMS: presenceReadyMS) }
         transition(to: .running)
         softRecoveryConsumed = true
@@ -1032,6 +1152,9 @@ actor ProtocolExecutor {
                 transportExternalRoutes.remove(at: index)
             }
         }
+        if presenceRefreshDeferred, state == .running, remainingOutboundCapacity > 0 {
+            publishDuePresence(nowMS: presenceClock.nowMS())
+        }
         flushOfflineOperations(nowMS: monotonicNowMS())
     }
 
@@ -1159,12 +1282,19 @@ actor ProtocolExecutor {
         let maximumActionCount = operation.capability == .associate
             ? min(definition.capacities.dispatch, remainingOutboundCapacity + 1)
             : remainingOutboundCapacity
+        let processorNowMS = presencePolicy == .enabled && operation.capability == .advertise
+            ? UInt32(truncatingIfNeeded: presenceClock.nowMS())
+            : nowMS
         let outcome = processOutboundOperation(
             operation,
-            nowMS: nowMS,
+            nowMS: processorNowMS,
             maximumActionCount: maximumActionCount
         ) {
-            if !withdrawals.isEmpty { localPresence.removeAll { withdrawals.contains($0.objectID) } }
+            if !withdrawals.isEmpty {
+                localPresence.removeAll {
+                    $0.sourceID == operation.sourceID && withdrawals.contains($0.objectID)
+                }
+            }
             dispatchActions(nowMS: nowMS)
         }
         let receipt = receipt(for: outcome)
@@ -1186,11 +1316,13 @@ actor ProtocolExecutor {
             guard let base = buffer.baseAddress else { return .malformedPayload }
             let reader = codec.reader(bytes: base, length: buffer.count)
             guard reader.readField("leaseMs") == nil, reader.readField("ownerEpoch") == nil else {
-                return .protocol(.unsupportedCapability)
+                return .malformedPayload
             }
             guard operation.sourceID == definition.sourceID else { return nil }
             let objectID = advertisedObjectID(in: reader, codec: codec) ?? operation.sourceID
-            return localPresence.contains(where: { $0.objectID == objectID }) ? .protocol(.duplicate) : nil
+            return localPresence.contains(where: {
+                $0.sourceID == operation.sourceID && $0.objectID == objectID
+            }) ? .protocol(.duplicate) : nil
         }
     }
 
@@ -1203,7 +1335,9 @@ actor ProtocolExecutor {
             var ids: Set<UUID16> = []
             do {
                 try reader.readIdentifierElements("objectIds") { id in
-                    if let id, localPresence.contains(where: { $0.objectID == id }) { ids.insert(id) }
+                    if let id, localPresence.contains(where: {
+                        $0.sourceID == operation.sourceID && $0.objectID == id
+                    }) { ids.insert(id) }
                 }
             } catch {
                 // The processor supplies the structured rejection for invalid wire input.

@@ -345,9 +345,12 @@ private func ioPublicationReceipt(for outcome: RuntimeReceipt) -> IoPublicationR
     }
 }
 
-private func runtimeAdvertisePayload(
+func runtimeAdvertisePayload(
     objectBytes: BoundedIoBytes<2048>,
-    profile: WireProfile
+    profile: WireProfile,
+    leaseMS: Int? = nil,
+    ownerEpoch: Int? = nil,
+    capacity: Int = WireBufferConfig.maxPayloadSize
 ) throws(ProtocolError) -> [UInt8] {
     switch profile {
     case .coaty3JSON:
@@ -359,7 +362,13 @@ private func runtimeAdvertisePayload(
         // envelope and IO schema fields as CBOR instead of transcoding raw
         // fields between profiles.
         let object = try RuntimeWirePayload.cborIoEndpointObject(storedJSON: objectBytes)
-        return try RuntimeWirePayload.advertiseEnvelope(object: object, profile: .axoloty1CBOR)
+        return try RuntimeWirePayload.advertiseEnvelope(
+            object: object,
+            leaseMS: leaseMS,
+            ownerEpoch: ownerEpoch,
+            profile: .axoloty1CBOR,
+            capacity: capacity
+        )
     }
 }
 
