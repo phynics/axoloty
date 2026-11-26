@@ -322,7 +322,11 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
     /// Suspends peer expiry for an interrupted transport.
     ///
     /// Leased peer entries and local replayable entries survive; unleased peer
-    /// entries are discarded like a hard reset. Repeated calls are idempotent.
+    /// entries are discarded like a hard reset. Like ``resetTransport()``, it
+    /// also clears every association row and every pending request correlation;
+    /// a re-announce after resume re-establishes routing. The first suspend on
+    /// the active edge advances the generation even when no entry changes;
+    /// repeated calls on the suspended edge are idempotent.
     public mutating func suspendPresence() {
         guard presenceState == .active else { return }
         for index in 0..<capacity {
@@ -343,13 +347,15 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
     /// Re-bases retained leased peers after the transport is usable again.
     ///
     /// The caller supplies the resume time; the processor never reads a clock.
-    /// Repeated calls on the same edge are idempotent and do not advance the
+    /// Only peer entries are re-based; local entries keep their own time.
+    /// Repeated calls on the resolved edge are idempotent, and a resume without
+    /// a preceding suspend is a no-op that neither re-bases nor advances the
     /// generation.
     ///
     /// - Parameter nowMS: Caller-supplied monotonic time in milliseconds.
     public mutating func resumePresence(nowMS: UInt32) {
         guard presenceState == .suspended else { return }
-        for index in 0..<capacity where objects[index].active && objects[index].leaseMS > 0 {
+        for index in 0..<capacity where objects[index].active && !objects[index].local && objects[index].leaseMS > 0 {
             objects[index].lastSeenMS = nowMS
         }
         presenceState = .active
@@ -373,6 +379,11 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
     /// Resets transport-local state while retaining the processor's static
     /// configuration. Local advertisement identities remain in the logical
     /// registry and become replayable; peer-only records are discarded.
+    ///
+    /// With presence enabled this is a hard reset: it discards leased peers,
+    /// clears any suspension, and returns the policy to active. Soft transport
+    /// loss must use ``suspendPresence()`` and ``resumePresence(nowMS:)`` so a
+    /// short reconnect inside the lease causes no departure.
     public mutating func resetTransport() {
         for index in 0..<capacity {
             associations[index] = Association()
@@ -458,7 +469,7 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
         }
         let valid = validatePayload(frame.payload, for: frame.routingKey.capability)
         guard valid else { return .rejected(.malformedPayload) }
-        if presenceState == .active, frame.routingKey.capability == .advertise {
+        if presenceState != .disabled, frame.routingKey.capability == .advertise {
             return processPresenceAdvertise(frame, nowMS: nowMS, sink: &sink)
         }
         var ioActorActionCount = 0
@@ -927,6 +938,11 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
         return .accepted
     }
 
+    /// Emits a re-announcement after the sink admits every action.
+    ///
+    /// Kept out of line so its route, role, and release temporaries do not
+    /// inflate the generic inbound frame.
+    @inline(never)
     private mutating func reannouncePresence<S: ~Copyable & ProtocolActionSink>(
         index: Int,
         objectID: UUID16,
@@ -975,7 +991,8 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
         }
     }
 
-    private borrowing func planAssociationReleases(for objectID: UUID16) -> AssociationReleasePlan {        var plan = AssociationReleasePlan()
+    private borrowing func planAssociationReleases(for objectID: UUID16) -> AssociationReleasePlan {
+        var plan = AssociationReleasePlan()
         for index in 0..<capacity where associations[index].active
             && (associations[index].sourceID == objectID || associations[index].actorID == objectID) {
             plan.indices[plan.count] = index
@@ -1101,11 +1118,15 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
                 return .rejected(.capacityExceeded)
             }
             objects[index].announced = true
-            objects[index].role = role
+            if !isRenew {
+                // A same-epoch refresh is stale content by contract; keep the
+                // stored role so a buggy owner cannot flap endpoint routing.
+                objects[index].role = role
+                generation &+= 1
+            }
             objects[index].leaseMS = presence?.leaseMS ?? 0
             objects[index].lastSeenMS = presence != nil ? nowMS : 0
             objects[index].ownerEpoch = presence?.ownerEpoch ?? 0
-            if !isRenew { generation &+= 1 }
             return .accepted
         }
 
@@ -1119,17 +1140,21 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
             }
         }
         let slot: Int
+        var evicted = false
         if let freeIndex, activeCount < maximumObjects {
             slot = freeIndex
         } else if presenceState == .suspended,
                   let victim = oldestSuspendedPeer(nowMS: nowMS) {
             slot = victim
-            objects[slot] = ObjectRecord()
+            evicted = true
         } else {
             return .rejected(.capacityExceeded)
         }
         guard emitProfilePublications(operation, key: key, sink: &sink) else {
             return .rejected(.capacityExceeded)
+        }
+        if evicted {
+            objects[slot] = ObjectRecord()
         }
         objects[slot] = ObjectRecord(
             id: objectID,

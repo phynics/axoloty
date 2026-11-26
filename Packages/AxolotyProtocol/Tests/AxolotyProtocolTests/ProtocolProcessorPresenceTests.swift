@@ -86,14 +86,23 @@ extension ProtocolProcessorTests {
         }
     }
 
-    private static func associatePayload(sourceID: String, actorID: String) throws -> [UInt8] {
+    private static func associatePayload(
+        sourceID: String,
+        actorID: String,
+        route: String = "coaty/io/presence",
+        external: Bool = false
+    ) throws -> [UInt8] {
         try encodeCBOR { writer in
             try writer.beginObject()
             try writer.writeUUIDField("ioActorId", UUID16(parsing: actorID)!)
             try writer.writeComma()
             try writer.writeUUIDField("ioSourceId", UUID16(parsing: sourceID)!)
+            if external {
+                try writer.writeComma()
+                try writer.writeBoolField("isExternalRoute", true)
+            }
             try writer.writeComma()
-            try writeText(&writer, "associatingRoute", "coaty/io/presence")
+            try writeText(&writer, "associatingRoute", route)
             try writer.endObject()
         }
     }
@@ -135,6 +144,23 @@ extension ProtocolProcessorTests {
         try withCBORFrame(topic: "axoloty/1/presence/ASC/\(source)", payload: payload) { frame in
             var sink = InlineProtocolActionSink<8>()
             return processor.processInbound(.profile(frame), nowMS: nowMS, sink: &sink)
+        }
+    }
+
+    private static func associateExternal(
+        _ payload: [UInt8],
+        from source: String,
+        into processor: inout ProtocolProcessor<4>,
+        nowMS: UInt32
+    ) throws -> ProtocolProcessOutcome {
+        try withCBORFrame(topic: "axoloty/1/presence/ASC/\(source)", payload: payload) { frame in
+            var sink = InlineProtocolActionSink<8>()
+            return processor.processInbound(
+                .profile(frame),
+                nowMS: nowMS,
+                classifier: MultiExternalRouteClassifier(),
+                sink: &sink
+            )
         }
     }
 
@@ -297,7 +323,7 @@ extension ProtocolProcessorTests {
 
         let reannounce = try Self.advertisePayload(objectID: Self.peer, leaseMS: 1_000, ownerEpoch: 2)
         #expect(Self.sendAdvertise(reannounce, from: Self.peer, into: &processor, nowMS: 600).0 == .accepted)
-        #expect(processor.state.generation > generation)
+        #expect(processor.state.generation == generation &+ 1)
     }
 
     @Test("a suspended full table evicts the oldest leased peer for a local advertise")
@@ -315,5 +341,164 @@ extension ProtocolProcessorTests {
             #expect(result.0 == .accepted)
         }
         #expect(processor.state.activeObjects == 4)
+    }
+
+    @Test("a rejected suspended eviction keeps the victim")
+    func presenceSuspendedEvictionRejectsWithFullSink() throws {
+        var processor = try Self.makePresenceProcessor()
+        let peer = try Self.advertisePayload(objectID: Self.other, leaseMS: 1_000, ownerEpoch: 1)
+        #expect(try Self.advertise(peer, from: Self.other, into: &processor, nowMS: 100).0 == .accepted)
+        processor.suspendPresence()
+        for index in 0..<3 {
+            let object = "00000000-0000-4000-8000-00000000022\(index)"
+            let payload = try Self.advertisePayload(objectID: object, leaseMS: 1_000, ownerEpoch: 1)
+            #expect(Self.sendAdvertise(payload, from: object, into: &processor, nowMS: 200 + UInt32(index)).0 == .accepted)
+        }
+        let generation = processor.state.generation
+        let candidate = try Self.advertisePayload(
+            objectID: "00000000-0000-4000-8000-000000000229",
+            leaseMS: 1_000,
+            ownerEpoch: 1,
+            coreType: "CoatyObject"
+        )
+        try Self.withCBORFrame(topic: "axoloty/1/presence/ADV/00000000-0000-4000-8000-000000000229", payload: candidate) { frame in
+            var sink = InlineProtocolActionSink<1>()
+            let operation = ProtocolLocalOperation.advertise(
+                sourceID: UUID16(parsing: "00000000-0000-4000-8000-000000000229")!,
+                payload: frame.payload
+            )
+            #expect(processor.processOutbound(operation, nowMS: 300, sink: &sink) == .rejected(.capacityExceeded))
+            #expect(sink.count == 0)
+        }
+        #expect(processor.state.activeObjects == 4)
+        #expect(processor.state.generation == generation)
+        processor.resumePresence(nowMS: 1_000)
+        #expect(processor.expirePresence(nowMS: 2_000) != nil)
+    }
+
+    @Test("an inbound leased Advertise during suspension keeps its lease")
+    func presenceSuspendedInboundKeepsLease() throws {
+        var processor = try Self.makePresenceProcessor()
+        let generation = processor.state.generation
+        processor.suspendPresence()
+        #expect(processor.state.generation == generation &+ 1)
+        let announce = try Self.advertisePayload(objectID: Self.peer, leaseMS: 1_000, ownerEpoch: 1)
+        #expect(try Self.advertise(announce, from: Self.peer, into: &processor, nowMS: 100).0 == .accepted)
+        #expect(processor.state.activeObjects == 1)
+        processor.resumePresence(nowMS: 1_000)
+        #expect(processor.expirePresence(nowMS: 2_000) != nil)
+    }
+
+    @Test("coaty/3 Advertise ignores presence fields and never expires")
+    func presenceFieldsOnCoatyCoreAreIgnored() throws {
+        var processor = ProtocolProcessor<4>()
+        let payload = """
+        {"object":{"objectId":"\(Self.peer)","coreType":"IoSource","objectType":"coaty.IoSource","name":"json"},"leaseMs":1000,"ownerEpoch":1}
+        """
+        try withBorrowedFrame(topic: "coaty/3/test/ADV/\(Self.peer)", payload: payload) { frame in
+            var sink = InlineProtocolActionSink<4>()
+            #expect(processor.processInbound(.profile(frame), nowMS: 100, sink: &sink) == .accepted)
+            #expect(sink.count == 1)
+        }
+        try withBorrowedFrame(topic: "coaty/3/test/ADV/\(Self.peer)", payload: payload) { frame in
+            var sink = InlineProtocolActionSink<4>()
+            #expect(processor.processInbound(.profile(frame), nowMS: 200, sink: &sink) == .rejected(.duplicate))
+        }
+        #expect(processor.expirePresence(nowMS: 1_000_000) == nil)
+        #expect(processor.state.activeObjects == 1)
+    }
+
+    @Test("presence expiry crosses the wrapping clock boundary")
+    func presenceExpiryAcrossWrap() throws {
+        var processor = try Self.makePresenceProcessor()
+        let start = UInt32.max - 500
+        let announce = try Self.advertisePayload(objectID: Self.peer, leaseMS: 1_000, ownerEpoch: 1)
+        #expect(try Self.advertise(announce, from: Self.peer, into: &processor, nowMS: start).0 == .accepted)
+        #expect(processor.expirePresence(nowMS: 498) == nil)
+        #expect(processor.expirePresence(nowMS: 499) != nil)
+    }
+
+    @Test("an external row makes a re-announce release three actions")
+    func presenceReannounceExternalRow() throws {
+        var processor = try Self.makePresenceProcessor()
+        let announce = try Self.advertisePayload(objectID: Self.peer, leaseMS: 1_000, ownerEpoch: 1)
+        #expect(try Self.advertise(announce, from: Self.peer, into: &processor, nowMS: 100).0 == .accepted)
+        let association = try Self.associatePayload(
+            sourceID: Self.peer,
+            actorID: Self.actor,
+            route: "external/io-a",
+            external: true
+        )
+        #expect(try Self.associateExternal(association, from: Self.peer, into: &processor, nowMS: 101) == .accepted)
+        let reannounce = try Self.advertisePayload(objectID: Self.peer, leaseMS: 1_000, ownerEpoch: 2)
+        let generation = processor.state.generation
+
+        try Self.withCBORFrame(topic: "axoloty/1/presence/ADV/\(Self.peer)", payload: reannounce) { frame in
+            var sink = InlineProtocolActionSink<2>()
+            let outcome = processor.processInbound(.profile(frame), nowMS: 200, sink: &sink)
+            #expect(outcome == .rejected(.capacityExceeded))
+            #expect(sink.count == 0)
+        }
+        #expect(processor.state.activeAssociations == 1)
+        #expect(processor.state.generation == generation)
+
+        try Self.withCBORFrame(topic: "axoloty/1/presence/ADV/\(Self.peer)", payload: reannounce) { frame in
+            var sink = InlineProtocolActionSink<3>()
+            let outcome = processor.processInbound(.profile(frame), nowMS: 200, sink: &sink)
+            #expect(outcome == .accepted)
+            #expect(sink.count == 3)
+            guard case .deliver(_) = sink[0] else { Issue.record("expected delivery first"); return }
+            guard case .externalRouteDeactivated(_) = sink[1] else { Issue.record("expected deactivation second"); return }
+            guard case .associationChanged(_) = sink[2] else { Issue.record("expected release third"); return }
+        }
+        #expect(processor.state.activeAssociations == 0)
+    }
+
+    @Test("a local Advertise into a full suspended all-local table is rejected")
+    func presenceSuspendedNoVictim() throws {
+        var processor = try Self.makePresenceProcessor()
+        for index in 0..<4 {
+            let object = "00000000-0000-4000-8000-00000000023\(index)"
+            let payload = try Self.advertisePayload(objectID: object, leaseMS: 1_000, ownerEpoch: 1)
+            #expect(Self.sendAdvertise(payload, from: object, into: &processor, nowMS: 100 + UInt32(index)).0 == .accepted)
+        }
+        processor.suspendPresence()
+        let generation = processor.state.generation
+        let extra = try Self.advertisePayload(
+            objectID: "00000000-0000-4000-8000-000000000239",
+            leaseMS: 1_000,
+            ownerEpoch: 1
+        )
+        #expect(Self.sendAdvertise(extra, from: "00000000-0000-4000-8000-000000000239", into: &processor, nowMS: 200).0
+            == .rejected(.capacityExceeded))
+        #expect(processor.state.activeObjects == 4)
+        #expect(processor.state.generation == generation)
+    }
+
+    @Test("an unleased rollback clears the lease and releases rows")
+    func presenceUnleasedRollback() throws {
+        var processor = try Self.makePresenceProcessor()
+        let leased = try Self.advertisePayload(objectID: Self.peer, leaseMS: 1_000, ownerEpoch: 1)
+        #expect(try Self.advertise(leased, from: Self.peer, into: &processor, nowMS: 100).0 == .accepted)
+        let association = try Self.associatePayload(sourceID: Self.peer, actorID: Self.actor)
+        #expect(try Self.associate(association, from: Self.peer, into: &processor, nowMS: 101) == .accepted)
+        let bare = try Self.advertisePayload(objectID: Self.peer, leaseMS: nil, ownerEpoch: nil)
+        let rollback = try Self.advertise(bare, from: Self.peer, into: &processor, nowMS: 200)
+        #expect(rollback.0 == .accepted && rollback.1 == 2)
+        #expect(processor.state.activeAssociations == 0)
+        #expect(processor.state.activeObjects == 1)
+        #expect(processor.expirePresence(nowMS: 1_000_000) == nil)
+    }
+
+    @Test("a hard transport reset discards leased peers with presence on")
+    func presenceHardResetDiscardsLeasedPeers() throws {
+        var processor = try Self.makePresenceProcessor()
+        let announce = try Self.advertisePayload(objectID: Self.peer, leaseMS: 1_000, ownerEpoch: 1)
+        #expect(try Self.advertise(announce, from: Self.peer, into: &processor, nowMS: 100).0 == .accepted)
+        processor.resetTransport()
+        #expect(processor.state.activeObjects == 0)
+        #expect(processor.expirePresence(nowMS: 1_000_000) == nil)
+        #expect(try Self.advertise(announce, from: Self.peer, into: &processor, nowMS: 200).0 == .accepted)
+        #expect(processor.state.activeObjects == 1)
     }
 }
