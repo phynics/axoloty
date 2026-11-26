@@ -165,6 +165,30 @@ struct StaticPresenceTests {
         #expect(runtime.expirePresence(nowMS: 1_000_000) == nil)
     }
 
+    @Test("a rebooted peer re-advertise is delivered after expiry")
+    func reAdvertiseAfterExpiry() throws {
+        var runtime = try makeRuntime()
+        let payload = try presenceAdvertisePayload(objectID: Self.peer, leaseMS: 1_000, ownerEpoch: 1)
+        #expect(presenceReceive(&runtime, topic: "axoloty/1/static/ADV/\(Self.peer)", payload: payload, nowMS: 100) == .accepted)
+        _ = runtime.drain { _ in }
+        #expect(presenceReceive(&runtime, topic: "axoloty/1/static/ADV/\(Self.peer)", payload: payload, nowMS: 200) == .accepted)
+        _ = runtime.drain { _ in }
+        #expect(runtime.expirePresence(nowMS: 1_200) != nil)
+        #expect(runtime.actionCount == 0)
+        #expect(presenceReceive(&runtime, topic: "axoloty/1/static/ADV/\(Self.peer)", payload: payload, nowMS: 1_300) == .accepted)
+        #expect(runtime.state.activeObjects == 1)
+    }
+
+    @Test("an unleased peer in an enabled runtime never expires")
+    func unleasedPeerNeverExpires() throws {
+        var runtime = try makeRuntime()
+        let payload = try presenceAdvertisePayload(objectID: Self.other, leaseMS: nil, ownerEpoch: nil)
+        #expect(presenceReceive(&runtime, topic: "axoloty/1/static/ADV/\(Self.other)", payload: payload, nowMS: 100) == .accepted)
+        _ = runtime.drain { _ in }
+        #expect(runtime.expirePresence(nowMS: 1_000_000) == nil)
+        #expect(runtime.state.activeObjects == 1)
+    }
+
     @Test("presence requires an axoloty/1 definition")
     func constructionRejectsCoatyPresence() throws {
         do {

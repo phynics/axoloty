@@ -4,7 +4,7 @@ import AxolotyObjectModel
 @_spi(AxolotyRuntimeAdapter) import AxolotyProtocol
 import AxolotyWire
 
-/// A static composition that cannot be constructed.
+/// Reasons a static definition cannot be constructed.
 public enum StaticRuntimeDefinitionError: Error, Sendable {
     /// A capacity or limit is outside the fixed storage bounds.
     case capacity(ProtocolCapacityError)
@@ -134,6 +134,9 @@ public struct StaticRuntime<let capacity: Int, let payloadCapacity: Int>: ~Copya
 
     /// Creates a runtime with a sealed capability profile and fixed limits.
     ///
+    /// This initializer always disables presence; use a
+    /// ``StaticRuntimeDefinition`` with an enabled presence policy to opt in.
+    ///
     /// - Parameters:
     ///   - registryID: Opaque identity used to reject foreign object handles.
     ///   - capabilities: Families accepted by this binding.
@@ -208,7 +211,9 @@ public struct StaticRuntime<let capacity: Int, let payloadCapacity: Int>: ~Copya
                 presencePolicy: definition.presencePolicy
             )
         } catch {
-            preconditionFailure("presence requires the axoloty/1 profile")
+            // Unreachable: the definition's throwing initializer rejects
+            // enabled presence on non-axoloty/1 before a definition exists.
+            preconditionFailure("unreachable: invalid presence composition (\(error))")
         }
         self.subscriptions = ProtocolSubscriptionRegistry<capacity>()
         self.sink = InlineOwnedProtocolActionSink<capacity, payloadCapacity>()
@@ -378,10 +383,11 @@ public struct StaticRuntime<let capacity: Int, let payloadCapacity: Int>: ~Copya
     ///
     /// Repeated calls on the resolved edge are idempotent, and a resume without
     /// a preceding suspend is a no-op. Peer expiry stays suppressed until this
-    /// call.
+    /// call. A presence-disabled runtime treats this as a no-op.
     ///
     /// - Parameter nowMS: Caller-supplied monotonic time in milliseconds.
     public mutating func resumePresence(nowMS: UInt32) {
+        guard presencePolicy == .enabled else { return }
         processor.resumePresence(nowMS: nowMS)
     }
 
