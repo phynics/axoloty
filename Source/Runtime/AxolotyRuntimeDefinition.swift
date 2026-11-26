@@ -34,7 +34,7 @@ struct RuntimeRegistrations: Sendable {
     var modules: [RuntimeModuleRegistration]
     var moduleKeys: Set<String>
     var moduleCorrelationOrdinal: UInt32
-    var presencePolicy: ProtocolPresencePolicy
+    let presencePolicy: ProtocolPresencePolicy
 
     init(
         capacities: RuntimeCapacities,
@@ -102,15 +102,30 @@ public struct RuntimeBuilder: Sendable {
     public init(
         identity: RuntimeIdentity,
         namespace: String,
-        capacities: RuntimeCapacities? = nil,
-        presencePolicy: ProtocolPresencePolicy = .disabled
+        capacities: RuntimeCapacities? = nil
     ) throws {
-        let resolvedCapacities = try capacities ?? RuntimeCapacities()
+        try self.init(identity: identity, namespace: namespace, capacities: capacities, presencePolicy: .disabled)
+    }
+
+    /// Creates a builder from a complete runtime identity and a presence policy.
+    ///
+    /// - Parameters:
+    ///   - identity: The stable identity used by this runtime.
+    ///   - namespace: The validated runtime namespace.
+    ///   - capacities: Optional finite runtime limits.
+    ///   - presencePolicy: The soft-state presence policy for an `axoloty/1` transport.
+    /// - Throws: ``AxolotyError`` when namespace or capacities are invalid.
+    public init(
+        identity: RuntimeIdentity,
+        namespace: String,
+        capacities: RuntimeCapacities? = nil,
+        presencePolicy: ProtocolPresencePolicy
+    ) throws(AxolotyError) {
         try self.init(
             sourceID: identity.id,
             namespace: namespace,
             identity: identity,
-            capacities: resolvedCapacities,
+            capacities: capacities,
             presencePolicy: presencePolicy
         )
     }
@@ -127,9 +142,33 @@ public struct RuntimeBuilder: Sendable {
         sourceID: UUID16,
         namespace: String,
         identity: RuntimeIdentity? = nil,
-        capacities: RuntimeCapacities? = nil,
-        presencePolicy: ProtocolPresencePolicy = .disabled
+        capacities: RuntimeCapacities? = nil
     ) throws {
+        try self.init(
+            sourceID: sourceID,
+            namespace: namespace,
+            identity: identity,
+            capacities: capacities,
+            presencePolicy: .disabled
+        )
+    }
+
+    /// Creates a builder from a source identity, optional metadata, and a presence policy.
+    ///
+    /// - Parameters:
+    ///   - sourceID: The stable protocol source identity.
+    ///   - namespace: The validated runtime namespace.
+    ///   - identity: Optional identity metadata whose ID must match `sourceID`.
+    ///   - capacities: Optional finite runtime limits.
+    ///   - presencePolicy: The soft-state presence policy for an `axoloty/1` transport.
+    /// - Throws: ``AxolotyError`` when namespace, identity, or capacities are invalid.
+    public init(
+        sourceID: UUID16,
+        namespace: String,
+        identity: RuntimeIdentity? = nil,
+        capacities: RuntimeCapacities? = nil,
+        presencePolicy: ProtocolPresencePolicy
+    ) throws(AxolotyError) {
         guard !namespace.isEmpty,
               namespace.utf8.count <= 64,
               !namespace.contains("/"),
@@ -141,7 +180,14 @@ public struct RuntimeBuilder: Sendable {
         if let identity, identity.id != sourceID {
             throw AxolotyError.invalidArgument(argument: "identity", reason: "identity id must equal sourceID")
         }
-        let resolvedCapacities = try capacities ?? RuntimeCapacities()
+        let resolvedCapacities: RuntimeCapacities
+        do {
+            resolvedCapacities = try capacities ?? RuntimeCapacities()
+        } catch let error as AxolotyError {
+            throw error
+        } catch {
+            throw .caught(error)
+        }
         self.namespace = namespace
         self.sourceID = sourceID
         self.identity = identity

@@ -159,10 +159,9 @@ extension ProtocolExecutor {
         }
     }
 
-    func publishIoDeadvertisements(nowMS: UInt32) async throws {
+    func publishIoDeadvertisements(nowMS: UInt32) async throws(AxolotyError) {
         for endpoint in typedIoState.endpointRegistrations {
-            let payload = try RuntimeLifecyclePayload.deadvertise(objectID: endpoint.id, profile: wireProfile)
-            try await publishLifecycle(.deadvertise(sourceID: endpoint.id.uuid, payload: payload), nowMS: nowMS)
+            try await publishDeadvertisement(objectID: endpoint.id.uuid, sourceID: endpoint.id.uuid, nowMS: nowMS)
         }
     }
 

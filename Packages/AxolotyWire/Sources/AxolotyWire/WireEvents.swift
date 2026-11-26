@@ -154,8 +154,23 @@ public enum OwnedWireEvent: Sendable, Equatable {
         guard writer.profile == profile else { throw WireEncodeError.profileMismatch }
         switch self {
         case .advertise(let x):
-            try writer.beginObject(); try ownedRaw(&writer, "object", x.object)
-            if let value = x.privateData { try writer.writeComma(); try ownedRaw(&writer, "privateData", value) }; try writer.endObject()
+            try writer.beginObject()
+            try ownedRaw(&writer, "object", x.object)
+            if writer.profile == .axoloty1CBOR {
+                if let leaseMS = x.leaseMS {
+                    try writer.writeComma()
+                    try writer.writeIntField("leaseMs", leaseMS)
+                }
+                if let ownerEpoch = x.ownerEpoch {
+                    try writer.writeComma()
+                    try writer.writeIntField("ownerEpoch", ownerEpoch)
+                }
+            }
+            if let value = x.privateData {
+                try writer.writeComma()
+                try ownedRaw(&writer, "privateData", value)
+            }
+            try writer.endObject()
         case .deadvertise(let x):
             try writer.beginObject(); try ownedRaw(&writer, "objectIds", x.objectIds); try writer.endObject()
         case .channel(let x):

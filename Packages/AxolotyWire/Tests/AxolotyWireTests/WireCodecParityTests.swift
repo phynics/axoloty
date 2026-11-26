@@ -324,6 +324,13 @@ struct WireCodecParityTests {
         #expect(advertise.leaseMS == 10_000)
         #expect(advertise.ownerEpoch == 7)
         #expect(advertise.profile == .axoloty1CBOR)
+        var output = [UInt8](repeating: 0, count: cborBytes.count)
+        let count = try output.withUnsafeMutableBufferPointer { buffer throws(WireEncodeError) -> Int in
+            var writer = WireCodec(profile: .axoloty1CBOR).writer(buffer: buffer.baseAddress!, capacity: buffer.count)
+            try owned.encode(to: &writer)
+            return writer.position
+        }
+        #expect(Array(output.prefix(count)) == cborBytes)
     }
 
     // MARK: - Deadvertise

@@ -46,6 +46,7 @@ actor TestTransport: AxolotyRuntimeTransport, RuntimeTransportContractFixture {
     private var sent: [RuntimeOutboundMessage] = []
     private var delivered: [RuntimeOutboundMessage] = []
     private(set) var lifecycle: [String] = []
+    private(set) var deactivationPublicationCounts: [Int] = []
     private(set) var contractProfileSubscriptions: [String] = []
     private(set) var contractProfileUnsubscriptions: [String] = []
     private(set) var contractExternalSubscriptions: [String] = []
@@ -54,6 +55,8 @@ actor TestTransport: AxolotyRuntimeTransport, RuntimeTransportContractFixture {
     private(set) var stopObservedCancellation = false
     private let failureStage: SetupFailureStage?
     private var shouldFailNextPublication = false
+    private var shouldBlockNextPublication = false
+    private var publicationWaiter: CheckedContinuation<Void, Never>?
     private var shouldBlockNextStart = false
     private var isWaitingForStart = false
     private var startWaiter: CheckedContinuation<Void, Never>?
@@ -109,6 +112,10 @@ actor TestTransport: AxolotyRuntimeTransport, RuntimeTransportContractFixture {
         switch effect {
         case .publish(let message):
             sent.append(message)
+            if shouldBlockNextPublication {
+                shouldBlockNextPublication = false
+                await withCheckedContinuation { publicationWaiter = $0 }
+            }
             if shouldFailNextPublication {
                 shouldFailNextPublication = false
                 throw AxolotyError.network(error: TestTransportFailure(), reason: "test publication failed")
@@ -150,6 +157,7 @@ actor TestTransport: AxolotyRuntimeTransport, RuntimeTransportContractFixture {
     }
     func deactivateProfileInterest(namespace: String) async throws(AxolotyError) {
         lifecycle.append("deactivate")
+        deactivationPublicationCounts.append(delivered.count)
         contractProfileUnsubscriptions.append(contentsOf: [
             "coaty/3/\(namespace)/*/*",
             "coaty/3/\(namespace)/*/*/*",
@@ -197,6 +205,14 @@ actor TestTransport: AxolotyRuntimeTransport, RuntimeTransportContractFixture {
     func deliveredMessages() -> [RuntimeOutboundMessage] { delivered }
 
     func failNextPublication() { shouldFailNextPublication = true }
+    func blockNextPublication() { shouldBlockNextPublication = true }
+    func waitingForPublication() -> Bool { publicationWaiter != nil }
+    func releasePublication() {
+        shouldBlockNextPublication = false
+        publicationWaiter?.resume()
+        publicationWaiter = nil
+    }
+
     func blockNextStart() { shouldBlockNextStart = true }
     func waitingForStart() -> Bool { isWaitingForStart }
     func releaseStart() {

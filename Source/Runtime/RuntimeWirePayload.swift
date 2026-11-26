@@ -95,13 +95,15 @@ enum RuntimeWirePayload {
     ///   - leaseMS: Optional presence lease.
     ///   - ownerEpoch: Optional owner incarnation.
     ///   - profile: The bound transport profile.
+    ///   - capacity: The maximum encoded envelope length in bytes.
     /// - Returns: The advertise payload bytes.
     /// - Throws: ``ProtocolError`` when the object or fields are malformed.
     static func advertiseEnvelope(
         object: [UInt8],
         leaseMS: Int?,
         ownerEpoch: Int?,
-        profile: WireProfile
+        profile: WireProfile,
+        capacity: Int = WireBufferConfig.maxPayloadSize
     ) throws(ProtocolError) -> [UInt8] {
         let fields: OwnedAdvertiseWireData
         do throws(WireDecodeError) {
@@ -116,7 +118,7 @@ enum RuntimeWirePayload {
             throw ProtocolError(.malformedPayload)
         }
         do throws(WireEncodeError) {
-            return try OwnedWireEvent.advertise(fields).encodedBytes()
+            return try OwnedWireEvent.advertise(fields).encodedBytes(capacity: capacity)
         } catch {
             throw protocolError(error)
         }

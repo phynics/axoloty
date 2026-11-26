@@ -6,7 +6,7 @@
 
 import AxolotyProtocol
 import AxolotyObjectModel
-import AxolotyWire
+@_spi(AxolotyProtocol) import AxolotyWire
 import Foundation
 
 /// Routes transport callbacks into the current bounded ingress stream.
@@ -45,17 +45,22 @@ private final class RuntimeTransportIngressRelay: @unchecked Sendable {
 // swiftlint:disable:next type_body_length
 actor ProtocolExecutor {
     private struct LocalPresenceRecord {
-        var objectID: UUID16
-        var leaseMS: UInt32
-        var lastRefreshMS: UInt32
-        var payload: [UInt8]
+        let objectID: UUID16
+        let envelope: [UInt8]
+        let intervalMS: UInt64
+        let phaseMS: UInt64
+        var nextRefreshAtMS: UInt64 = 0
+        var pendingBatch: RuntimePresencePublicationToken?
+
+        func nextPhase(after nowMS: UInt64) -> UInt64 {
+            let offset = (phaseMS + intervalMS - nowMS % intervalMS) % intervalMS
+            return nowMS + (offset == 0 ? intervalMS : offset)
+        }
     }
 
     /// One random owner epoch per host process.
-    private static let processPresenceEpoch: UInt32 = {
-        let value = UInt32.random(in: 1...UInt32(Int32.max))
-        return value == 0 ? 1 : value
-    }()
+    private static let processPresenceEpoch = Int.random(in: 1...Int(Int32.max))
+    private static let presenceTickMS: UInt64 = 50
 
     let definition: RuntimeDefinition
     let transport: AxolotyRuntimeTransport
@@ -77,6 +82,7 @@ actor ProtocolExecutor {
     private var offlineOperations: [RuntimeOperation] = []
     private var flushingOfflineOperations = false
     var state: RuntimeLifecycleState = .stopped
+    private var stopTask: Task<Void, Never>?
     private var terminationWaiter: CheckedContinuation<RuntimeLifecycleState, Never>?
     private var hasStarted = false
     var lifecycleAdvertisementActive = false
@@ -89,23 +95,22 @@ actor ProtocolExecutor {
     private let transportIngressRelay = RuntimeTransportIngressRelay()
     private var recoveryArrivedBeforeFailure = false
     private var softRecoveryConsumed = false
-    private var softRecoveryInProgress = false
+    private var softRecoveryEpoch: UInt64?
     private var transportEpoch: UInt64 = 0
+    private var transportCallbackEpoch: UInt64?
     private var transportIngressContinuation: AsyncStream<RuntimeInboundFrame>.Continuation?
     private var transportIngressTask: Task<Void, Never>?
     private var outboundContinuation: AsyncStream<RuntimeTransportEffectBatch>.Continuation?
     private var outboundTask: Task<Void, Never>?
     var outboundQueued = 0
-    private var queuedTransportEffects = 0
     /// Effects handed to the outbound pump that have not yet been confirmed
-    /// delivered, in publication order. A transport failure discards the
-    /// pump and its `AsyncStream` buffer, but the caller already received an
-    /// `.accepted` receipt for this work; `transportFailed(_:)` leaves this
-    /// queue intact so `reconnect()` can replay it once the transport is
-    /// back, instead of silently losing already-accepted publications.
-    /// Bounded by `definition.capacities.dispatch`, mirroring
-    /// `queuedTransportEffects`.
+    /// delivered, in publication order. The pump and this queue stay aligned
+    /// until the task has joined. Recovery replays eligible effects from the
+    /// queue before admitting new work.
     private var pendingOutboundEffects: [RuntimeQueuedTransportEffect] = []
+    private var remainingOutboundCapacity: Int {
+        definition.capacities.dispatch - pendingOutboundEffects.count
+    }
     /// Exact external routes the transport has confirmed as active.
     ///
     /// `processor.resetTransport()` forgets their associations on failure,
@@ -129,27 +134,26 @@ actor ProtocolExecutor {
     let eventContinuation: AsyncStream<RuntimeEvent>.Continuation
     private let diagnosticStream: AsyncStream<RuntimeDiagnostic>
     private let diagnosticContinuation: AsyncStream<RuntimeDiagnostic>.Continuation
-    let presencePolicy: ProtocolPresencePolicy
-    let presenceConfigurationFailure: String?
-    private let presenceEpoch: UInt32
+    private let presencePolicy: ProtocolPresencePolicy
+    private let presenceClock: RuntimePresenceClock
+    private let presenceSourceHash: UInt64
     private var localPresence: [LocalPresenceRecord] = []
+    private var nextPresenceBatchID: UInt64 = 0
     private var presenceTask: Task<Void, Never>?
     private let presenceExpiryStream: AsyncStream<RuntimePresenceExpiry>
     private let presenceExpiryContinuation: AsyncStream<RuntimePresenceExpiry>.Continuation
 
-    init(definition: RuntimeDefinition, transport: AxolotyRuntimeTransport) {
+    init(definition: RuntimeDefinition, transport: AxolotyRuntimeTransport, presenceClock: RuntimePresenceClock) {
         self.definition = definition
         self.transport = transport
         let wireProfile = transport.wireProfile
         self.wireProfile = wireProfile
-        let requestedPresence = definition.presencePolicy
-        let presenceSupported = wireProfile == .axoloty1CBOR
-        self.presencePolicy = requestedPresence == .enabled && presenceSupported ? .enabled : .disabled
-        self.presenceConfigurationFailure = requestedPresence == .enabled && !presenceSupported
-            ? "soft-state presence requires the axoloty/1 profile"
-            : nil
-        let epoch = Self.processPresenceEpoch
-        self.presenceEpoch = epoch
+        self.presencePolicy = wireProfile == .axoloty1CBOR ? definition.presencePolicy : .disabled
+        self.presenceClock = presenceClock
+        // FNV-1a over the UUID's 16 bytes gives the same phase across processes.
+        self.presenceSourceHash = withUnsafeBytes(of: definition.sourceID.bytes) { bytes in
+            bytes.reduce(0xcbf29ce484222325) { ($0 ^ UInt64($1)) &* 0x100000001b3 }
+        }
         if self.presencePolicy == .enabled {
             do {
                 self.processor = try ProtocolProcessor<64>(
@@ -190,6 +194,7 @@ actor ProtocolExecutor {
         )
         self.presenceExpiryStream = presenceExpiries.stream
         self.presenceExpiryContinuation = presenceExpiries.continuation
+        if presencePolicy == .disabled { presenceExpiries.continuation.finish() }
         self.diagnosticsSnapshotValue.diagnosticCapacity = definition.capacities.stream
         self.diagnosticsSnapshotValue.capabilities = RuntimeCapabilityInformation(
             protocolCapabilities: definition.capacities.protocolCapabilities,
@@ -218,8 +223,8 @@ actor ProtocolExecutor {
             }
             break
         }
-        if let presenceConfigurationFailure {
-            return (.notStarted, presenceConfigurationFailure)
+        if definition.presencePolicy == .enabled, wireProfile != .axoloty1CBOR {
+            return (.notStarted, "soft-state presence requires the axoloty/1 profile")
         }
         hasStarted = true
         recoveryArrivedBeforeFailure = false
@@ -228,22 +233,11 @@ actor ProtocolExecutor {
         transportEpoch &+= 1
         let epoch = transportEpoch
         installTransportIngressPump(epoch: epoch)
-        outboundContinuation?.finish()
-        outboundTask?.cancel()
-        outboundContinuation = nil
-        outboundTask = nil
-        outboundQueued = 0
-        queuedTransportEffects = 0
         installOutboundPump()
         do {
             let lastWill = try makeTransportLastWill()
             await transport.setDiagnostics(transportDiagnostics)
-            await transport.setFailureHandler { [weak self] failure in
-                Task { await self?.transportFailed(failure) }
-            }
-            await transport.setRecoveryHandler { [weak self] in
-                Task { await self?.transportRecovered() }
-            }
+            await installTransportCallbacks(epoch: epoch)
             // A stop may have advanced the epoch while the callbacks were
             // installed. Starting now would open a connection after the host
             // already stopped.
@@ -270,12 +264,12 @@ actor ProtocolExecutor {
                 return (.notStarted, "runtime start was superseded during advertisement")
             }
             transition(to: .running)
-            startPresenceTimer()
+            if presencePolicy == .enabled {
+                startPresenceTimer(nowMS: presenceClock.nowMS())
+            }
             await startRuntimeModules()
             return nil
         } catch {
-            cancelIngressPump()
-            outboundContinuation?.finish()
             // A concurrent stop/close may have advanced the epoch while the
             // transport was suspended. Preserve that terminal transition
             // instead of resurrecting the runtime as failed.
@@ -296,39 +290,44 @@ actor ProtocolExecutor {
     }
 
     func stop() async {
+        if let stopTask {
+            await stopTask.value
+            return
+        }
         guard state == .running || state == .starting || state == .reconnecting || state == .failed else { return }
-        #if canImport(Darwin)
-        // Swift 6.4 strong-links the cancellation-shield runtime entry points
-        // even behind `#available`, so any reference breaks launch on macOS 26
-        // (#971). An awaited task inherits this actor's isolation but not the
-        // caller's cancellation, which keeps the same cleanup guarantee.
-        await Task { await self.performStop() }.value
-        #else
-        await withTaskCancellationShield { await performStop() }
-        #endif
+        let allowModulePublications = state == .running
+        transportEpoch &+= 1
+        let epoch = transportEpoch
+        transportCallbackEpoch = nil
+        transition(to: .stopping)
+        presenceTask?.cancel()
+        cancelIngressPump()
+        // Stop and close callers share a teardown task that outlives any
+        // caller's cancellation.
+        let task = Task { await performStop(epoch: epoch, allowModulePublications: allowModulePublications) }
+        stopTask = task
+        await task.value
     }
 
-    private func performStop() async {
-        await stopPresenceTimer()
-        await stopRuntimeModules()
-        transition(to: .stopping)
+    private func performStop(epoch: UInt64, allowModulePublications: Bool) async {
+        await stopPresenceTimer(epoch: epoch)
+        await stopRuntimeModules(allowPublications: allowModulePublications)
         offlineOperations.removeAll(keepingCapacity: true)
-        pendingOutboundEffects.removeAll(keepingCapacity: true)
-        transportEpoch &+= 1
-        let stoppingEpoch = transportEpoch
         await cancelAndDrainHandlers()
         typedIoState.clearTransportState()
         finishIoObservers()
-        cancelIngressPump()
-        let hasLifecycleEffects = lifecycleAdvertisementActive || typedIoState.hasEndpoints
-        do {
-            try enqueueIoDeadvertisements(nowMS: monotonicNowMS())
-            try enqueueLifecycleDeadvertisement(nowMS: monotonicNowMS())
-        } catch {
-            emitTransportFailure(error)
-        }
-        if hasLifecycleEffects {
-            await drainOutboundPump()
+        let drainBeforeClose = presencePolicy == .enabled || lifecycleAdvertisementActive || typedIoState.hasEndpoints
+            || !definition.registrations.modules.isEmpty
+        if drainBeforeClose {
+            finishOutboundPump()
+            await joinOutboundPump(epoch: epoch)
+            await withdrawLocalPresence()
+            do {
+                try await publishIoDeadvertisements(nowMS: monotonicNowMS())
+                try await publishLifecycleDeadvertisement(nowMS: monotonicNowMS())
+            } catch {
+                emitTransportFailure(error)
+            }
         }
         do {
             try await transport.deactivateProfileInterest(namespace: definition.namespace)
@@ -337,19 +336,22 @@ actor ProtocolExecutor {
         }
         await transport.stop()
         transportExternalRoutes.removeAll()
-        if !hasLifecycleEffects {
-            await drainOutboundPump()
+        if !drainBeforeClose {
+            finishOutboundPump()
+            await joinOutboundPump(epoch: epoch)
         }
-        guard state == .stopping, transportEpoch == stoppingEpoch else { return }
+        pendingOutboundEffects.removeAll()
+        outboundQueued = 0
+        localPresence.removeAll()
+        presenceExpiryContinuation.finish()
         transition(to: .stopped)
         signalTermination()
+        stopTask = nil
     }
 
     func close() async {
+        await stop()
         guard state != .closed else { return }
-        if state == .running || state == .starting || state == .reconnecting || state == .failed {
-            await stop()
-        }
         transition(to: .closed)
         signalTermination()
         finishIoObservers()
@@ -366,75 +368,61 @@ actor ProtocolExecutor {
         transition(to: .reconnecting)
         recoveryArrivedBeforeFailure = false
         softRecoveryConsumed = false
+        softRecoveryEpoch = nil
         transportEpoch &+= 1
         let epoch = transportEpoch
-        if presencePolicy == .enabled {
-            processor.suspendPresence()
-        } else {
-            processor.resetTransport()
-        }
-        resetTransportPresence()
-        cancelPendingRequestsForTransportReset()
-        clearIoTransportState()
-        recordReconnectStart(.requested)
-        cancelIngressPump()
-        installTransportIngressPump(epoch: epoch)
+        transportCallbackEpoch = nil
+        suspendTransport(.requested)
+        var attemptedStart = false
         do {
-            let lastWill = try makeTransportLastWill()
-            await stopOutboundPump()
+            await stopPresenceTimer(epoch: epoch)
             guard reconnectAttemptIsCurrent(epoch) else { return }
+            try Task.checkCancellation()
+            let lastWill = try makeTransportLastWill()
+            await joinOutboundPump(epoch: epoch)
+            guard reconnectAttemptIsCurrent(epoch) else { return }
+            try Task.checkCancellation()
             // A broker-side close can race this explicit reconnect.  The
             // binding may therefore already have lost its subscription
             // session; deactivation is best-effort in that path and fresh
             // profile-interest activation below is authoritative.
             try? await transport.deactivateProfileInterest(namespace: definition.namespace)
             guard reconnectAttemptIsCurrent(epoch) else { return }
+            try Task.checkCancellation()
             await transport.stop()
             guard reconnectAttemptIsCurrent(epoch) else { return }
+            try Task.checkCancellation()
             transportExternalRoutes.removeAll()
+            installTransportIngressPump(epoch: epoch)
             installOutboundPump()
-            await transport.setFailureHandler { [weak self] failure in
-                Task { await self?.transportFailed(failure) }
-            }
-            await transport.setRecoveryHandler { [weak self] in
-                Task { await self?.transportRecovered() }
-            }
+            await installTransportCallbacks(epoch: epoch)
             // A stop or a newer lifecycle transition may have advanced the
             // epoch while the callbacks were installed. Starting the transport
             // here would then open a connection the host already stopped.
-            guard !Task.isCancelled, reconnectAttemptIsCurrent(epoch) else { return }
+            guard reconnectAttemptIsCurrent(epoch) else { return }
+            try Task.checkCancellation()
+            attemptedStart = true
             try await transport.start(
                 receive: transportReceiveHandler(),
                 lastWill: lastWill
             )
-            // A state change means another operation owns the transport now:
-            // a soft recovery may already be running, or `stop()` is closing
-            // it. Only a still-current cancelled attempt closes what it opened.
-            // Keep this guard and the close await-free: actor isolation is the
-            // atomicity guarantee against an interleaving stop or reconnect.
             guard reconnectAttemptIsCurrent(epoch) else { return }
-            guard !Task.isCancelled else {
-                await transport.stop()
-                return
-            }
+            try Task.checkCancellation()
             try await finishTransportRecovery(
                 epoch: epoch,
                 activateProfileInterest: true,
                 cause: .requested
             )
-            // Cancellation can land after the transport started but before or
-            // during recovery. Close the connection this attempt opened so a
-            // caller that abandons the attempt does not leave it running.
+            try Task.checkCancellation()
+        } catch {
             guard reconnectAttemptIsCurrent(epoch) else { return }
-            guard !Task.isCancelled else {
-                await transport.stop()
+            if Task.isCancelled {
+                // Discard notifications queued by this attempt before closing
+                // its connection. The runtime remains suspended and retryable.
+                transportCallbackEpoch = nil
+                if attemptedStart { await transport.stop() }
                 return
             }
-        } catch {
-            // Cancellation is operator intent, not a transport failure worth a
-            // diagnostic or a counter.
-            guard !Task.isCancelled else { return }
-            guard reconnectAttemptIsCurrent(epoch) else { return }
             // A transport failure while recovering is no more terminal than one
             // during normal operation. `transportFailed(_:)` deliberately parks
             // the executor in `.reconnecting` so the caller can restore the
@@ -453,6 +441,44 @@ actor ProtocolExecutor {
         state == .reconnecting && transportEpoch == epoch
     }
 
+    private func suspendTransport(_ cause: RuntimeReconnectCause) {
+        presenceTask?.cancel()
+        if presencePolicy == .enabled {
+            processor.suspendPresence()
+        } else {
+            processor.resetTransport()
+        }
+        resetTransportPresence()
+        cancelPendingRequestsForTransportReset()
+        clearIoTransportState()
+        recordReconnectStart(cause)
+        cancelIngressPump()
+        finishOutboundPump(cancel: true)
+    }
+
+    private func installTransportCallbacks(epoch: UInt64) async {
+        guard epoch == transportEpoch else { return }
+        await transport.setFailureHandler { [weak self] failure in
+            Task { await self?.transportDidFail(failure, callbackEpoch: epoch) }
+        }
+        guard epoch == transportEpoch else { return }
+        await transport.setRecoveryHandler { [weak self] in
+            Task { await self?.transportDidRecover(callbackEpoch: epoch) }
+        }
+        guard epoch == transportEpoch else { return }
+        transportCallbackEpoch = epoch
+    }
+
+    private func transportDidFail(_ failure: RuntimeTransportFailure, callbackEpoch: UInt64) async {
+        guard transportCallbackEpoch == callbackEpoch else { return }
+        await transportFailed(failure)
+    }
+
+    private func transportDidRecover(callbackEpoch: UInt64) async {
+        guard transportCallbackEpoch == callbackEpoch else { return }
+        await transportRecovered()
+    }
+
     /// The bounded stream of peer objects removed by presence expiry.
     func presenceExpiries() -> AsyncStream<RuntimePresenceExpiry> { presenceExpiryStream }
 
@@ -461,74 +487,161 @@ actor ProtocolExecutor {
         guard presencePolicy == .enabled else {
             return .rejected(.protocol(.unsupportedCapability))
         }
-        guard (1_000...3_600_000).contains(Int(leaseMS)) else {
+        guard state == .running else { return .rejected(.notRunning(state)) }
+        guard (1_000...3_600_000).contains(leaseMS) else {
             return .rejected(.malformedPayload)
+        }
+        let maximumPayloadBytes = definition.capacities.protocolMaximumPayloadBytes
+        guard object.count <= maximumPayloadBytes else { return .rejected(.capacityExceeded) }
+        let encodedID = object.withUnsafeBufferPointer { buffer -> UUID16? in
+            guard let base = buffer.baseAddress else { return nil }
+            return WireCodec(profile: wireProfile).reader(bytes: base, length: buffer.count).readUUID("objectId")
+        }
+        guard encodedID == objectID else { return .rejected(.malformedPayload) }
+        guard definition.identity?.id != objectID,
+              !definition.registrations.ioEndpointRegistrations.contains(where: { $0.id.uuid == objectID }) else {
+            return .rejected(.protocol(.duplicate))
         }
         let envelope: [UInt8]
         do {
             envelope = try RuntimeWirePayload.advertiseEnvelope(
                 object: object,
                 leaseMS: Int(leaseMS),
-                ownerEpoch: Int(presenceEpoch),
-                profile: wireProfile
+                ownerEpoch: Self.processPresenceEpoch,
+                profile: wireProfile,
+                capacity: maximumPayloadBytes
             )
         } catch {
-            return .rejected(.malformedPayload)
+            return .rejected(error.code == .capacityExceeded ? .capacityExceeded : .malformedPayload)
         }
-        let nowMS = monotonicNowMS()
-        let receipt = publish(.advertise(sourceID: definition.sourceID, payload: envelope), nowMS: nowMS)
-        guard case .accepted = receipt else { return receipt }
-        if let index = localPresence.firstIndex(where: { $0.objectID == objectID }) {
-            localPresence[index].leaseMS = leaseMS
-            localPresence[index].lastRefreshMS = nowMS
-            localPresence[index].payload = envelope
-        } else if localPresence.count < definition.capacities.protocolMaximumObjects {
-            localPresence.append(LocalPresenceRecord(
-                objectID: objectID,
-                leaseMS: leaseMS,
-                lastRefreshMS: nowMS,
-                payload: envelope
-            ))
-        } else {
+        if let held = localPresence.first(where: { $0.objectID == objectID }) {
+            return held.envelope == envelope ? .accepted : .rejected(.protocol(.duplicate))
+        }
+        guard localPresence.count < definition.capacities.protocolMaximumObjects else {
             return .rejected(.capacityExceeded)
+        }
+        let intervalMS = max(Self.presenceTickMS, UInt64(leaseMS) * 2 / 9)
+        let record = LocalPresenceRecord(
+            objectID: objectID,
+            envelope: envelope,
+            intervalMS: intervalMS,
+            phaseMS: presenceSourceHash % intervalMS
+        )
+        return publishPresenceAdvertisement(record, refreshIndex: nil, nowMS: presenceClock.nowMS())
+    }
+
+    private func publishPresenceAdvertisement(
+        _ record: LocalPresenceRecord,
+        refreshIndex: Int?,
+        nowMS: UInt64
+    ) -> RuntimeReceipt {
+        guard outboundContinuation != nil, remainingOutboundCapacity > 0 else {
+            return .rejected(.capacityExceeded)
+        }
+        let operation = RuntimeOperation.advertise(sourceID: definition.sourceID, payload: record.envelope)
+        let token = RuntimePresencePublicationToken(
+            objectID: record.objectID,
+            transportEpoch: transportEpoch,
+            batchID: nextPresenceBatchID
+        )
+        let isAnnouncement = refreshIndex == nil
+        let outcome = processOutboundOperation(
+            operation,
+            nowMS: UInt32(truncatingIfNeeded: nowMS),
+            maximumActionCount: remainingOutboundCapacity
+        ) {
+            var scheduled = record
+            scheduled.nextRefreshAtMS = record.nextPhase(after: nowMS)
+            scheduled.pendingBatch = token
+            if let refreshIndex {
+                localPresence[refreshIndex] = scheduled
+            } else {
+                localPresence.append(scheduled)
+            }
+            nextPresenceBatchID &+= 1
+            dispatchActions(nowMS: isAnnouncement ? monotonicNowMS() : 0, presence: (token, isAnnouncement))
+        }
+        let receipt = receipt(for: outcome)
+        if isAnnouncement {
+            eventContinuation.yield(.transition(receipt))
+            if case .accepted = receipt { recordLocalPresence(operation) }
         }
         return receipt
     }
 
-    private func startPresenceTimer() {
-        guard presencePolicy == .enabled, presenceTask == nil else { return }
-        presenceTask = Task { [weak self] in
+    private func startPresenceTimer(nowMS: UInt64) {
+        guard state == .running, presenceTask == nil else { return }
+        let epoch = transportEpoch
+        presenceTask = Task { [weak self, clock = presenceClock] in
+            var deadline = nowMS + Self.presenceTickMS
             while !Task.isCancelled {
-                do { try await Task.sleep(for: .milliseconds(50)) } catch { return }
-                guard !Task.isCancelled else { return }
-                await self?.presenceTick()
+                await clock.sleepUntilMS(deadline)
+                guard !Task.isCancelled, let now = await self?.presenceTick(epoch: epoch) else { return }
+                // Keep the cadence anchored when the executor misses ticks.
+                let elapsedTicks = (max(now, deadline) - deadline) / Self.presenceTickMS
+                deadline += (elapsedTicks + 1) * Self.presenceTickMS
             }
         }
     }
 
-    private func stopPresenceTimer() async {
-        presenceTask?.cancel()
-        await presenceTask?.value
+    private func stopPresenceTimer(epoch: UInt64) async {
+        let task = presenceTask
+        task?.cancel()
+        await task?.value
+        guard transportEpoch == epoch else { return }
         presenceTask = nil
     }
 
-    private func presenceTick() {
-        guard state == .running else { return }
-        let nowMS = monotonicNowMS()
-        while let expired = processor.expirePresence(nowMS: nowMS) {
-            presenceExpiryContinuation.yield(RuntimePresenceExpiry(
+    private func presenceTick(epoch: UInt64) -> UInt64? {
+        guard !Task.isCancelled, state == .running, transportEpoch == epoch else { return nil }
+        let nowMS = presenceClock.nowMS()
+        expirePeerPresence(nowMS: UInt32(truncatingIfNeeded: nowMS))
+        let due = localPresence.indices.filter { index in
+            let record = localPresence[index]
+            return record.pendingBatch == nil && record.nextRefreshAtMS <= nowMS
+        }.sorted { localPresence[$0].nextRefreshAtMS < localPresence[$1].nextRefreshAtMS }
+        for index in due {
+            guard state == .running, remainingOutboundCapacity > 0 else { break }
+            _ = publishPresenceAdvertisement(localPresence[index], refreshIndex: index, nowMS: nowMS)
+        }
+        return nowMS
+    }
+
+    private func expirePeerPresence(nowMS: UInt32) {
+        var removed = false
+        for _ in 0..<definition.capacities.protocolMaximumObjects {
+            guard let expired = processor.expirePresence(nowMS: nowMS) else { break }
+            removed = true
+            let result = presenceExpiryContinuation.yield(RuntimePresenceExpiry(
                 sourceID: expired.sourceID,
                 objectID: expired.objectID,
                 atMS: nowMS
             ))
+            if case .dropped = result { diagnosticsSnapshotValue.presenceExpiriesDropped &+= 1 }
         }
+        if removed {
+            diagnosticsSnapshotValue.presenceGeneration = processor.state.generation
+        }
+    }
+
+    private func resumePresence(nowMS: UInt64) {
+        processor.resumePresence(nowMS: UInt32(truncatingIfNeeded: nowMS))
         for index in localPresence.indices {
-            let record = localPresence[index]
-            let refreshInterval = max(50, record.leaseMS &* 2 / 9)
-            guard nowMS &- record.lastRefreshMS >= refreshInterval else { continue }
-            let receipt = publish(.advertise(sourceID: definition.sourceID, payload: record.payload), nowMS: nowMS)
-            if case .accepted = receipt {
-                localPresence[index].lastRefreshMS = nowMS
+            localPresence[index].pendingBatch = nil
+            localPresence[index].nextRefreshAtMS = localPresence[index].nextPhase(after: nowMS)
+        }
+    }
+
+    private func withdrawLocalPresence() async {
+        for record in localPresence {
+            do {
+                try await publishDeadvertisement(
+                    objectID: record.objectID,
+                    sourceID: definition.sourceID,
+                    nowMS: monotonicNowMS()
+                )
+            } catch {
+                emitTransportFailure(error)
             }
         }
     }
@@ -584,17 +697,17 @@ actor ProtocolExecutor {
         guard !Task.isCancelled, reconnectAttemptIsCurrent(epoch) else { return }
         try await publishIoAdvertisements(nowMS: monotonicNowMS())
         guard !Task.isCancelled, reconnectAttemptIsCurrent(epoch) else { return }
-        if presencePolicy == .enabled {
-            processor.resumePresence(nowMS: monotonicNowMS())
-        }
+        let presenceReadyMS = presencePolicy == .enabled ? presenceClock.nowMS() : nil
+        if let presenceReadyMS { resumePresence(nowMS: presenceReadyMS) }
         transition(to: .running)
         softRecoveryConsumed = true
         emitReconnectCompletion(cause: cause)
-        await startRuntimeModules(restarting: true)
         // Replay effects that were accepted before failure ahead of work
         // accepted while reconnecting, preserving publication order.
         replayQueuedOutboundEffects()
         flushOfflineOperations(nowMS: monotonicNowMS())
+        if let presenceReadyMS { startPresenceTimer(nowMS: presenceReadyMS) }
+        await startRuntimeModules(restarting: true)
     }
 
     private func transportRecovered() async {
@@ -604,13 +717,20 @@ actor ProtocolExecutor {
             recoveryArrivedBeforeFailure = true
             return
         }
-        guard !softRecoveryConsumed, !softRecoveryInProgress else { return }
-        softRecoveryInProgress = true
-        defer { softRecoveryInProgress = false }
+        guard !softRecoveryConsumed, softRecoveryEpoch == nil else { return }
+        // The recovered session can supersede an explicit reconnect. Its
+        // pumps and timer must belong to a distinct epoch.
+        transportEpoch &+= 1
         let epoch = transportEpoch
+        softRecoveryEpoch = epoch
+        defer { if softRecoveryEpoch == epoch { softRecoveryEpoch = nil } }
+        finishOutboundPump(cancel: true)
+        await stopPresenceTimer(epoch: epoch)
+        guard reconnectAttemptIsCurrent(epoch) else { return }
         await cancelAndDrainIngressPump()
-        await stopOutboundPump()
-        guard state == .reconnecting, transportEpoch == epoch else { return }
+        guard reconnectAttemptIsCurrent(epoch) else { return }
+        await joinOutboundPump(epoch: epoch)
+        guard reconnectAttemptIsCurrent(epoch) else { return }
         installTransportIngressPump(epoch: epoch)
         installOutboundPump()
         do {
@@ -832,8 +952,8 @@ actor ProtocolExecutor {
         return true
     }
 
-    func cancel(correlationID: UUID16) -> Bool {
-        guard state == .running else { return false }
+    func cancel(correlationID: UUID16, duringModuleShutdown: Bool = false) -> Bool {
+        guard admitsLocalWork(duringModuleShutdown: duringModuleShutdown) else { return false }
         guard processor.cancel(correlationID: correlationID) else { return false }
         let capability = pendingRequestCapabilities.removeValue(forKey: correlationID)
         diagnosticsSnapshotValue.cancelledRequests &+= 1
@@ -865,26 +985,21 @@ actor ProtocolExecutor {
         return identities
     }
 
-    private func decrementOutbound() {
-        outboundQueued = max(0, outboundQueued - 1)
-    }
-
-    /// - Parameter delivered: `true` once `transport.perform` has actually
-    ///   succeeded for this effect. Only a delivered effect is popped from
-    ///   `pendingOutboundEffects`; an effect that failed to send stays queued
-    ///   there so it is replayed after the next successful `reconnect()`.
+    /// Removes the head after sending or skipping it. A recoverable send
+    /// failure leaves the head and following effects queued for replay.
     private func transportEffectCompleted(_ queuedEffect: RuntimeQueuedTransportEffect, delivered: Bool) {
-        if delivered, !pendingOutboundEffects.isEmpty {
-            pendingOutboundEffects.removeFirst()
-        }
-        queuedTransportEffects = max(0, queuedTransportEffects - 1)
+        pendingOutboundEffects.removeFirst()
+        if queuedEffect.isPublication { outboundQueued -= 1 }
         switch queuedEffect {
         case .publish:
-            decrementOutbound()
+            break
         case let .typedIoPublication(_, token: typedToken):
-            decrementOutbound()
             if typedIoState.completeTransportPublication(typedToken) {
                 flushPendingIo(at: typedToken.slot, nowMS: monotonicNowMS())
+            }
+        case let .presencePublication(_, token, completesBatch):
+            if completesBatch, let index = localPresence.firstIndex(where: { $0.pendingBatch == token }) {
+                localPresence[index].pendingBatch = nil
             }
         case let .externalRouteActivated(transition):
             if delivered { transportExternalRoutes.append(transition) }
@@ -901,48 +1016,60 @@ actor ProtocolExecutor {
             bufferingPolicy: .bufferingOldest(definition.capacities.dispatch)
         )
         outboundContinuation = outboundPipe.continuation
-        outboundTask = Task { [weak self, stream = outboundPipe.stream, transport, namespace = definition.namespace, profile = wireProfile] in
+        let epoch = transportEpoch
+        outboundTask = Task { [weak self, stream = outboundPipe.stream] in
             for await batch in stream {
-                guard !Task.isCancelled else { break }
                 for queuedEffect in batch.effects {
-                    guard !Task.isCancelled else { break }
-                    do {
-                        try await transport.perform(
-                            queuedEffect.transportEffect(namespace: namespace, profile: profile)
-                        )
-                        await self?.transportEffectCompleted(queuedEffect, delivered: true)
-                    } catch {
-                        await self?.transportEffectCompleted(queuedEffect, delivered: false)
-                        await self?.transportFailed(RuntimeTransportFailure(
-                            code: .brokerUnavailable,
-                            detail: runtimeErrorDetail(error)
-                        ))
-                        break
-                    }
+                    guard !Task.isCancelled,
+                          await self?.sendOutboundEffect(queuedEffect, epoch: epoch) == true else { return }
                 }
             }
         }
     }
 
-    private func stopOutboundPump() async {
-        let task = outboundTask
-        outboundContinuation?.finish()
-        outboundTask?.cancel()
-        outboundContinuation = nil
-        outboundTask = nil
-        await task?.value
-        outboundQueued = 0
-        queuedTransportEffects = 0
+    private func sendOutboundEffect(_ effect: RuntimeQueuedTransportEffect, epoch: UInt64) async -> Bool {
+        guard !Task.isCancelled else { return false }
+        if case let .presencePublication(_, token, _) = effect,
+           state != .running || token.transportEpoch != transportEpoch
+            || !localPresence.contains(where: { $0.pendingBatch == token }) {
+            transportEffectCompleted(effect, delivered: false)
+            return true
+        }
+        do {
+            try await transport.perform(effect.transportEffect(namespace: definition.namespace, profile: wireProfile))
+            transportEffectCompleted(effect, delivered: true)
+            return true
+        } catch {
+            if state == .stopping {
+                transportEffectCompleted(effect, delivered: false)
+                emitTransportFailure(error)
+                return true
+            }
+            if epoch == transportEpoch, !Task.isCancelled {
+                let failure = RuntimeTransportFailure(code: .brokerUnavailable, detail: runtimeErrorDetail(error))
+                // Recovery may need to join this pump. Report the failure
+                // from a separate task so this send can return first.
+                Task { [weak self] in await self?.outboundPumpFailed(failure, epoch: epoch) }
+            }
+            return false
+        }
     }
 
-    private func drainOutboundPump() async {
-        let task = outboundTask
+    private func outboundPumpFailed(_ failure: RuntimeTransportFailure, epoch: UInt64) async {
+        guard epoch == transportEpoch else { return }
+        await transportFailed(failure)
+    }
+
+    private func finishOutboundPump(cancel: Bool = false) {
         outboundContinuation?.finish()
         outboundContinuation = nil
+        if cancel { outboundTask?.cancel() }
+    }
+
+    private func joinOutboundPump(epoch: UInt64) async {
+        await outboundTask?.value
+        guard epoch == transportEpoch else { return }
         outboundTask = nil
-        await task?.value
-        outboundQueued = 0
-        queuedTransportEffects = 0
     }
 
     func receive(_ frame: RuntimeInboundFrame) -> RuntimeReceipt {
@@ -959,7 +1086,7 @@ actor ProtocolExecutor {
         return processInbound(frame)
     }
 
-    func publish(_ operation: RuntimeOperation, nowMS: UInt32) -> RuntimeReceipt {
+    func publish(_ operation: RuntimeOperation, nowMS: UInt32, duringModuleShutdown: Bool = false) -> RuntimeReceipt {
         if operation.capability == .channel, operation.operationName == nil {
             return rejectRequest(operation, .invalidOperationName)
         }
@@ -971,8 +1098,13 @@ actor ProtocolExecutor {
         guard !operation.payload.isEmpty else {
             return rejectRequest(operation, .malformedPayload)
         }
+        if presencePolicy == .enabled, operation.capability == .advertise,
+           let rejection = genericAdvertisementRejection(operation) {
+            return .rejected(rejection)
+        }
+        let withdrawals = managedWithdrawalIDs(operation)
         if state == .reconnecting {
-            guard operation.capability.isOneWay, operation.correlationID == nil else {
+            guard operation.capability.isOneWay, operation.correlationID == nil, withdrawals.isEmpty else {
                 return rejectRequest(operation, .notRunning(state))
             }
             guard offlineOperations.count < definition.capacities.dispatch else {
@@ -988,10 +1120,10 @@ actor ProtocolExecutor {
             eventContinuation.yield(.transition(.accepted))
             return .accepted
         }
-        guard state == .running else {
+        guard admitsLocalWork(duringModuleShutdown: duringModuleShutdown) else {
             return rejectRequest(operation, .notRunning(state))
         }
-        guard queuedTransportEffects < definition.capacities.dispatch else {
+        guard remainingOutboundCapacity > 0 else {
             diagnosticsSnapshotValue.dispatchSaturation += 1
             emitAdmission(
                 .dispatch,
@@ -1000,15 +1132,15 @@ actor ProtocolExecutor {
             )
             return rejectRequest(operation, .capacityExceeded)
         }
-        let remainingTransportCapacity = definition.capacities.dispatch - queuedTransportEffects
         let maximumActionCount = operation.capability == .associate
-            ? min(definition.capacities.dispatch, remainingTransportCapacity + 1)
-            : remainingTransportCapacity
+            ? min(definition.capacities.dispatch, remainingOutboundCapacity + 1)
+            : remainingOutboundCapacity
         let outcome = processOutboundOperation(
             operation,
             nowMS: nowMS,
             maximumActionCount: maximumActionCount
         ) {
+            if !withdrawals.isEmpty { localPresence.removeAll { withdrawals.contains($0.objectID) } }
             dispatchActions(nowMS: nowMS)
         }
         let receipt = receipt(for: outcome)
@@ -1018,6 +1150,43 @@ actor ProtocolExecutor {
             recordLocalPresence(operation)
         }
         return receipt
+    }
+
+    private func admitsLocalWork(duringModuleShutdown: Bool) -> Bool {
+        state == .running || (duringModuleShutdown && state == .stopping && outboundContinuation != nil)
+    }
+
+    private func genericAdvertisementRejection(_ operation: RuntimeOperation) -> RuntimeRejection? {
+        let codec = WireCodec(profile: wireProfile)
+        return operation.payload.withUnsafeBufferPointer { buffer in
+            guard let base = buffer.baseAddress else { return .malformedPayload }
+            let reader = codec.reader(bytes: base, length: buffer.count)
+            guard reader.readField("leaseMs") == nil, reader.readField("ownerEpoch") == nil else {
+                return .protocol(.unsupportedCapability)
+            }
+            guard operation.sourceID == definition.sourceID else { return nil }
+            let objectID = advertisedObjectID(in: reader, codec: codec) ?? operation.sourceID
+            return localPresence.contains(where: { $0.objectID == objectID }) ? .protocol(.duplicate) : nil
+        }
+    }
+
+    private func managedWithdrawalIDs(_ operation: RuntimeOperation) -> Set<UUID16> {
+        guard operation.capability == .deadvertise, operation.sourceID == definition.sourceID,
+              !localPresence.isEmpty else { return [] }
+        return operation.payload.withUnsafeBufferPointer { buffer in
+            guard let base = buffer.baseAddress else { return [] }
+            let reader = WireCodec(profile: wireProfile).reader(bytes: base, length: buffer.count)
+            var ids: Set<UUID16> = []
+            do {
+                try reader.readIdentifierElements("objectIds") { id in
+                    if let id, localPresence.contains(where: { $0.objectID == id }) { ids.insert(id) }
+                }
+            } catch {
+                // The processor supplies the structured rejection for invalid wire input.
+                return []
+            }
+            return ids
+        }
     }
 
     private func rejectRequest(
@@ -1177,15 +1346,15 @@ actor ProtocolExecutor {
         let codec = WireCodec(profile: wireProfile)
         return payload.withUnsafeBufferPointer { buffer in
             guard let base = buffer.baseAddress else { return nil }
-            let reader = codec.reader(bytes: base, length: buffer.count)
-            guard let object = reader.readField("object") else { return nil }
-            return object.withBytes { objectPointer, objectLength in
-                let objectReader = codec.reader(
-                    bytes: objectPointer.assumingMemoryBound(to: UInt8.self),
-                    length: objectLength
-                )
-                return objectReader.readUUID("objectId")
-            }
+            return advertisedObjectID(in: codec.reader(bytes: base, length: buffer.count), codec: codec)
+        }
+    }
+
+    private func advertisedObjectID(in reader: WireReader, codec: WireCodec) -> UUID16? {
+        guard let object = reader.readField("object") else { return nil }
+        return object.withBytes { objectPointer, objectLength in
+            let objectReader = codec.reader(bytes: objectPointer.assumingMemoryBound(to: UInt8.self), length: objectLength)
+            return objectReader.readUUID("objectId")
         }
     }
 
@@ -1246,20 +1415,23 @@ actor ProtocolExecutor {
                         let capability = borrowed.routingKey.capability
                         let sourceID = borrowed.routingKey.sourceID
                         actionSink.removeAll()
-                        let remainingTransportCapacity = definition.capacities.dispatch - queuedTransportEffects
-                        let maximumActionCount = borrowed.routingKey.capability == .associate
-                            ? min(definition.capacities.dispatch, remainingTransportCapacity + 1)
-                            : remainingTransportCapacity
+                        let maximumActionCount = capability == .associate
+                            ? min(definition.capacities.dispatch, remainingOutboundCapacity + 1)
+                            : remainingOutboundCapacity
                         actionSink.prepare(maximumActionCount: maximumActionCount)
+                        let processorNowMS = presencePolicy == .enabled && capability == .advertise
+                            ? UInt32(truncatingIfNeeded: presenceClock.nowMS())
+                            : nowMS
                         let outcome = processor.processInbound(
                             .profile(borrowed),
-                            nowMS: nowMS,
+                            nowMS: processorNowMS,
                             classifier: TransportRouteClassifier(transport: transport),
                             maximumTopicLength: definition.capacities.protocolMaximumTopicBytes,
                             sink: &actionSink
                         )
                         if case .accepted = outcome {
-                            if capability == .deadvertise || (capability == .advertise && actionSink.count > 0) {
+                            if (capability == .advertise || capability == .deadvertise),
+                               hasDelivery(for: capability) {
                                 inboundPresence = (capability, sourceID, payload)
                             }
                             dispatchActions(nowMS: nowMS)
@@ -1318,7 +1490,17 @@ actor ProtocolExecutor {
         return receipt
     }
 
-    private func dispatchActions(nowMS: UInt32) {
+    private func hasDelivery(for capability: ProtocolCapability) -> Bool {
+        (0..<actionSink.count).contains { index in
+            guard case let .deliver(delivery)? = actionSink[index] else { return false }
+            return delivery.routingKey.capability == capability
+        }
+    }
+
+    private func dispatchActions(
+        nowMS: UInt32,
+        presence: (token: RuntimePresencePublicationToken, isAnnouncement: Bool)? = nil
+    ) {
         guard actionSink.count <= definition.capacities.dispatch else {
             emitAdmission(
                 .dispatch,
@@ -1356,11 +1538,16 @@ actor ProtocolExecutor {
                 changedActorIDs.insert(ObjectID(uuid: transition.actorID))
             case .publish(let publication):
                 if publication.isApplicationDelivery,
+                   presence?.isAnnouncement != false,
                    let delivery = syntheticDelivery(for: publication) {
                     emitRegisteredEvents(for: delivery, owned: action, nowMS: nowMS)
                 }
                 if case .publish(let ownedPublication) = action {
-                    if ownedPublication.routingKey.capability == .ioValue,
+                    if let presence {
+                        effects.append(.presencePublication(
+                            ownedPublication, token: presence.token, completesBatch: index == actionSink.count - 1
+                        ))
+                    } else if ownedPublication.routingKey.capability == .ioValue,
                        let token = pendingTypedIoToken {
                         effects.append(.typedIoPublication(ownedPublication, token: token))
                         pendingTypedIoToken = nil
@@ -1517,39 +1704,10 @@ actor ProtocolExecutor {
 
     private func enqueueTransportEffects(_ effects: [RuntimeQueuedTransportEffect]) {
         guard !effects.isEmpty else { return }
-        // `pendingOutboundEffects` mirrors `queuedTransportEffects`, and
-        // every caller of this method already bounds that count to
-        // `definition.capacities.dispatch` before reaching here, so this
-        // branch is not expected to fire in current call graphs. It stays as
-        // an explicit, deterministic shed-and-fail rather than letting
-        // retained outbound state grow past the dispatch capacity if a
-        // future caller changes that invariant.
-        guard pendingOutboundEffects.count + effects.count <= definition.capacities.dispatch else {
-            diagnosticsSnapshotValue.dispatchSaturation += 1
-            emitAdmission(
-                .dispatch,
-                capacity: definition.capacities.dispatch,
-                detail: "outbound retention queue is full"
-            )
-            failRuntime(
-                code: .capacityExceeded,
-                detail: "outbound retention queue is full",
-                diagnostic: .capacityExceeded
-            )
-            return
-        }
-        queuedTransportEffects += effects.count
-        outboundQueued += effects.reduce(into: 0) { count, effect in
-            if case .publish = effect { count += 1 }
-            if case .typedIoPublication = effect { count += 1 }
-        }
-        let result = outboundContinuation?.yield(RuntimeTransportEffectBatch(effects: effects))
-        if case .dropped = result {
-            queuedTransportEffects = max(0, queuedTransportEffects - effects.count)
-            outboundQueued = max(0, outboundQueued - effects.reduce(into: 0) { count, effect in
-                if case .publish = effect { count += 1 }
-                if case .typedIoPublication = effect { count += 1 }
-            })
+        guard effects.count <= remainingOutboundCapacity,
+              case .enqueued? = outboundContinuation?.yield(RuntimeTransportEffectBatch(effects: effects)) else {
+            // A preflighted action batch fits both the retained queue and the
+            // pump. Fail if a caller violates that admission contract.
             diagnosticsSnapshotValue.dispatchSaturation += 1
             emitAdmission(
                 .dispatch,
@@ -1564,6 +1722,7 @@ actor ProtocolExecutor {
             return
         }
         pendingOutboundEffects.append(contentsOf: effects)
+        outboundQueued += effects.count(where: \.isPublication)
     }
 
     /// Re-enqueues effects that were queued-but-unsent when the transport
@@ -1574,68 +1733,20 @@ actor ProtocolExecutor {
     /// Request publications are never replayed. Reconnect discards the
     /// pending-correlation ledger, so replaying a request would either create
     /// an untracked command or make a late response ambiguous. One-way
-    /// publications remain safe to replay.
+    /// publications remain safe to replay. Managed presence re-announces at
+    /// its next phase in the new epoch.
     private func replayQueuedOutboundEffects() {
         guard !pendingOutboundEffects.isEmpty else { return }
         let effects = pendingOutboundEffects.filter { effect in
-            guard case let .publish(publication) = effect else { return true }
-            return publication.routingKey.capability.isOneWay
+            switch effect {
+            case let .publish(publication): return publication.routingKey.capability.isOneWay
+            case .presencePublication: return false
+            case .typedIoPublication, .externalRouteActivated, .externalRouteDeactivated: return true
+            }
         }
         pendingOutboundEffects.removeAll(keepingCapacity: true)
+        outboundQueued = 0
         enqueueTransportEffects(effects)
-    }
-
-    private func enqueueLifecycleOperation(_ operation: RuntimeOperation, nowMS: UInt32) throws {
-        let availableCapacity = max(0, definition.capacities.dispatch - queuedTransportEffects)
-        var effects: [RuntimeQueuedTransportEffect] = []
-        let outcome = processOutboundOperation(
-            operation,
-            nowMS: nowMS,
-            maximumActionCount: availableCapacity
-        ) {
-            effects.reserveCapacity(actionSink.count)
-            for index in 0..<actionSink.count {
-                guard let action = actionSink[index] else { continue }
-                switch action {
-                case .publish(let publication):
-                    effects.append(.publish(publication.owned()))
-                case .externalRouteActivated(let transition):
-                    effects.append(.externalRouteActivated(transition.owned()))
-                case .externalRouteDeactivated(let transition):
-                    effects.append(.externalRouteDeactivated(transition.owned()))
-                case .deliver, .associationChanged:
-                    break
-                }
-            }
-            actionSink.removeAll()
-        }
-        guard case .accepted = outcome else {
-            throw AxolotyError.runtime(
-                code: .brokerUnavailable,
-                reason: "lifecycle operation rejected by protocol: \(outcome)"
-            )
-        }
-        enqueueTransportEffects(effects)
-    }
-
-    private func enqueueIoDeadvertisements(nowMS: UInt32) throws {
-        for endpoint in typedIoState.endpointRegistrations {
-            let payload = try RuntimeLifecyclePayload.deadvertise(objectID: endpoint.id, profile: wireProfile)
-            try enqueueLifecycleOperation(
-                .deadvertise(sourceID: endpoint.id.uuid, payload: payload),
-                nowMS: nowMS
-            )
-        }
-    }
-
-    private func enqueueLifecycleDeadvertisement(nowMS: UInt32) throws {
-        guard lifecycleAdvertisementActive, let identity = definition.identity else { return }
-        let operation = RuntimeOperation.deadvertise(
-            sourceID: identity.id,
-            payload: try RuntimeLifecyclePayload.deadvertise(identity, profile: wireProfile)
-        )
-        try enqueueLifecycleOperation(operation, nowMS: nowMS)
-        lifecycleAdvertisementActive = false
     }
 
     private func cancelIngressPump() {
@@ -1690,26 +1801,13 @@ actor ProtocolExecutor {
         transition(to: .reconnecting)
         softRecoveryConsumed = false
         transportEpoch &+= 1
-        if presencePolicy == .enabled {
-            processor.suspendPresence()
-        } else {
-            processor.resetTransport()
-        }
-        resetTransportPresence()
-        cancelPendingRequestsForTransportReset()
-        clearIoTransportState()
-        recordReconnectStart(.transportFailure)
-        cancelIngressPump()
-        outboundContinuation?.finish()
-        outboundTask?.cancel()
-        outboundContinuation = nil
-        outboundTask = nil
-        outboundQueued = 0
-        queuedTransportEffects = 0
-        if recoveryArrivedBeforeFailure {
-            recoveryArrivedBeforeFailure = false
-            await transportRecovered()
-        }
+        let epoch = transportEpoch
+        suspendTransport(.transportFailure)
+        let alreadyRecovered = recoveryArrivedBeforeFailure
+        recoveryArrivedBeforeFailure = false
+        await stopPresenceTimer(epoch: epoch)
+        guard alreadyRecovered, reconnectAttemptIsCurrent(epoch) else { return }
+        await transportRecovered()
     }
 
     func failRuntime(
@@ -1732,8 +1830,11 @@ actor ProtocolExecutor {
         transition(to: .failed)
         signalTermination()
         transportEpoch &+= 1
+        transportCallbackEpoch = nil
+        presenceTask?.cancel()
         cancelIngressPump()
-        outboundContinuation?.finish()
+        // Teardown joins the pump after the current actor turn has enqueued
+        // any effects from the accepted batch that caused the failure.
         guard !failureTeardownScheduled else { return }
         failureTeardownScheduled = true
         Task { [weak self] in
