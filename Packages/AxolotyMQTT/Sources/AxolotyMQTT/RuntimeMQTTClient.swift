@@ -31,8 +31,9 @@ protocol RuntimeMQTTClientAdapter: AnyObject, Sendable {
     /// Closes the connection and waits for an in-flight connect attempt.
     ///
     /// When this returns, a connect issued before the call must have settled
-    /// and any connection it created must be closed. A later `connect` remains
-    /// valid.
+    /// and any connection it created must be closed. The wait is bounded by
+    /// the carrier's TCP connect timeout plus its acknowledgement timeout. A
+    /// later `connect` remains valid.
     func disconnect() async
     func publish(topic: String, payload: [UInt8]) async throws
 
@@ -103,14 +104,21 @@ final class RuntimeMQTTClient: RuntimeMQTTClientAdapter, @unchecked Sendable {
     }
 
     func connect(will: RuntimeTransportLastWill?) {
-        lock.withLock { intentionalDisconnect = false }
         let mqttWill: (topicName: String, payload: ByteBuffer, qos: MQTTQoS, retain: Bool)? = will.map {
             var buffer = ByteBufferAllocator().buffer(capacity: $0.payload.count)
             buffer.writeBytes($0.payload)
             return (topicName: $0.topic, payload: buffer, qos: .atMostOnce, retain: false)
         }
-        let attempt = client.connect(cleanSession: true, will: mqttWill)
-        lock.withLock { connectAttempt = attempt }
+        // Publish the connect future under the same lock that clears the
+        // intentional-disconnect flag. A concurrent disconnect then either sees
+        // the attempt or runs before it began; it cannot capture an empty slot
+        // and let the connection settle unowned.
+        let attempt: EventLoopFuture<Bool> = lock.withLock {
+            intentionalDisconnect = false
+            let future = client.connect(cleanSession: true, will: mqttWill)
+            connectAttempt = future
+            return future
+        }
         attempt.whenComplete { [weak self] result in
             switch result {
             case .success:

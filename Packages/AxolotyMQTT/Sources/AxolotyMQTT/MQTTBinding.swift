@@ -199,10 +199,16 @@ public final class MQTTBinding: AxolotyRuntimeTransport, @unchecked Sendable {
                 delegate.armStartTimeout(milliseconds: connectionTimeoutMS)
                 client.connect(will: lastWill)
             }
-            let (sink, isReconnect) = lock.withLock { () -> (RuntimeTransportDiagnostics?, Bool) in
+            let bookkeeping = lock.withLock { () -> (RuntimeTransportDiagnostics?, Bool)? in
+                // Stop may have advanced the epoch after resuming this start.
+                // A stopped binding must not record a session for it.
+                guard transportEpoch == attemptEpoch else { return nil }
                 let reconnect = hasOpenedSession
                 hasOpenedSession = true
                 return (diagnostics, reconnect)
+            }
+            guard let (sink, isReconnect) = bookkeeping else {
+                throw AxolotyError.runtime(code: .cancelled, reason: "MQTT binding stopped during start")
             }
             sink?.recordSessionOpen()
             if isReconnect { sink?.recordReconnect() }

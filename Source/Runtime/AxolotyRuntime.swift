@@ -352,6 +352,8 @@ actor ProtocolExecutor {
             // A state change means another operation owns the transport now:
             // a soft recovery may already be running, or `stop()` is closing
             // it. Only a still-current cancelled attempt closes what it opened.
+            // Keep this guard and the close await-free: actor isolation is the
+            // atomicity guarantee against an interleaving stop or reconnect.
             guard reconnectAttemptIsCurrent(epoch) else { return }
             guard !Task.isCancelled else {
                 await transport.stop()
@@ -371,6 +373,9 @@ actor ProtocolExecutor {
                 return
             }
         } catch {
+            // Cancellation is operator intent, not a transport failure worth a
+            // diagnostic or a counter.
+            guard !Task.isCancelled else { return }
             guard reconnectAttemptIsCurrent(epoch) else { return }
             // A transport failure while recovering is no more terminal than one
             // during normal operation. `transportFailed(_:)` deliberately parks

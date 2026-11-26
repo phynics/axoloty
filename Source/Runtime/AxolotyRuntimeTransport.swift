@@ -158,10 +158,13 @@ public protocol AxolotyRuntimeTransport: AnyObject, Sendable {
     /// outlive the call. An in-flight ``start(receive:lastWill:)`` must have
     /// settled and any connection it created must be closed, so a connect that
     /// completes after its caller was cancelled cannot leave an unowned
-    /// connection behind. The adapter waits only for that connect attempt,
-    /// which the carrier bounds by its own connect and acknowledgement
-    /// timeouts. A later ``start(receive:lastWill:)`` remains valid; the
-    /// adapter may restart on the same instance after this call.
+    /// connection behind. A later ``start(receive:lastWill:)`` remains valid;
+    /// the adapter may restart on the same instance after this call.
+    ///
+    /// The wait is bounded by the carrier, not by a start deadline. The MQTT
+    /// adapter can wait for its TCP connect timeout (10 seconds by default)
+    /// plus its operation timeout for CONNACK; `connectionTimeoutMS` fails the
+    /// start caller early but does not shorten this cleanup.
     ///
     /// Callers must serialize start and stop on one adapter instance. The host
     /// runtime does so through its lifecycle actor.
