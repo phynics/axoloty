@@ -1,5 +1,6 @@
 // Copyright (c) 2026 Atakan DULKER. Licensed under the MIT License.
 
+import Axoloty
 import AxolotyObjectModel
 import AxolotyWire
 
@@ -13,6 +14,7 @@ import AxolotyWire
 public struct ObjectView: Sendable {
     private struct Bucket {
         var candidates: [ObjectCandidate] = []
+        var withdrawnSources: Set<ObjectSource> = []
         var capacitySaturated = false
         var hadConflict = false
         var expiredPreviously = false
@@ -227,6 +229,47 @@ public struct ObjectView: Sendable {
         continuityLost = true
     }
 
+    /// Records a source's Deadvertise from an independently drained stream.
+    ///
+    /// Retains advertised bytes with uncertainty because the host streams
+    /// cannot order Advertise relative to Deadvertise. Correlated Resolve
+    /// evidence and claims from other reporters retain their provenance.
+    ///
+    /// - Parameters:
+    ///   - event: A normalized Deadvertise from the attached runtime.
+    ///   - session: The current attachment session.
+    /// - Returns: The number of watched identifiers named in the event.
+    /// - Throws: A stale session, malformed event, or reporter saturation
+    ///   error. A rejected event changes no per-object withdrawal records.
+    @discardableResult
+    public mutating func noteDeadvertise(
+        _ event: RuntimeEventValue, in session: ObservationSession
+    ) throws(ObjectViewError) -> Int {
+        try validate(session)
+        guard event.family == .deadvertise else { throw ObjectViewError(.invalidEventPayload) }
+        let source = ObjectSource(rawValue: event.context.sourceID)
+        var ids: Set<ObjectID> = []
+        do throws(WireDecodeError) {
+            try visitDeadvertisedIDs(in: event.value, profile: profile) { uuid in
+                let id = ObjectID(uuid: uuid)
+                if buckets[id] != nil { ids.insert(id) }
+            }
+        } catch {
+            throw ObjectViewError(.invalidEventPayload)
+        }
+        let saturated = ids.filter { id in
+            guard let bucket = buckets[id] else { return false }
+            return bucket.withdrawnSources.count >= ObjectViewConfiguration.maximumCandidatesPerObject
+                && !bucket.withdrawnSources.contains(source)
+        }
+        if !saturated.isEmpty {
+            for id in saturated { buckets[id]?.capacitySaturated = true }
+            throw ObjectViewError(.withdrawalCapacityExceeded)
+        }
+        for id in ids { buckets[id]?.withdrawnSources.insert(source) }
+        return ids.count
+    }
+
     /// Releases candidates that reached the retention boundary.
     ///
     /// This is optional maintenance. ``snapshot(for:at:)`` already hides
@@ -287,6 +330,11 @@ public struct ObjectView: Sendable {
         var uncertainty = ObjectUncertainty(rawValue: 0)
         if bucket.capacitySaturated { uncertainty.insert(.capacitySaturation) }
         if continuityLost { uncertainty.insert(.continuityLoss) }
+        if visible.isEmpty ? !bucket.withdrawnSources.isEmpty : visible.contains(where: {
+            $0.delivery == .advertise && bucket.withdrawnSources.contains($0.source)
+        }) {
+            uncertainty.insert(.withdrawalObserved)
+        }
         if bucket.hadConflict && (hiddenCount > 0 || bucket.expiredPreviously) {
             uncertainty.insert(.conflictEvidenceExpired)
         }

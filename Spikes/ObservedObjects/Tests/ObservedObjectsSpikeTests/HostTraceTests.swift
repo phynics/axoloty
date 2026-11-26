@@ -4,7 +4,7 @@ import Axoloty
 import AxolotyObjectModel
 import AxolotyWire
 import Testing
-@testable import ObservedObjectsSpike
+@testable import AxolotyObservedObjects
 
 @Suite("Observed objects broker-free host trace")
 struct HostTraceTests {

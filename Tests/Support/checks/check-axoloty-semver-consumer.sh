@@ -38,8 +38,8 @@ case "$jobs" in
 esac
 
 case "$scope" in
-    all|core-wire) : ;;
-    *) fail "AXOLOTY_CONSUMER_SCOPE must be all or core-wire: $scope" ;;
+    all|core-wire|observed-objects) : ;;
+    *) fail "AXOLOTY_CONSUMER_SCOPE must be all, core-wire, or observed-objects: $scope" ;;
 esac
 
 if [ "$local_mode" != 1 ] && [ "$url" != "$canonical_url" ]; then
@@ -129,6 +129,19 @@ if [ -n "$revision" ]; then
 else
     package_requirement=".package(url: \"$url\", from: \"$version\")"
 fi
+observed_target=
+if [ "$scope" = observed-objects ]; then
+    observed_target='
+        .executableTarget(name: "ObservedObjectsConsumer", dependencies: [
+            .product(name: "Axoloty", package: "axoloty"),
+            .product(name: "AxolotyObjectModel", package: "axoloty"),
+            .product(name: "AxolotyObservedObjects", package: "axoloty"),
+            .product(name: "AxolotyWire", package: "axoloty"),
+        ]),'
+    mkdir -p "$consumer/Sources/ObservedObjectsConsumer"
+    cp "$root/Examples/Sources/ObservedObjectsExample/main.swift" \
+        "$consumer/Sources/ObservedObjectsConsumer/main.swift"
+fi
 cat >"$consumer/Package.swift" <<EOF
 // swift-tools-version:6.4
 import PackageDescription
@@ -157,6 +170,7 @@ let package = Package(
             .product(name: "AxolotyProtocol", package: "axoloty"),
             .product(name: "AxolotyWire", package: "axoloty"),
         ]),
+        $observed_target
     ]
 )
 EOF
@@ -371,6 +385,9 @@ for configuration in debug release; do
     if [ "$scope" = core-wire ]; then
         targets="WireConsumer CoreConsumer"
         executables="WireConsumer CoreConsumer"
+    elif [ "$scope" = observed-objects ]; then
+        targets="$targets ObservedObjectsConsumer"
+        executables="$executables ObservedObjectsConsumer"
     fi
     for target in $targets; do
         log="$evidence/build-$configuration-$target.log"
@@ -392,11 +409,31 @@ for configuration in debug release; do
     done
     grep -Fqx AXOLOTY_WIRE_CONSUMER_OK "$evidence/run-$configuration-WireConsumer.log" || fail "Wire consumer execution marker missing"
     grep -Fqx AXOLOTY_CORE_CONSUMER_OK "$evidence/run-$configuration-CoreConsumer.log" || fail "Core consumer execution marker missing"
-    if [ "$scope" = all ]; then
+    if [ "$scope" != core-wire ]; then
         grep -Fqx AXOLOTY_PORTABLE_CONSUMER_OK "$evidence/run-$configuration-PortableConsumer.log" || fail "portable consumer execution marker missing"
         grep -Fqx AXOLOTY_MQTT_CONSUMER_LINKED "$evidence/run-$configuration-MQTTConsumer.log" || fail "MQTT consumer execution marker missing"
         grep -Eq '^AXOLOTY_TRANSPORT_SPI_BEHAVIOR_OK effects=[1-9][0-9]*$' "$evidence/run-$configuration-TransportSPIConsumer.log" || fail "transport SPI behavior marker missing"
         grep -Eq '^AXOLOTY_DIAGNOSTIC_CONSUMER_BEHAVIOR_OK rejection=malformedPayload sequence=[1-9][0-9]*$' "$evidence/run-$configuration-TransportSPIConsumer.log" || fail "diagnostic consumer behavior marker missing"
+    fi
+    if [ "$scope" = observed-objects ]; then
+        grep -Fxq 'Gauge reading 42 is stale at tick 110.' "$evidence/run-$configuration-ObservedObjectsConsumer.log" \
+            || fail "observed objects example did not report the stale gauge reading"
+        case "$configuration" in
+            debug) configuration_directory=Debug ;;
+            release) configuration_directory=Release ;;
+        esac
+        for executable in $executables; do
+            link_inputs=$(find "$consumer/.build/out/Intermediates.noindex" -type f \
+                -path "*/$configuration_directory-*/*/$executable.LinkFileList" -print)
+            [ -f "$link_inputs" ] || fail "link inputs unavailable for $configuration $executable"
+            report="$evidence/link-inputs-$configuration-$executable.txt"
+            cp "$link_inputs" "$report"
+            if [ "$executable" = ObservedObjectsConsumer ]; then
+                grep -Eq '(^|/)AxolotyObservedObjects\.o$' "$report" || fail "opt-in consumer lacks observed-object link input"
+            elif grep -Eq '(^|/)AxolotyObservedObjects\.o$' "$report"; then
+                fail "$executable links the optional observed-object module"
+            fi
+        done
     fi
 done
 

@@ -10,20 +10,12 @@ let package = Package(
         .package(name: "Axoloty", path: "../.."),
     ],
     targets: [
-        .target(
-            name: "ObservedObjectsSpike",
-            dependencies: [
-                .product(name: "AxolotyObjectModel", package: "Axoloty"),
-                .product(name: "AxolotyWire", package: "Axoloty"),
-            ]
-        ),
         .testTarget(
             name: "ObservedObjectsSpikeTests",
             dependencies: [
-                "ObservedObjectsSpike",
+                .product(name: "AxolotyObservedObjects", package: "Axoloty"),
                 .product(name: "Axoloty", package: "Axoloty"),
                 .product(name: "AxolotyObjectModel", package: "Axoloty"),
-                .product(name: "AxolotyProtocol", package: "Axoloty"),
                 .product(name: "AxolotyWire", package: "Axoloty"),
             ]
         ),

@@ -15,6 +15,7 @@ const EXPECTED = Object.freeze({
     "AxolotyIoRouting",
     "AxolotySensorThingsModel",
     "AxolotySensorThings",
+    "AxolotyObservedObjects",
     "AxolotyStaticRuntime",
     // Host-only verification infrastructure shared with sibling packages.
     "AxolotyTransportContractTestSupport",
@@ -122,7 +123,7 @@ export function validate(root) {
     errors.push("published Examples path exists but is not a directory");
   }
   const examples = examplesInventory(root);
-  const expectedExamples = ["HostRuntimeExample", "WireExample"];
+  const expectedExamples = ["HostRuntimeExample", "WireExample", "ObservedObjectsExample"];
   if (examples && !sameSet(examples.executables, expectedExamples)) {
     errors.push(`example product set mismatch: expected ${expectedExamples.join(", ")}; got ${examples.executables.join(", ")}`);
   }

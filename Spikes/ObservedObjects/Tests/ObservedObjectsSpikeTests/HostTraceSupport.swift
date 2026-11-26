@@ -3,7 +3,7 @@
 import Axoloty
 import AxolotyObjectModel
 import AxolotyWire
-@testable import ObservedObjectsSpike
+@testable import AxolotyObservedObjects
 
 /// Failure classification for the broker-free host trace.
 enum HostTraceError: Error, Equatable, Sendable {
@@ -111,17 +111,12 @@ enum HostTraceWire {
         identity: HostTraceIdentity
     ) throws(HostTraceError) -> [UInt8] {
         do {
-            var output = [UInt8](repeating: 0, count: 256)
-            let length = try output.withUnsafeMutableBufferPointer { buffer throws(WireEncodeError) -> Int in
-                guard let base = buffer.baseAddress else { throw WireEncodeError.bufferOverflow }
-                var writer = WireCodec(profile: profile).writer(buffer: base, capacity: buffer.count)
-                try writer.beginObject()
-                try writeStringField(&writer, "objectId", identity.hyphenated)
-                try writer.endObject()
-                return writer.position
+            let interest = try ReconciliationInterest(objectID: ObjectID(uuid: identity.uuid), timeoutMS: 100)
+            let request = try interest.request(correlationID: .zero, profile: profile)
+            guard case .discover(_, let payload, _) = request else {
+                throw HostTraceError.invariant("expected Discover from reconciliation interest")
             }
-            output.removeSubrange(length..<output.count)
-            return output
+            return payload
         } catch {
             throw .encoding(String(describing: error))
         }
@@ -278,19 +273,16 @@ struct HostTraceAttachment {
         profile: WireProfile,
         within window: ClosedRange<UInt64>
     ) throws(HostTraceError) -> Bool {
-        guard !passiveCoverageLost, event.family == .advertise, event.context.provenance == .transport,
-              let id = HostTraceWire.objectID(in: event, profile: profile),
-              id == HostTraceFixture.pump.uuid,
-              let object = HostTraceWire.objectBytes(in: event, profile: profile),
+        guard !passiveCoverageLost, event.context.provenance == .transport,
               let tick = receiptTick(event.context.receiptTimeMS, within: window) else { return false }
-        try apply(ObjectObservation(
-            objectID: ObjectID(uuid: id),
-            source: ObjectSource(rawValue: event.context.sourceID),
-            delivery: .advertise,
-            profile: profile,
-            revision: nil,
-            bytes: object
-        ), at: tick)
+        let observation: ObjectObservation?
+        do {
+            observation = try ObjectObservation.advertisement(from: event, profile: profile)
+        } catch {
+            throw .projection(error)
+        }
+        guard let observation, observation.objectID.uuid == HostTraceFixture.pump.uuid else { return false }
+        try apply(observation, at: tick)
         return true
     }
 
@@ -472,20 +464,18 @@ struct HostTraceAttempt: Sendable {
         guard event.context.correlationID == correlationID else {
             return .rejected(.correlationMismatch)
         }
-        guard let observedObjectID = HostTraceWire.objectID(in: event, profile: profile),
-              observedObjectID == objectID,
-              let bytes = HostTraceWire.objectBytes(in: event, profile: profile) else {
+        let observation: ObjectObservation
+        do {
+            let interest = try ReconciliationInterest(objectID: ObjectID(uuid: objectID), timeoutMS: 100)
+            guard let matching = try interest.observation(from: event, correlationID: correlationID, profile: profile) else {
+                return .rejected(.objectIDMismatch)
+            }
+            observation = matching
+        } catch {
             return .rejected(.objectIDMismatch)
         }
         let sample = HostTraceSample(
-            observation: ObjectObservation(
-                objectID: ObjectID(uuid: observedObjectID),
-                source: ObjectSource(rawValue: event.context.sourceID),
-                delivery: .resolve,
-                profile: profile,
-                revision: nil,
-                bytes: bytes
-            ),
+            observation: observation,
             correlationID: correlationID,
             epoch: submissionEpoch,
             receiptTimeMS: event.context.receiptTimeMS

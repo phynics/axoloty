@@ -93,6 +93,12 @@ public struct ObjectViewError: Error, Sendable, Equatable {
         case staleSession
         /// The projection requires JSON but the candidate uses another profile.
         case unsupportedTypedProjection
+        /// A runtime event did not contain a valid object or withdrawal.
+        case invalidEventPayload
+        /// A withdrawal could not be retained within the reporter limit.
+        case withdrawalCapacityExceeded
+        /// A reconciliation timeout was outside the monotonic comparison range.
+        case invalidReconciliationTimeout
         /// The application schema did not decode the retained object.
         case invalidTypedProjection
     }
@@ -219,6 +225,9 @@ public struct ObjectUncertainty: OptionSet, Sendable, Equatable, Hashable {
     /// A conflicting claim expired, so remaining evidence cannot imply that the
     /// dispute was resolved.
     public static let conflictEvidenceExpired = ObjectUncertainty(rawValue: 1 << 2)
+    /// A reporter withdrew advertised evidence. Separate runtime streams cannot
+    /// establish whether the withdrawal came before or after an advertisement.
+    public static let withdrawalObserved = ObjectUncertainty(rawValue: 1 << 3)
 }
 
 /// The object-level freshness of retained evidence at one supplied tick.

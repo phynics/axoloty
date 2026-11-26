@@ -391,6 +391,15 @@
       "note": "Reaches the runtime through package-scoped extension declarations rather than an SPI, so the surface is compiler-enforced first-party rather than opt-in."
     },
     {
+      "name": "AxolotyObservedObjects",
+      "role": "capability",
+      "platformClass": "host",
+      "path": "Packages/AxolotyObservedObjects/Sources/AxolotyObservedObjects",
+      "allowedImports": ["Axoloty", "AxolotyObjectModel", "AxolotyWire"],
+      "forbiddenImports": ["Foundation", "Logging", "MQTTNIO", "NIO", "Network"],
+      "note": "Opt-in host projection and reconciliation helpers. Consumes public Core events and requests."
+    },
+    {
       "name": "AxolotyTooling",
       "role": "tooling",
       "platformClass": "tooling",

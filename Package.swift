@@ -49,6 +49,10 @@ let package = Package(
             targets: ["AxolotySensorThings"]
         ),
         .library(
+            name: "AxolotyObservedObjects",
+            targets: ["AxolotyObservedObjects"]
+        ),
+        .library(
             name: "AxolotyStaticRuntime",
             targets: ["AxolotyStaticRuntime"]
         ),
@@ -143,6 +147,11 @@ let package = Package(
             name: "AxolotySensorThings",
             dependencies: ["Axoloty", "AxolotySensorThingsModel", "AxolotyObjectModel", "AxolotyProtocol", "AxolotyWire"],
             path: "Packages/AxolotySensorThings/Sources/AxolotySensorThings"
+        ),
+        .target(
+            name: "AxolotyObservedObjects",
+            dependencies: ["Axoloty", "AxolotyObjectModel", "AxolotyWire"],
+            path: "Packages/AxolotyObservedObjects/Sources/AxolotyObservedObjects"
         ),
         .target(
             name: "AxolotyStaticRuntime",

@@ -2,7 +2,7 @@
 
 import AxolotyObjectModel
 import AxolotyWire
-import ObservedObjectsSpike
+import AxolotyObservedObjects
 import Testing
 
 private enum Fixture {
