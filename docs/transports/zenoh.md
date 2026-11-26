@@ -35,15 +35,17 @@ flowchart LR
 payload, and produces transport actions. Zenoh does not change those rules.
 [ADR 0009](../adr/0009-zenoh-carries-only-axoloty-1.md) makes the `axoloty/1`
 CBOR profile the only wire format on Zenoh. Profile routes such as
-`axoloty/1/<namespace>/<event>/<identifier>` become Zenoh key expressions
+`axoloty/1/<namespace>/<event>/<sourceId>[/<correlationId>]` become Zenoh key expressions
 unchanged, and the binding publishes every payload with the
 `application/cbor` Zenoh encoding. MQTT keeps the sealed `coaty/3` JSON
 profile. Zenoh `Encoding` is advisory: the binding admits every inbound sample
 and decodes it by route. A sample whose label is not `application/cbor` is
-delivered like any other, and the binding does not count the divergence. A
+delivered like any other. The C façade counts the divergent label and reports
+it once as a diagnostic; the Swift binding does not expose that count
+([#1062](https://github.com/phynics/axoloty/issues/1062)). A
 profile-route payload that is not valid CBOR fails later as a structured
-rejection. Zenoh peers on 0.9.x do not
-interoperate with 1.0 Zenoh peers.
+rejection. Peers built before the `axoloty/1` switch carried `coaty/3` JSON on
+Zenoh and do not interoperate with this binding.
 
 ### Axoloty Zenoh binding
 
@@ -58,6 +60,11 @@ mode without a router. In client mode the binding connects to `zenohd` and
 tracks router presence. In peer mode the binding connects directly to other
 peers, discovers them through multicast scouting by default, and does not treat
 router presence as a connectivity signal.
+
+Each session open is bounded by a fixed 5-second unicast link-open timeout set
+inside the façade
+([`axoloty_zenoh_session.c`](../../Packages/AxolotyZenoh/Sources/CAxolotyZenoh/axoloty_zenoh_session.c)).
+The binding exposes no setting for it.
 
 The binding's receive queues hold up to four frames per subscription. This is a
 fixed façade bound and cannot be configured. It accepts keys up to 256 UTF-8
@@ -78,7 +85,8 @@ last will: the identity's Deadvertise on its `DAD` route. `ZenohBinding`
 accepts this value and discards it, because the v1 client profile uses only put
 and subscriber and has no broker-published will. Epic
 [#796](https://github.com/phynics/axoloty/issues/796) keeps Zenoh liveliness
-out of v1 scope. A graceful `stop()` still publishes Deadvertise. After an
+out of v1 scope. A graceful runtime stop still publishes Deadvertise before
+it stops the binding; `ZenohBinding.stop()` publishes nothing. After an
 unclean disconnect, peers receive no Deadvertise for the lost node.
 
 ### Peer mode
@@ -153,9 +161,10 @@ diagnostic only and does not select a second Zenoh profile.
 Point each host binding at a reachable connect endpoint. The router does not
 interpret Coaty operations or payloads.
 
-The example below listens on all local interfaces at port `7447` and uses
-`tcp/127.0.0.1:7447` for both clients. Use the router's reachable address when
-the clients run on other hosts.
+The Linux example in [Run the host example](#run-the-host-example) starts the
+router on all interfaces at `tcp/0.0.0.0:7447`. The macOS example listens on
+loopback only. Both clients use `tcp/127.0.0.1:7447`. Use the router's reachable
+address when the clients run on other hosts.
 
 ## Run the host example
 

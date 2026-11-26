@@ -59,6 +59,12 @@ Readers reject:
 - container nesting beyond the compile-time bound;
 - invalid UTF-8 in text strings.
 
+Readers accept a floating-point item in any width, including one that the
+writer would shorten. The profile carries only `false`, `true`, and `null` as
+simple values. Every other simple value is rejected as
+`cborUnsupportedSimpleValue`, including `undefined` (23) and the one-byte
+extension (24–255).
+
 ## Profile decisions
 
 ### Map keys (CD-5)
@@ -75,8 +81,9 @@ Writers emit a UUID as **tag 37 followed by a 16-byte byte string**
 (`#6.37(h'...')`). This is the RFC 8949 / RFC 4122 canonical form and is
 smaller than the 36-byte hyphenated text form. Readers accept both the tag-37
 byte string and the canonical 36-byte hyphenated text string, so a
-non-conforming peer stays decodable. A wrong tag or a non-16-byte payload is
-rejected as `malformedUUID`.
+non-conforming peer stays decodable. A tag other than 37 is rejected as
+`cborUnsupportedTag`. A byte string that is not 16 bytes long, or a text
+string that is not a canonical UUID, is rejected as `malformedUUID`.
 
 ### Semantic tags
 
@@ -220,6 +227,11 @@ specific reasons are `cborIndefiniteLength`, `cborInvalidAdditionalInfo`,
 `cborUnsupportedSimpleValue`. Shared reasons such as `unexpectedEndOfInput`,
 `invalidUTF8`, `integerOverflow`, and `malformedUUID` keep their meaning.
 
+A top-level key that is not a text string is rejected as
+`cborUnexpectedMajorType`. A duplicate top-level key reports the shared
+`duplicateField` reason, because the top-level field index rejects it. A
+duplicate key inside a nested map reports `cborDuplicateMapKey`.
+
 ## Implementation status
 
 | Surface | State |
@@ -239,10 +251,11 @@ Every row is implemented under epic #977. `AxolotyWire` ships the CBOR
 primitives and `axoloty/1` routes with RFC 8949 Appendix A conformance
 vectors. The host runtime builds its generated Identity Advertise and
 Deadvertise, IO endpoint Advertise, and conformance error and empty envelopes
-through the same profile-aware writer; it does not transcode `coaty/3` JSON to
-CBOR. The IO endpoint metadata re-encoder walks the fixed first-party schema
-and rejects an unknown field, a fractional number, or an integer that does not
-fit `Int` exactly with `ProtocolError.malformedPayload`. The frozen golden
+through the same profile-aware writer; it does not copy `coaty/3` JSON bytes
+into a CBOR envelope. IO endpoint metadata is the one JSON-backed input: its
+re-encoder reads the stored JSON field by field and walks the fixed
+first-party schema. It rejects an unknown field, a fractional number, or an
+integer that does not fit `Int` exactly with `ProtocolError.malformedPayload`. The frozen golden
 corpus under
 `Tests/AxolotyTests/WireCompatibility/Golden` covers every event family and
 DTO field-presence variant, and the wire tool independently decodes every CBOR

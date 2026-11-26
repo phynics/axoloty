@@ -32,19 +32,24 @@ certified in `phynics/axoloty-embedded` at
 on Core v1.0.1. That release closed
 [phynics/axoloty-embedded#73](https://github.com/phynics/axoloty-embedded/issues/73).
 The `sensor-node` reference profiles keep their evidence and budgets and are not
-certified. Embedded v1 stays open under
+certified. The Embedded v1 epic,
 [phynics/axoloty-embedded#61](https://github.com/phynics/axoloty-embedded/issues/61),
-which still needs recovery under load
+closed on 2026-11-02. Recovery under load
 ([phynics/axoloty-embedded#107](https://github.com/phynics/axoloty-embedded/issues/107))
-and the independence exercises
-([phynics/axoloty-embedded#79](https://github.com/phynics/axoloty-embedded/issues/79)).
+remains open. The independence exercises
+([phynics/axoloty-embedded#79](https://github.com/phynics/axoloty-embedded/issues/79))
+remain open and were removed from the v1 gate.
 The debug products require Core 1.0 as of `axoloty-debug` v0.1.0, which closed
 [phynics/axoloty-debug#6](https://github.com/phynics/axoloty-debug/issues/6).
-Items kept out of 1.0 are
-[#1061](https://github.com/phynics/axoloty/issues/1061),
-[#1060](https://github.com/phynics/axoloty/issues/1060),
-[#1044](https://github.com/phynics/axoloty/issues/1044), and
-[#998](https://github.com/phynics/axoloty/issues/998).
+The item kept out of 1.0 that remains open is
+[#1044](https://github.com/phynics/axoloty/issues/1044). Three items from that
+list closed after 1.0.1: [#998](https://github.com/phynics/axoloty/issues/998),
+merged in [#1078](https://github.com/phynics/axoloty/pull/1078);
+[#1061](https://github.com/phynics/axoloty/issues/1061), merged in
+[#1081](https://github.com/phynics/axoloty/pull/1081); and
+[#1060](https://github.com/phynics/axoloty/issues/1060), whose
+[ADR 0015](./adr/0015-axoloty-1-soft-state-presence.md) is accepted and whose
+presence wire fields merged in [#1082](https://github.com/phynics/axoloty/pull/1082).
 
 ### Zenoh status
 
@@ -56,8 +61,10 @@ Items kept out of 1.0 are
 - **Wire encoding is `axoloty/1` CBOR.** The profile shipped in 0.10.0, and
   [ADR 0009](./adr/0009-zenoh-carries-only-axoloty-1.md) makes Zenoh carry only
   that profile. Zenoh peers built on 0.9.x do not interoperate with 0.10.0 or
-  later. The binding does not count an `Encoding` label that diverges from
-  `application/cbor` ([#1062](https://github.com/phynics/axoloty/issues/1062)).
+  later. The C façade counts an `Encoding` label that diverges from
+  `application/cbor` and reports it once; the sample is still delivered. The
+  Swift binding does not expose that count
+  ([#1062](https://github.com/phynics/axoloty/issues/1062)).
 - **Consumption:** the adapter is consumed by path from a checkout, not through
   a URL dependency ([ADR 0007](./adr/0007-zenoh-adapter-package-boundary.md)).
   Zenoh remains outside the Core 1.0 stability contract. The graduation
@@ -179,7 +186,7 @@ products. G6 / #634 delivered the 0.6 release gate.
 | [G5 #633](https://github.com/phynics/axoloty/issues/633) | Modernize IO and optional product boundaries. | Complete |
 | [G6 #634](https://github.com/phynics/axoloty/issues/634) | Prove non-divergence and release 0.6. | Complete |
 
-Implementation tickets are created lazily as each gate opens. [AT Protocol research #522](https://github.com/phynics/axoloty/issues/522) may continue only as peripheral host-side exploration and must not reshape the portable 0.6 core.
+Implementation tickets are created lazily as each gate opens. [AT Protocol research #522](https://github.com/phynics/axoloty/issues/522) is closed. Any later exploration must stay peripheral host-side work and must not reshape the portable core.
 
 ## Explicit non-goals
 
