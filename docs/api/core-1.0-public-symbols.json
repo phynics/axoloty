@@ -577,10 +577,17 @@
           "classification": "intentional-stable-api"
         },
         {
-          "identifier": "s:7Axoloty14RuntimeBuilderV8identity9namespace10capacities14presencePolicyAcA0B8IdentityV_SSAA0B10CapacitiesVSg0A8Protocol0k8PresenceH0OtKcfc",
+          "identifier": "s:7Axoloty14RuntimeBuilderV8identity9namespace10capacities14presencePolicyAcA0B8IdentityV_SSAA0B10CapacitiesVSg0A8Protocol0k8PresenceH0OtAA0A5ErrorOYKcfc",
           "name": "init(identity:namespace:capacities:presencePolicy:)",
           "kind": "swift.init",
-          "declaration": "init(identity: RuntimeIdentity, namespace: String, capacities: RuntimeCapacities? = nil, presencePolicy: ProtocolPresencePolicy = .disabled) throws",
+          "declaration": "init(identity: RuntimeIdentity, namespace: String, capacities: RuntimeCapacities? = nil, presencePolicy: ProtocolPresencePolicy) throws(AxolotyError)",
+          "classification": "intentional-stable-api"
+        },
+        {
+          "identifier": "s:7Axoloty14RuntimeBuilderV8identity9namespace10capacitiesAcA0B8IdentityV_SSAA0B10CapacitiesVSgtKcfc",
+          "name": "init(identity:namespace:capacities:)",
+          "kind": "swift.init",
+          "declaration": "init(identity: RuntimeIdentity, namespace: String, capacities: RuntimeCapacities? = nil) throws",
           "classification": "intentional-stable-api"
         },
         {
@@ -605,10 +612,17 @@
           "classification": "intentional-stable-api"
         },
         {
-          "identifier": "s:7Axoloty14RuntimeBuilderV8sourceID9namespace8identity10capacities14presencePolicyAC0A4Wire6UUID16V_SSAA0B8IdentityVSgAA0B10CapacitiesVSg0A8Protocol0o8PresenceJ0OtKcfc",
+          "identifier": "s:7Axoloty14RuntimeBuilderV8sourceID9namespace8identity10capacities14presencePolicyAC0A4Wire6UUID16V_SSAA0B8IdentityVSgAA0B10CapacitiesVSg0A8Protocol0o8PresenceJ0OtAA0A5ErrorOYKcfc",
           "name": "init(sourceID:namespace:identity:capacities:presencePolicy:)",
           "kind": "swift.init",
-          "declaration": "init(sourceID: UUID16, namespace: String, identity: RuntimeIdentity? = nil, capacities: RuntimeCapacities? = nil, presencePolicy: ProtocolPresencePolicy = .disabled) throws",
+          "declaration": "init(sourceID: UUID16, namespace: String, identity: RuntimeIdentity? = nil, capacities: RuntimeCapacities? = nil, presencePolicy: ProtocolPresencePolicy) throws(AxolotyError)",
+          "classification": "intentional-stable-api"
+        },
+        {
+          "identifier": "s:7Axoloty14RuntimeBuilderV8sourceID9namespace8identity10capacitiesAC0A4Wire6UUID16V_SSAA0B8IdentityVSgAA0B10CapacitiesVSgtKcfc",
+          "name": "init(sourceID:namespace:identity:capacities:)",
+          "kind": "swift.init",
+          "declaration": "init(sourceID: UUID16, namespace: String, identity: RuntimeIdentity? = nil, capacities: RuntimeCapacities? = nil) throws",
           "classification": "intentional-stable-api"
         },
         {
@@ -1645,6 +1659,13 @@
           "name": "protocolCapabilities",
           "kind": "swift.property",
           "declaration": "var protocolCapabilities: ProtocolCapabilities { get }",
+          "classification": "intentional-stable-api"
+        },
+        {
+          "identifier": "s:7Axoloty18RuntimeDiagnosticsV23presenceExpiriesDroppeds6UInt64Vvp",
+          "name": "presenceExpiriesDropped",
+          "kind": "swift.property",
+          "declaration": "var presenceExpiriesDropped: UInt64",
           "classification": "intentional-stable-api"
         },
         {
