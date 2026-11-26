@@ -52,13 +52,16 @@ New Axoloty primitives must not add proprietary event codes to `coaty/3`; they b
 **Status: Complete for the package boundary, bounded state, shared processing,
 and G4 runtime integration.**
 
-The fixture-backed corpus and JSON contract in
-[`Tests/AxolotyTests/ProtocolTrace/`](../../Tests/AxolotyTests/ProtocolTrace/) record deterministic prior
+The fixture-backed corpus and JSON contract owned by
+`AxolotyProtocolTraceTestSupport`, with its tests in
+[`Tests/AxolotyTests/ProtocolTrace/`](../../Tests/AxolotyTests/ProtocolTrace/), record deterministic prior
 state, capabilities, finite limits, inputs, normalized actions, and structured
 rejections for every Coaty Core family. The host and static replay adapters are
-test implementations over the same contract. Both invoke the shared
-`ProtocolProcessor` inbound/outbound Interfaces with real borrowed frames and
-typed local operations, then compare normalized observations.
+test implementations over the same contract. The host adapter drives
+``AxolotyRuntime`` through a test transport with typed publish, request, and
+response operations; the static adapter drives ``ProtocolProcessor`` and
+``StaticRuntimeESP32C6`` directly. Both reach the shared processor and compare
+normalized observations.
 `AxolotyProtocol` owns the fixed-inline processor seam, caller-owned action
 sinks, generation-protected subscription/handler tables, binding-supplied
 route classification, and shared inbound/outbound processing.
@@ -69,9 +72,10 @@ route classification, and shared inbound/outbound processing.
 **Status: Complete for #638, #639, #640, #641, and the G4 runtime integration
 in #632.**
 
-`Packages/AxolotyProtocol` is independently host-buildable and is compiled by
-the ESP-IDF `axoloty_protocol` component from the same source glob. The target
-depends only on `AxolotyWire` and `AxolotyObjectModel`; Foundation, MQTT/NIO, logging, ErrorKit,
+`Packages/AxolotyProtocol` is independently host-buildable and is compiled for
+Embedded Swift by the sibling `phynics/axoloty-embedded` firmware; this
+repository proves that boundary with the hardware-free Core Embedded Swift
+gate. The target depends only on `AxolotyWire` and `AxolotyObjectModel`; Foundation, MQTT/NIO, logging, ErrorKit,
 actors, controllers, lifecycle, and host object hierarchy are prohibited.
 The package remains a foundation rather than a transport API: its processor is
 the single semantic engine used by both ``AxolotyRuntime`` and
@@ -94,8 +98,8 @@ are bounded and atomic.
 
 ## External IO routes
 
-**Status: Complete for G2 semantics and the G4 transport/runtime boundary;
-typed IO endpoint ergonomics remain G5.**
+**Status: Complete for G2 semantics, the G4 transport/runtime boundary, and
+typed IO endpoint registration.**
 
 External IO routes are transport-binding-specific exact non-Coaty routes associated through Coaty IO semantics. Canonical outbound Associate objects omit `isExternalRoute`. Inbound processing accepts the optional field only when it agrees with the binding-supplied classification; unrelated routes are ignored without inventing a global grammar.
 
@@ -109,6 +113,7 @@ non-divergence and release proof.**
 - [`Tests/AxolotyTests/WireCompatibility/Fixtures/`](../../Tests/AxolotyTests/WireCompatibility/Fixtures/)
 - [`Tests/AxolotyTests/ProtocolTrace/ProtocolTraceTests.swift`](../../Tests/AxolotyTests/ProtocolTrace/ProtocolTraceTests.swift)
 - [`Packages/AxolotyProtocol/Tests/AxolotyProtocolTests/ProtocolProcessorTests.swift`](../../Packages/AxolotyProtocol/Tests/AxolotyProtocolTests/ProtocolProcessorTests.swift)
+- [`Packages/AxolotyProtocolTraceTestSupport/`](../../Packages/AxolotyProtocolTraceTestSupport/)
 - [`Packages/AxolotyObjectModel/Tests/AxolotyObjectModelTests/` directory](../../Packages/AxolotyObjectModel/Tests/AxolotyObjectModelTests/)
 - [`Spikes/BoundedObjectModelEvidence/EVIDENCE.md`](../../Spikes/BoundedObjectModelEvidence/EVIDENCE.md)
 - [`docs/module-policy.yml`](../module-policy.yml)

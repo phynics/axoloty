@@ -13,12 +13,12 @@ Reference versions must be pinned before captured fixtures become normative:
 | Deadvertise | Compatible | Compatible with normalization | Compatible | Not tested (the macOS runner is producer-only) | PR |
 | Discover / Resolve | Compatible | Compatible with normalization | Compatible | Not tested (the macOS runner is producer-only) | PR |
 | Query / Retrieve | Compatible | Compatible with normalization (filters exercised) | Not tested | Not tested (the macOS runner is producer-only) | PR |
-| Update / Complete | Compatible | Compatible with normalization | Not tested | Not tested (the macOS runner is producer-only) | PR |
+| Update / Complete | Compatible | Compatible with normalization (core-type Update filter only) | Not tested | Not tested (the macOS runner is producer-only) | PR |
 | Call / Return | Compatible | Compatible with normalization | Not tested | Not tested (the macOS runner is producer-only) | PR |
 | Channel | Compatible | Compatible with normalization | Not tested | Not tested (the macOS runner is producer-only) | PR |
-| Identity lifecycle / last will | Not tested | Not tested | Not tested | Not tested | Nightly |
-| Associate / IoState / IoValue | Partial | Partial | Not tested | Not tested | Nightly |
-| Decentralized logging | Not tested | Not tested | Not tested | Not tested | Nightly |
+| Identity lifecycle / last will | Not tested | Not tested | Not tested | Not tested | Live CoatyJS gate (`wire` tier) |
+| Associate / IoState / IoValue | Partial | Partial | Not tested | Not tested | Live CoatyJS gate (`wire` tier) |
+| Decentralized logging | Not tested | Not tested | Not tested | Not tested | No gate (not implemented) |
 | SensorThings | Fixture-backed | Fixture-backed | Not tested | Not tested | G5 |
 | Topics above 256 bytes | Intentional divergence: rejected by Axoloty | Intentional divergence: Axoloty does not emit | Intentional divergence: rejected by Axoloty | Intentional divergence: Axoloty does not emit | Boundary fixtures and ESP32 vectors |
 | Payloads above 2,048 bytes | Intentional divergence: rejected by Axoloty | Intentional divergence: Axoloty does not emit | Intentional divergence: rejected by Axoloty | Intentional divergence: Axoloty does not emit | Boundary fixtures and ESP32 vectors |
@@ -41,7 +41,7 @@ test and a row here:
 | Frozen golden corpus with independent `cbor-x` decode and re-encode | `npm run verify:golden --prefix Tests/Support/WireCompatibility/tool` (`wire-golden-independent`, a required `ci` gate); `g2-wire-golden-corpus` | None; the golden `coaty/3` JSON files are fixtures, not a new shape. |
 | Host/static trace parity | `WireCBORTraceParityTests` (`wire-cbor` tier) with a per-step action oracle | None; the host `coaty/3` leg and the static `axoloty/1` leg reach the same operations, state, and structured rejections. |
 | Zenoh carries only `axoloty/1` | `ZenohBindingTests`, `ProtocolTraceParityTests`, the `zenoh-offline`/`zenoh-live` tiers | None; MQTT keeps the sealed `coaty/3` JSON profile. |
-| CBOR inspection tooling | `InspectorCBORCodecTests`, `InspectorDecodeTests`, `AxolotyMCPDecodeTests` | None; the inspector and MCP decode CBOR payloads read-only and change no wire bytes. |
+| CBOR inspection tooling | `InspectorCBORCodecTests`, `InspectorDecodeTests`, and `AxolotyMCPDecodeTests` in `phynics/axoloty-debug` | None; the inspector and MCP decode CBOR payloads read-only and change no wire bytes. |
 | Host-generated envelopes through the profile-aware writer | `RuntimeWirePayloadTests` | None; the `coaty/3` Identity Advertise, Deadvertise, and conformance bytes are unchanged, and the previous JSON-to-CBOR transcode is removed. The IO endpoint metadata re-encoder rejects an unknown field, a fractional number, and an integer that does not fit `Int` exactly with `ProtocolError.malformedPayload`. |
 | Optional Advertise presence fields (`leaseMs`, `ownerEpoch`) | `WireCodecParityTests` covers decoding in both profiles and byte-identical encoding through the owned CBOR event. `AxolotyRuntimePresenceTests` covers host refresh and expiry. | The owned JSON encoder preserves the `coaty/3` field set. The host emits these fields only for leased `axoloty/1` advertisements ([ADR 0015](./adr/0015-axoloty-1-soft-state-presence.md)). |
 
@@ -71,7 +71,9 @@ Both are locked by regression tests, and neither changes a `coaty/3` byte.
   (`wireCodecAppliesTheProfilesBareValueGate`) and `WireCodecParityTests`.
 - **Zenoh `Encoding` is advisory.** The binding admits every inbound sample
   whatever its `Encoding` label and decodes it by route. A label other than
-  `application/cbor` is delivered and is not counted. External routes admit
+  `application/cbor` is delivered. The C façade counts it and reports it once
+  as a diagnostic; the Swift binding does not expose that count
+  ([#1062](https://github.com/phynics/axoloty/issues/1062)). External routes admit
   any encoding, because their payloads are application-defined and the carrier does not
   interpret them. A profile-route payload that is not valid CBOR fails as a
   structured rejection. Regression: `ZenohBindingTests`,
@@ -98,9 +100,12 @@ covered by the host Advertise regression and is not used by static registration.
 The shared static-runtime migration corrected the embedded Advertise topic
 builder so the object-type filter is emitted as `ADV:coaty.test.Device`
 (not the legacy `ADV::coaty.test.Device` form). The exact ESP32-C6 smoke
-vector, now owned by `phynics/axoloty-embedded`, locks this output; the
-correction is intentional and keeps the topic aligned with the pinned
-Coaty Core 3 grammar.
+vector, now owned by `phynics/axoloty-embedded`, locks this output. The
+pinned CoatyJS 2.4.0 reference emits an object-type filter with the `::`
+separator, as `ADV::com.coaty.test.WireFixture` in the captured advertise
+fixture, and `TopicBuilder` writes `::` for an `.objectType` filter. The
+single-colon object-type form is therefore a divergence from the reference,
+not a conformance fix.
 
 ### Host lifecycle publications through the shared processor
 
@@ -163,7 +168,7 @@ The fixed-inline processor and both host/static trace adapters have unit
 coverage for these semantics. Live cross-implementation IO evidence remains
 governed by the existing IO runners and is a separate transport/runtime gate.
 
-Allowed results are `Compatible`, `Compatible with normalization`, `Intentional divergence`, `Unsupported`, and `Not tested`. Any intentional divergence requires a linked decision and fixture update.
+Allowed results are `Compatible`, `Compatible with normalization`, `Partial`, `Fixture-backed`, `Intentional divergence`, `Unsupported`, and `Not tested`. Any intentional divergence requires a linked decision and fixture update.
 
 ### Decision: Axoloty 256-byte topic ceiling
 
@@ -228,13 +233,13 @@ types, and custom-field hydration remain in Axoloty and do not extend the
 AxolotyWire dependency boundary. This is an ownership change only; it adds no
 intentional wire divergence and preserves the Call/Return shapes above.
 
-`Modern → JS` for the seven core capabilities is backed by `Tests/Support/WireCompatibility/Reverse/`: Axoloty produces (or, for request/reply pairs, requests) against the pinned CoatyJS 2.4.0 reference agent. For the five request/reply pairs (Discover/Resolve, Query/Retrieve, Update/Complete, Call/Return) the assertion lives in the Swift test itself, decoding CoatyJS's response and checking its fields with `#expect`. For the two one-way events (Deadvertise, Channel), `AxolotyCoreProducerTests.swift` only publishes; the decoded-semantics check instead happens in `run-axoloty-core.sh`, which greps the CoatyJS consumer process's log for its `"state":"ack"` line, itself only emitted after the consumer's own field-level match succeeds. Either way, delivery alone is never treated as sufficient. It is marked "with normalization" because dynamic identifiers and timestamps are normalized before comparison.
+`Modern → JS` for the seven core capabilities is backed by `Tests/Support/WireCompatibility/Reverse/`: Axoloty produces (or, for request/reply pairs, requests) against the pinned CoatyJS 2.4.0 reference agent. Axoloty publishes a `CoatyObject` Advertise on both `ADV:<coreType>` and `ADV::<objectType>`, matching the captured CoatyJS shape, and publishes Update on the core-type filter (`UPD:<coreType>`) only, so the reverse consumer subscribes with `observeUpdateWithCoreType`; the object-type Update filter (`UPD::<objectType>`) is not emitted. For the four request/reply pairs (Discover/Resolve, Query/Retrieve, Update/Complete, Call/Return) the assertion lives in the Swift test itself, decoding CoatyJS's response and checking its fields with `#expect`. For the two one-way events in the core runner (Deadvertise, Channel), `AxolotyCoreProducerTests.swift` only publishes; the decoded-semantics check instead happens in `run-axoloty-core.sh`, which greps the CoatyJS consumer process's log for its `"state":"ack"` line, itself only emitted after the consumer's own field-level match succeeds. Either way, delivery alone is never treated as sufficient. It is marked "with normalization" because dynamic identifiers and timestamps are normalized before comparison.
 
 Query/Retrieve additionally exercises `objectFilter` (#119): the `query-retrieve` scenario publishes an `Equals` filter on `name` that matches the fixture, and pinned CoatyJS 2.4.0 evaluates it via `event.data.matchesObject`. A negative filter (`query-retrieve-filter-negative`) asserts no Retrieve arrives. Operand-type coverage (`query-retrieve-filter-operands`) tests int, double, bool, and null operands — all non-matching, proving the reference implementation parses these types without error. Number-typing preservation (e.g. `42` staying `Int`, not `42.0`) is **not** covered by this scenario: JavaScript numbers are all doubles, so CoatyJS's `matchesObject` happily matches `42.0` against `42`. That gap is covered separately by #112's characterization tests.
 
 > **Known CoatyJS 2.4.0 defect:** `QueryEventData.matchesObject` in `@coaty/core@2.4.0` uses `||` instead of `&&` between type matching and filter matching (`object-matcher.js:matchesFilter`). When `_coreTypes` is undefined (the common case where only `objectTypes` is set), the first clause short-circuits to `true` and the `objectFilter` is never evaluated. The `query-retrieve-filter-negative` and `query-retrieve-filter-operands` scenarios bypass `matchesObject` and call `ObjectMatcher.matchesFilter` directly, so the filter is actually checked. The positive `query-retrieve` scenario still uses `matchesObject` because it only asserts a match (which the bug does not affect).
 
-`JS → modern` is backed by live cross-implementation scenarios in `Tests/Support/WireCompatibility/Reverse/`: `run-coatyjs-to-axoloty-advertise.sh` covers Advertise and `run-coatyjs-to-axoloty-core.sh` covers Deadvertise, Channel, Discover/Resolve, Query/Retrieve, Update/Complete, and Call/Return. Each starts pinned CoatyJS 2.4.0 and Axoloty in an isolated broker network, gates publication on a file written after Axoloty acquires its MQTT subscription, and asserts decoded semantic fields in Swift Testing. For request/response capabilities, Axoloty validates the request and publishes the correlated response while the CoatyJS requester validates the response. These scenarios were run end-to-end with Podman on Linux; no Python capture or verification script is involved.
+`JS → modern` is backed by live cross-implementation scenarios in `Tests/Support/WireCompatibility/Reverse/`: `run-coatyjs-to-axoloty-advertise.sh` covers Advertise, and `run-coatyjs-to-axoloty-core.sh` runs Deadvertise and Channel by default and supports Discover/Resolve, Query/Retrieve, Update/Complete, and Call/Return when `WIRE_SCENARIOS` names them. Each starts pinned CoatyJS 2.4.0 and Axoloty in an isolated broker network, gates publication on a file written after Axoloty acquires its MQTT subscription, and asserts decoded semantic fields in Swift Testing. For request/response capabilities, Axoloty validates the request and publishes the correlated response while the CoatyJS requester validates the response. These scenarios were run end-to-end with Podman on Linux; no Python capture or verification script is involved.
 
 Identity lifecycle / last will has nine executable live scenarios of eleven, evidenced by `Tests/Support/WireCompatibility/Lifecycle/Live/run-lifecycle-matrix.sh`. Three (`unexpected-disconnect-last-will`, `qos-0`, `graceful-deadvertise`) have both subject and observer as CoatyJS reference agents, so they are not cross-implementation evidence for either directional column. Six have **Axoloty as the genuine live subject**: `duplicate-reply` and `late-reply` (Axoloty as Call/Return initiator against pinned CoatyJS 2.4.0 as a deliberately misbehaving responder, via `run-lifecycle-call-return.sh`), and the four network-failure scenarios `offline-queueing`, `reconnect-resubscribe`, `broker-restart`, and `clean-session` (via `run-lifecycle-network.sh`, which severs and restores the subject's broker connectivity through a controllable TCP proxy — or really stops and restarts Mosquitto — and proves post-reconnect re-subscription by having Axoloty decode an Advertise probe published by pinned CoatyJS 2.4.0 only after the reconnect; `clean-session` additionally verifies proxy-decoded CONNACK `sessionPresent=false` handshakes). All were verified end-to-end via containerized runners, cross-referencing an independent MQTT capture against the timestamped Axoloty application log, not merely a process exit code. Getting `broker-restart` to pass exposed and fixed a real defect: `MQTTNIOClient`'s failed connect attempts never rescheduled auto-reconnect (only established-then-closed connections fire mqtt-nio's close listener), so one refused attempt against a not-yet-listening broker permanently ended reconnection. See `Tests/Support/WireCompatibility/Lifecycle/Live/README.md` for the full disposition of every catalog scenario. `qos-1`/`qos-2` remain `unsupported` for a separate, verified reason: pinned `@coaty/core@2.4.0` hardcodes QoS 0 for every publish regardless of configuration. Legacy CoatySwift 2.4.0 is descoped as a live lifecycle subject by recorded decision: see `Tests/Support/WireCompatibility/Audit/LegacySwiftLifecycleScopeDecision.md`.
 
@@ -252,7 +257,7 @@ Discover request, a deterministic 5-second Resolve timeout polled by the C
 wait loop, wrong-correlation Resolve rejection, and duplicate-Resolve
 rejection. Byte-exact device vectors lock the generated Advertise, Deadvertise,
 Discover, and Resolve topics and payloads against the
-`coaty/<version>/<namespace>/<eventType>:<filter>/<sourceId>[/<correlationId>]`
+`coaty/<version>/<namespace>/<eventType>[:<filter>|::<objectTypeFilter>]/<sourceId>[/<correlationId>]`
 contract. Physical evidence was captured under #326 and is recorded under
 `.testing/embedded/`; it does not change the JS/modern columns above, which
 require separate pinned CoatyJS directions. The firmware, its device commands,

@@ -47,8 +47,9 @@ with `make api-baseline API_BASELINE_MODE=update` and update the migration and
 release notes. Only the six products above receive this compatibility check.
 
 Everything else is experimental for 1.0: `AxolotyZenoh`, `AxolotyZenohCore`,
-`AxolotyCoatyModels`, `AxolotyIoRouting`, `AxolotySensorThings*`, the `Tools/`
-harness, and the applications and debug products in the sibling
+`AxolotyCoatyModels`, `AxolotyObjectMacros`, `AxolotyIoRouting`,
+`AxolotySensorThings*`, the `Tools/` harness, and the applications and debug
+products in the sibling
 [`phynics/axoloty-debug`](https://github.com/phynics/axoloty-debug) package.
 The deprecation policy below applies only to the frozen products.
 

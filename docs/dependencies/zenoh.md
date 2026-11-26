@@ -8,8 +8,8 @@ released version rather than a branch.
 
 The binding carries only the `axoloty/1` CBOR profile
 ([ADR 0009](../adr/0009-zenoh-carries-only-axoloty-1.md)); MQTT keeps the
-sealed `coaty/3` JSON profile. Zenoh peers built on 0.9.x do not interoperate
-with 1.0 Zenoh peers.
+sealed `coaty/3` JSON profile. Peers built before the `axoloty/1` switch
+carried `coaty/3` JSON on Zenoh and do not interoperate with this binding.
 
 ## Version matrix
 
