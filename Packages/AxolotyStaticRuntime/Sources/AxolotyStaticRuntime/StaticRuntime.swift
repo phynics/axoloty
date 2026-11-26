@@ -25,6 +25,10 @@ public struct StaticRuntimeDefinition<let payloadCapacity: Int>: ~Copyable {
     /// branches on the format. The default keeps the sealed `coaty/3` JSON
     /// byte contract.
     public let wireCodec: WireCodec
+    /// Opt-in soft-state presence policy.
+    ///
+    /// Presence requires `axoloty/1`; the default keeps legacy behavior.
+    public let presencePolicy: ProtocolPresencePolicy
     /// Maximum accepted wire payload size, fixed by the type specialization.
     public var maximumPayloadBytes: Int { payloadCapacity }
     /// Maximum accepted wire payload size for this definition specialization.
@@ -39,6 +43,10 @@ public struct StaticRuntimeDefinition<let payloadCapacity: Int>: ~Copyable {
     ///   - maximumPendingCorrelations: Optional maximum number of outstanding request correlations.
     ///   - wireCodec: The wire profile this binding reads and writes. The
     ///     default is the sealed `coaty/3` JSON profile.
+    ///   - presencePolicy: Opt-in soft-state presence. Enabling it requires
+    ///     `axoloty/1`.
+    /// - Precondition: `presencePolicy` must be `.disabled` unless `wireCodec`
+    ///   selects `axoloty/1`.
     /// - Throws: ``ProtocolCapacityError`` if the payload specialization is
     ///   outside the wire payload bound.
     public init(
@@ -46,7 +54,8 @@ public struct StaticRuntimeDefinition<let payloadCapacity: Int>: ~Copyable {
         capabilities: ProtocolCapabilities = .coatyCore3,
         maximumObjects: Int? = nil,
         maximumPendingCorrelations: Int? = nil,
-        wireCodec: WireCodec = WireCodec(profile: .coaty3JSON)
+        wireCodec: WireCodec = WireCodec(profile: .coaty3JSON),
+        presencePolicy: ProtocolPresencePolicy = .disabled
     ) throws(ProtocolCapacityError) {
         guard payloadCapacity >= 0 else {
             throw ProtocolCapacityError(.negativeCapacity, parameter: "payloadCapacity")
@@ -59,6 +68,7 @@ public struct StaticRuntimeDefinition<let payloadCapacity: Int>: ~Copyable {
         self.maximumObjects = maximumObjects
         self.maximumPendingCorrelations = maximumPendingCorrelations
         self.wireCodec = wireCodec
+        self.presencePolicy = presencePolicy
     }
 }
 
@@ -143,13 +153,19 @@ public struct StaticRuntime<let capacity: Int, let payloadCapacity: Int>: ~Copya
         precondition(maximumPendingCorrelations >= 0 && maximumPendingCorrelations <= capacity)
         self.registryID = definition.registryID
         self.routeClassifier = routeClassifier
-        self.processor = ProtocolProcessor<capacity>(
-            capabilities: definition.capabilities,
-            wireCodec: definition.wireCodec,
-            maximumPayloadBytes: payloadCapacity,
-            maximumObjects: maximumObjects,
-            maximumPendingCorrelations: maximumPendingCorrelations
-        )
+        precondition(definition.presencePolicy == .disabled || definition.wireCodec.profile == .axoloty1CBOR)
+        do {
+            self.processor = try ProtocolProcessor<capacity>(
+                capabilities: definition.capabilities,
+                wireCodec: definition.wireCodec,
+                maximumPayloadBytes: payloadCapacity,
+                maximumObjects: maximumObjects,
+                maximumPendingCorrelations: maximumPendingCorrelations,
+                presencePolicy: definition.presencePolicy
+            )
+        } catch {
+            preconditionFailure("presence requires the axoloty/1 profile")
+        }
         self.subscriptions = ProtocolSubscriptionRegistry<capacity>()
         self.sink = InlineOwnedProtocolActionSink<capacity, payloadCapacity>()
         self.ioRegistry = StaticIoEndpointRegistry()
@@ -282,6 +298,36 @@ public struct StaticRuntime<let capacity: Int, let payloadCapacity: Int>: ~Copya
     /// Cancels one local request without emitting a wire operation.
     public mutating func cancel(correlationID: UUID16) -> Bool {
         processor.cancel(correlationID: correlationID)
+    }
+
+    /// Removes the first expired leased peer object.
+    ///
+    /// The caller loops until this returns `nil`; each call removes one object
+    /// and keeps its Associate rows. It returns `nil` when presence is
+    /// disabled or suspended.
+    ///
+    /// - Parameter nowMS: Caller-supplied monotonic time in milliseconds.
+    /// - Returns: The removed source and object identities, or `nil`.
+    public mutating func expirePresence(nowMS: UInt32) -> (sourceID: UUID16, objectID: UUID16)? {
+        processor.expirePresence(nowMS: nowMS)
+    }
+
+    /// Suspends presence for an interrupted static transport.
+    ///
+    /// Leased peers and local replay entries survive in the processor; the
+    /// retained action batch and transport-local IO state are released.
+    public mutating func suspendPresence() {
+        processor.suspendPresence()
+        sink.removeAll()
+        ioRegistry.clearAllTransportState()
+        receiveContext = nil
+    }
+
+    /// Re-bases retained peers after the static transport is usable again.
+    ///
+    /// - Parameter nowMS: Caller-supplied monotonic time in milliseconds.
+    public mutating func resumePresence(nowMS: UInt32) {
+        processor.resumePresence(nowMS: nowMS)
     }
 
     /// Clears transport-local state so a reconnect can replay local state.
