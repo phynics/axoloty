@@ -5287,6 +5287,13 @@
           "classification": "intentional-stable-api"
         },
         {
+          "identifier": "s:11AxolotyWire09AdvertiseB4DataV10ownerEpochSiSgvp",
+          "name": "ownerEpoch",
+          "kind": "swift.property",
+          "declaration": "let ownerEpoch: Int?",
+          "classification": "intentional-stable-api"
+        },
+        {
           "identifier": "s:11AxolotyWire09AdvertiseB4DataV4fromAcA0B6ReaderV_tAA0B11DecodeErrorVYKcfc",
           "name": "init(from:)",
           "kind": "swift.init",
@@ -5305,6 +5312,13 @@
           "name": "object",
           "kind": "swift.property",
           "declaration": "let object: ByteSlice",
+          "classification": "intentional-stable-api"
+        },
+        {
+          "identifier": "s:11AxolotyWire09AdvertiseB4DataV7leaseMSSiSgvp",
+          "name": "leaseMS",
+          "kind": "swift.property",
+          "declaration": "let leaseMS: Int?",
           "classification": "intentional-stable-api"
         },
         {

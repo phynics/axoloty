@@ -82,10 +82,22 @@ public struct AdvertiseWireData: WireDecodable, WireEncodable, Equatable {
     public let object: ByteSlice
     /// The optional private data as raw wire bytes.
     public let privateData: ByteSlice?
+    /// The optional presence lease in milliseconds.
+    ///
+    /// Only `axoloty/1` senders with presence enabled emit this field.
+    public let leaseMS: Int?
+    /// The optional owner incarnation counter.
+    ///
+    /// A new value marks a restart; the owner reuses it for every refresh in
+    /// one process lifetime. Only `axoloty/1` senders with presence enabled
+    /// emit this field.
+    public let ownerEpoch: Int?
 
     /// Decodes an advertise event from `reader`.
     ///
-    /// `object` is required; `privateData` is optional.
+    /// `object` is required; `privateData`, `leaseMs`, and `ownerEpoch` are
+    /// optional. The presence fields are decoded without validation so a
+    /// presence-off processor keeps accepting the same frames as before.
     ///
     /// - Parameter reader: A ``WireReader`` over the payload bytes.
     /// - Throws: ``WireDecodeError`` if the `object` field is missing.
@@ -96,16 +108,26 @@ public struct AdvertiseWireData: WireDecodable, WireEncodable, Equatable {
         }
         self.object = obj
         self.privateData = reader.readOptionalRaw("privateData")
+        self.leaseMS = reader.readInt("leaseMs")
+        self.ownerEpoch = reader.readInt("ownerEpoch")
     }
 
     /// Encodes this event into `writer` as an object wrapping `object`,
-    /// writing `privateData` only when present.
+    /// writing optional fields only when present.
     ///
     /// - Parameter writer: The ``WireWriter`` to encode into.
     /// - Throws: ``WireEncodeError`` if the buffer overflows.
     public func encode(to writer: inout WireWriter) throws(WireEncodeError) {
         try writer.beginObject()
         try writer.writeTrustedRawField("object", object)
+        if let leaseMS {
+            try writer.writeComma()
+            try writer.writeIntField("leaseMs", leaseMS)
+        }
+        if let ownerEpoch {
+            try writer.writeComma()
+            try writer.writeIntField("ownerEpoch", ownerEpoch)
+        }
         if let pd = privateData {
             try writer.writeComma()
             try writer.writeTrustedRawField("privateData", pd)

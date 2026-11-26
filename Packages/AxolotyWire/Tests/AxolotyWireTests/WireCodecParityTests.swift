@@ -181,6 +181,44 @@ struct WireCodecParityTests {
         #expect(jsonValue.object.asString() == objectJSON)
         #expect(cborValue.object.ownedBytes() == objectCBOR)
         #expect(try #require(cborValue.privateData).ownedBytes() == privateDataCBOR)
+        #expect(jsonValue.leaseMS == nil && jsonValue.ownerEpoch == nil)
+        #expect(cborValue.leaseMS == nil && cborValue.ownerEpoch == nil)
+    }
+
+    @Test("advertise presence fields round trip on both profiles")
+    func advertisePresenceParity() throws {
+        let objectJSON = #"{"objectType":"example.Thing","objectId":"11111111-1111-4111-8111-111111111111"}"#
+        let jsonBytes = Array(
+            #"{"object":\#(objectJSON),"leaseMs":10000,"ownerEpoch":7,"privateData":{"enabled":true}}"#.utf8
+        )
+        let objectCBOR = cborMap([
+            (cborText("objectId"), try cborUUID("11111111-1111-4111-8111-111111111111")),
+            (cborText("objectType"), cborText("example.Thing")),
+        ])
+        let privateDataCBOR = cborMap([(cborText("enabled"), cborTrue)])
+        let cborBytes = cborMap([
+            (cborText("object"), objectCBOR),
+            (cborText("leaseMs"), cborInt(10_000)),
+            (cborText("ownerEpoch"), cborInt(7)),
+            (cborText("privateData"), privateDataCBOR),
+        ])
+
+        let jsonValue = try decode(.coaty3JSON, jsonBytes, as: AdvertiseWireData.self)
+        let cborValue = try decode(.axoloty1CBOR, cborBytes, as: AdvertiseWireData.self)
+
+        #expect(try encode(.coaty3JSON, jsonValue) == jsonBytes)
+        #expect(try encode(.axoloty1CBOR, cborValue) == cborBytes)
+        #expect(jsonValue.leaseMS == 10_000 && jsonValue.ownerEpoch == 7)
+        #expect(cborValue.leaseMS == 10_000 && cborValue.ownerEpoch == 7)
+        #expect(jsonValue.object.asString() == objectJSON)
+        #expect(cborValue.object.ownedBytes() == objectCBOR)
+    }
+
+    @Test("advertise decodes out-of-policy presence fields without rejecting")
+    func advertisePresenceDecodeDoesNotValidate() throws {
+        let jsonBytes = Array(#"{"object":{},"leaseMs":0,"ownerEpoch":0}"#.utf8)
+        let value = try decode(.coaty3JSON, jsonBytes, as: AdvertiseWireData.self)
+        #expect(value.leaseMS == 0 && value.ownerEpoch == 0)
     }
 
     // MARK: - Deadvertise

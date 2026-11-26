@@ -111,7 +111,12 @@ fixed buffer.
 uuid = #6.37(bytes .size 16)
 
 ; Advertise / Deadvertise
-advertise   = { "object": object, ? "privateData": any }
+advertise   = {
+  "object": object,
+  ? "privateData": any,
+  ? "leaseMs": uint,       ; axoloty/1 presence lease, 1000..3600000
+  ? "ownerEpoch": uint,    ; axoloty/1 owner incarnation, 1..2147483647
+}
 deadvertise = { "objectIds": [* uuid] }
 
 ; Channel
@@ -177,6 +182,15 @@ that is an association endpoint also releases the Associate rows that named it
 as source or actor, and each release is reported against the Deadvertise frame
 rather than a forged Associate frame. See
 [`docs/wire-compatibility.md`](../wire-compatibility.md).
+
+An Advertise may carry the optional `leaseMs` and `ownerEpoch` presence fields.
+Both are present together or absent together; `leaseMs` is 1,000 to 3,600,000
+and `ownerEpoch` is 1 to 2,147,483,647. A receiver with presence enabled renews
+a held entry silently when the epoch matches, treats a changed epoch or an
+unleased announce as a re-announce, and expires an entry after
+`lastSeen + leaseMs` without a refresh. A processor with presence disabled
+ignores both fields; `coaty/3` never carries them. The fields are an additive
+`axoloty/1` extension ([ADR 0015](../adr/0015-axoloty-1-soft-state-presence.md)).
 
 The CDDL shows the emitted field set. Map keys are sorted by their
 deterministic encoded bytes, so key order in a payload is not the order above.
