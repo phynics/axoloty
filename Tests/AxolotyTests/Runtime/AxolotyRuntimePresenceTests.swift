@@ -294,20 +294,102 @@ extension AxolotyRuntimeTests {
             CoatyRoute.uuidString(endpoint.id.uuid).lowercased(),
             CoatyRoute.uuidString(identity.id).lowercased()
         ])
+    }
 
-        // A Deadvertise from the runtime source cannot retire the IO endpoint:
-        // the endpoint owns its own source identity.
-        let endpointWithdrawal = try presenceDeadvertise(endpoint.id.uuid)
-        _ = await runtime.publish(.deadvertise(endpointWithdrawal))
-        try await clock.tick(at: 10_750)
-        try await waitForPresence("IO refresh after a foreign Deadvertise") {
-            await advertisePublications(transport).count == 5
+    @Test("a foreign Deadvertise does not stop a runtime-owned IO lease")
+    func hostForeignDeadvertiseKeepsRuntimeOwnedLease() async throws {
+        let identity = try RuntimeIdentity(id: .zero, name: "presence-owner")
+        var builder = try RuntimeBuilder(
+            identity: identity,
+            namespace: "presence",
+            presence: try RuntimePresenceConfiguration()
+        )
+        let sourceJSON: StaticString = #"{"objectId":"00000000-0000-4000-8000-000000000401","objectType":"coaty.IoSource","name":"source","coreType":"IoSource","valueType":"com.example.Bool"}"#
+        let endpoint = try builder.ioSource(
+            metadata: try Object<IoSourceMetadata>(decoding: ByteSlice(
+                bytes: sourceJSON.utf8Start, length: sourceJSON.utf8CodeUnitCount
+            )),
+            as: Bool.self
+        )
+        let clock = PresenceTestClock()
+        let transport = TestTransport(wireProfile: .axoloty1CBOR)
+        let runtime = AxolotyRuntime(
+            definition: try builder.finish(),
+            transport: transport,
+            presence: RuntimePresenceEnvironment(clock: clock.clock)
+        )
+        defer { await runtime.stop() }
+        try await runtime.start()
+
+        let applicationObject = Self.secondPresencePeer
+        try #require(await runtime.advertise(
+            objectID: applicationObject,
+            object: try presenceObject(applicationObject),
+            leaseMS: 1_000
+        ) == .accepted)
+        try await waitForPresence("identity, IO, and application advertisements") {
+            await advertisePublications(transport).count == 3
         }
-        let afterForeignWithdrawal = await advertisePublications(transport)
+
+        // The runtime source owns the application object but not the IO
+        // endpoint. The accepted Deadvertise removes only the application
+        // record, so the endpoint keeps refreshing.
+        let withdrawal = try presenceMultiObjectDeadvertise(applicationObject, endpoint.id.uuid)
+        #expect(await runtime.publish(.deadvertise(withdrawal)) == .accepted)
+        try await clock.tick(at: 750)
+        try await waitForPresence("IO refresh after a foreign Deadvertise") {
+            await advertisePublications(transport).count == 4
+        }
+        let refreshed = await advertisePublications(transport)
+        #expect(try presenceAdvertisedObjectID(refreshed[3].payload) == endpoint.id.uuid)
         #expect(
-            afterForeignWithdrawal[4].route.split(separator: "/").last.map(String.init)
+            refreshed[3].route.split(separator: "/").last.map(String.init)
                 == CoatyRoute.uuidString(endpoint.id.uuid).lowercased()
         )
+    }
+
+    @Test("recovery re-announces runtime-owned leases and stop withdraws them once")
+    func hostPresenceReconnectReannouncesRuntimeOwnedObjects() async throws {
+        let identity = try RuntimeIdentity(id: .zero, name: "presence-owner")
+        var builder = try RuntimeBuilder(
+            identity: identity,
+            namespace: "presence",
+            presence: try RuntimePresenceConfiguration()
+        )
+        let sourceJSON: StaticString = #"{"objectId":"00000000-0000-4000-8000-000000000401","objectType":"coaty.IoSource","name":"source","coreType":"IoSource","valueType":"com.example.Bool"}"#
+        let endpoint = try builder.ioSource(
+            metadata: try Object<IoSourceMetadata>(decoding: ByteSlice(
+                bytes: sourceJSON.utf8Start, length: sourceJSON.utf8CodeUnitCount
+            )),
+            as: Bool.self
+        )
+        let clock = PresenceTestClock()
+        let transport = TestTransport(wireProfile: .axoloty1CBOR)
+        let runtime = AxolotyRuntime(
+            definition: try builder.finish(),
+            transport: transport,
+            presence: RuntimePresenceEnvironment(clock: clock.clock)
+        )
+        try await runtime.start()
+        let initial = await advertisePublications(transport)
+        #expect(initial.count == 2)
+
+        await runtime.reconnect()
+        #expect(await runtime.state() == .running)
+        let recovered = await advertisePublications(transport)
+        #expect(recovered.count == 4)
+        #expect(Array(recovered.suffix(2)) == initial)
+
+        // Recovery keeps the original 717 ms IO phase.
+        try await clock.tick(at: 750)
+        try await waitForPresence("IO refresh after recovery") { await advertisePublications(transport).count == 5 }
+
+        await runtime.stop()
+        let deadvertises = await transport.publications().filter { isDeadvertiseRoute($0.route) }
+        #expect(deadvertises.map(\.payload) == [
+            try presenceDeadvertise(endpoint.id.uuid),
+            try presenceDeadvertise(identity.id)
+        ])
     }
 
     @Test("identical declarations keep their phase and changed declarations reject atomically")

@@ -17,8 +17,10 @@ fork, through CoatySwift 2.4.0, remain documented in the
   application object. One bounded timer refreshes retained envelopes with a
   per-object phase, and `presenceExpiries()` reports peer removals through a
   bounded additive stream. Each runtime instance carries its own owner epoch.
-  `coaty/3` bytes and behavior are unchanged; enabling presence on `coaty/3`
-  fails before the transport opens. See the amendment to ADR 0015.
+  `coaty/3` wire bytes are unchanged; presence stays off there and enabling it
+  fails before the transport opens. Graceful stop now aborts a failing
+  withdrawal sequence at the first transport error on every profile. See the
+  amendment to ADR 0015.
 
 ## [1.0.1] - 2026-11-02
 

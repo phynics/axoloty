@@ -313,6 +313,9 @@ actor ProtocolExecutor {
                     ))
                 )
             }
+            if let axolotyError = error as? AxolotyError, case .invalidConfiguration = axolotyError {
+                return axolotyError
+            }
             return .runtime(code: .brokerUnavailable, reason: runtimeErrorDetail(error))
         }
     }
@@ -579,9 +582,12 @@ actor ProtocolExecutor {
     }
 
     private func presenceAdvertisementError(_ error: ProtocolError) -> AxolotyError {
-        error.code == .capacityExceeded
-            ? .runtime(code: .capacityExceeded, reason: "presence advertisement exceeds the payload bound")
-            : .invalidConfiguration(option: "presence", reason: "presence advertisement could not be encoded")
+        .invalidConfiguration(
+            option: "presence",
+            reason: error.code == .capacityExceeded
+                ? "a leased runtime advertisement exceeds the configured payload bound"
+                : "a leased runtime advertisement could not be encoded"
+        )
     }
 
     /// Announces the identity and typed IO endpoints with the configured
@@ -622,7 +628,10 @@ actor ProtocolExecutor {
         }
         localPresence.removeAll { $0.owner == .runtime }
         guard localPresence.count + announcements.count <= definition.capacities.protocolMaximumObjects else {
-            throw .runtime(code: .capacityExceeded, reason: "the presence table is full")
+            throw .invalidConfiguration(
+                option: "presence",
+                reason: "the object table cannot hold the identity and every typed IO endpoint"
+            )
         }
         let intervalMS = presenceRefreshIntervalMS(leaseMS: configuration.leaseMS)
         presenceRefreshDeferred = false
@@ -643,8 +652,12 @@ actor ProtocolExecutor {
             )
             record.nextRefreshAtMS = record.nextPhase(after: nowMS)
             localPresence.append(record)
+            if announcement.sourceID == definition.identity?.id {
+                // Publish the identity flag as soon as the identity succeeds,
+                // so a later IO failure still lets stop withdraw it.
+                lifecycleAdvertisementActive = true
+            }
         }
-        lifecycleAdvertisementActive = definition.identity != nil
     }
 
     private func publishPresenceAdvertisement(

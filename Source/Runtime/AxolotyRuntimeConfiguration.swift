@@ -17,8 +17,8 @@ public struct RuntimePresenceConfiguration: Sendable, Equatable {
     /// The declared lease in milliseconds, `1000...3_600_000`.
     ///
     /// The runtime refreshes the identity and typed IO endpoints every
-    /// `max(50, leaseMS * 2 / 9)` milliseconds, so a loss of four consecutive
-    /// refreshes stays inside the lease.
+    /// `max(50, leaseMS * 2 / 9)` milliseconds, so three consecutive lost
+    /// refreshes stay inside the lease.
     public let leaseMS: UInt32
 
     /// Creates a presence configuration.

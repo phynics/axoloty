@@ -629,6 +629,11 @@ frozen enum:
   `leaseMS`.
 - The host rejects a raw Advertise that carries `leaseMs` or `ownerEpoch` while
   presence is enabled, because no managed record would refresh it.
+- On recovery the host re-announces the identity and typed IO endpoints
+  immediately with their retained envelopes. Application objects re-announce
+  at their unchanged phase. The phase itself is never restarted, so the
+  immediate runtime re-announce is one event per reconnect, not a periodic
+  burst.
 
 ## Consequences
 

@@ -186,8 +186,8 @@ never expires.
 Presence requires the `axoloty/1` profile. Enabling it on a `coaty/3` transport
 fails `start()` with `AxolotyError.invalidConfiguration(option: "presence", …)`
 before the transport opens. Graceful stop publishes Deadvertise for application
-objects first, then typed IO endpoints, then the identity, and aborts that
-sequence at the first transport error.
+objects first, then typed IO endpoints, then the identity. A transport failure
+ends that sequence immediately on every profile.
 
 ## Static runtime
 
