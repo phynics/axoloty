@@ -405,130 +405,31 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
         // semantic outcomes even when the caller's sink is full.
         guard sink.preflight(actionCount: actionCount) else { return .rejected(.capacityExceeded) }
         if ioActorActionCount > 0 {
-            for index in 0..<capacity where associations[index].active && associations[index].sourceID == frame.routingKey.sourceID {
-                let delivery = BorrowedProtocolDelivery(
-                    routingKey: frame.routingKey,
-                    deliveryKey: .ioActor(associations[index].actorID),
-                    routeClassification: associations[index].routeKind.classification,
-                    topic: frame.topic,
-                    payload: frame.payload
-                )
-                let action = BorrowedProtocolAction.deliver(delivery)
-                guard sink.append(action) else { return .rejected(.capacityExceeded) }
+            if let rejection = emitIoValueDeliveries(
+                frame: frame,
+                sink: &sink
+            ) {
+                return rejection
             }
         } else if frame.routingKey.capability == .associate {
-            let reader = frame.payload.withBytes { pointer, length in
-                codec.reader(bytes: pointer.assumingMemoryBound(to: UInt8.self), length: length)
-            }
-            guard let event = try? AssociateWireData(from: reader) else { return .rejected(.malformedPayload) }
-            let oldAssociation: Association?
-            let proposedAssociation: Association?
-            switch plan {
-            case .remove(let index):
-                oldAssociation = associations[index]
-                proposedAssociation = nil
-            case .upsert(let index, let association):
-                oldAssociation = associations[index].active ? associations[index] : nil
-                proposedAssociation = association
-            case .none:
-                oldAssociation = nil
-                proposedAssociation = nil
-            }
-            let change: ProtocolIoAssociationChange
-            switch plan {
-            case .remove: change = .removed
-            case .upsert(let index, _): change = associations[index].active ? .updated : .established
-            case .none: change = .established
-            }
-            let transitionClassification = proposedAssociation?.routeKind.classification
-                ?? oldAssociation?.routeKind.classification
-                ?? routeClassification
-            let delivery = BorrowedProtocolDelivery(
-                routingKey: frame.routingKey,
-                deliveryKey: frameDeliveryKey,
-                routeClassification: transitionClassification,
-                topic: frame.topic,
-                payload: frame.payload
-            )
-            let transitionRoute: BorrowedProtocolRouteSnapshot?
-            if let proposedAssociation {
-                transitionRoute = associationRouteSnapshot(proposedAssociation)
-            } else if let oldAssociation {
-                transitionRoute = associationRouteSnapshot(oldAssociation)
-            } else {
-                transitionRoute = nil
-            }
-
-            let localActor = isLocalIoActor(event.ioActorId)
-            if localActor,
-               let oldAssociation,
-               oldAssociation.routeKind == .external,
-               (proposedAssociation == nil || proposedAssociation!.routeKind != .external || !Self.routeEquals(oldAssociation, proposedAssociation!)),
-               let route = associationRouteSnapshot(oldAssociation) {
-                guard sink.append(.externalRouteDeactivated(BorrowedExternalRouteTransition(
-                    sourceID: oldAssociation.sourceID,
-                    actorID: oldAssociation.actorID,
-                    route: route
-                ))) else { return .rejected(.capacityExceeded) }
-            }
-            let transition = BorrowedIoAssociationTransition(
-                delivery: delivery,
-                sourceID: event.ioSourceId,
-                actorID: event.ioActorId,
-                change: change,
-                route: transitionRoute,
-                routeClassification: transitionClassification
-            )
-            guard sink.append(.associationChanged(transition)) else { return .rejected(.capacityExceeded) }
-
-            if localActor,
-               let proposedAssociation,
-               proposedAssociation.routeKind == .external,
-               (oldAssociation == nil || oldAssociation!.routeKind != .external || !Self.routeEquals(oldAssociation!, proposedAssociation)),
-               let route = associationRouteSnapshot(proposedAssociation) {
-                guard sink.append(.externalRouteActivated(BorrowedExternalRouteTransition(
-                    sourceID: proposedAssociation.sourceID,
-                    actorID: proposedAssociation.actorID,
-                    route: route
-                ))) else { return .rejected(.capacityExceeded) }
+            if let rejection = emitAssociationChange(
+                plan: plan,
+                frame: frame,
+                frameDeliveryKey: frameDeliveryKey,
+                routeClassification: routeClassification,
+                sink: &sink
+            ) {
+                return rejection
             }
         } else {
-            let delivery = BorrowedProtocolDelivery(
-                routingKey: frame.routingKey,
-                deliveryKey: frameDeliveryKey,
+            if let rejection = emitDeliveryAndReleases(
+                frame: frame,
+                frameDeliveryKey: frameDeliveryKey,
                 routeClassification: routeClassification,
-                topic: frame.topic,
-                payload: frame.payload
-            )
-            guard sink.append(.deliver(delivery)) else { return .rejected(.capacityExceeded) }
-            // A Deadvertise removes the advertised identities the sender owns.
-            // An association endpoint is one of those identities: a lost peer
-            // must not hold its Associate slots forever. The release is
-            // reported against the Deadvertise frame that caused it, never as a
-            // forged Associate delivery, so runtimes must not dispatch these
-            // transitions as wire Associate events.
-            for index in 0..<capacity where releaseMask[index] {
-                let association = associations[index]
-                // An active row normally carries a route, but the transition
-                // itself models an absent route. Emit the release regardless so
-                // clearing the slot never happens without an observer report.
-                let route = associationRouteSnapshot(association)
-                if association.routeKind == .external, let route {
-                    guard sink.append(.externalRouteDeactivated(BorrowedExternalRouteTransition(
-                        sourceID: association.sourceID,
-                        actorID: association.actorID,
-                        route: route
-                    ))) else { return .rejected(.capacityExceeded) }
-                }
-                let transition = BorrowedIoAssociationTransition(
-                    delivery: delivery,
-                    sourceID: association.sourceID,
-                    actorID: association.actorID,
-                    change: .removed,
-                    route: route,
-                    routeClassification: association.routeKind.classification
-                )
-                guard sink.append(.associationChanged(transition)) else { return .rejected(.capacityExceeded) }
+                releaseMask: releaseMask,
+                sink: &sink
+            ) {
+                return rejection
             }
         }
         if let responsePlan {
@@ -543,6 +444,229 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
             releaseMask: releaseMask
         )
         return .accepted
+    }
+
+    /// Emits the deliveries for one IoValue frame's matching associations.
+    ///
+    /// Kept separate so the fixed delivery and action temporaries do not
+    /// inflate the generic inbound frame's stack slot.
+    /// - Returns: `nil` on success, or the rejection to propagate.
+    private mutating func emitIoValueDeliveries<S: ~Copyable & ProtocolActionSink>(
+        frame: BorrowedProtocolFrame,
+        sink: inout S
+    ) -> ProtocolProcessOutcome? {
+        for index in 0..<capacity where associations[index].active && associations[index].sourceID == frame.routingKey.sourceID {
+            let delivery = BorrowedProtocolDelivery(
+                routingKey: frame.routingKey,
+                deliveryKey: .ioActor(associations[index].actorID),
+                routeClassification: associations[index].routeKind.classification,
+                topic: frame.topic,
+                payload: frame.payload
+            )
+            guard sink.append(.deliver(delivery)) else { return .rejected(.capacityExceeded) }
+        }
+        return nil
+    }
+
+    /// Emits the delivery for a one-way frame and the association releases that
+    /// a Deadvertise triggered.
+    ///
+    /// Kept separate so the fixed delivery, route, and action temporaries do
+    /// not inflate the generic inbound frame's stack slot.
+    /// - Returns: `nil` on success, or the rejection to propagate.
+    private mutating func emitDeliveryAndReleases<S: ~Copyable & ProtocolActionSink>(
+        frame: BorrowedProtocolFrame,
+        frameDeliveryKey: BorrowedProtocolDeliveryKey,
+        routeClassification: ProtocolRouteClassification,
+        releaseMask: InlineArray<capacity, Bool>,
+        sink: inout S
+    ) -> ProtocolProcessOutcome? {
+        let delivery = BorrowedProtocolDelivery(
+            routingKey: frame.routingKey,
+            deliveryKey: frameDeliveryKey,
+            routeClassification: routeClassification,
+            topic: frame.topic,
+            payload: frame.payload
+        )
+        guard sink.append(.deliver(delivery)) else { return .rejected(.capacityExceeded) }
+        // A Deadvertise removes the advertised identities the sender owns.
+        // An association endpoint is one of those identities: a lost peer
+        // must not hold its Associate slots forever. The release is
+        // reported against the Deadvertise frame that caused it, never as a
+        // forged Associate delivery, so runtimes must not dispatch these
+        // transitions as wire Associate events.
+        for index in 0..<capacity where releaseMask[index] {
+            let association = associations[index]
+            // An active row normally carries a route, but the transition
+            // itself models an absent route. Emit the release regardless so
+            // clearing the slot never happens without an observer report.
+            let route = associationRouteSnapshot(association)
+            if association.routeKind == .external, let route {
+                guard emitExternalRouteDeactivated(
+                    sourceID: association.sourceID,
+                    actorID: association.actorID,
+                    route: route,
+                    sink: &sink
+                ) else { return .rejected(.capacityExceeded) }
+            }
+            guard emitAssociationTransition(
+                delivery: delivery,
+                sourceID: association.sourceID,
+                actorID: association.actorID,
+                change: .removed,
+                route: route,
+                routeClassification: association.routeKind.classification,
+                sink: &sink
+            ) else { return .rejected(.capacityExceeded) }
+        }
+        return nil
+    }
+
+    /// Emits the association lifecycle actions for one accepted Associate
+    /// frame.
+    ///
+    /// This is a separate function so its fixed route and association
+    /// temporaries do not inflate the generic inbound frame's stack slot.
+    ///
+    /// - Returns: `nil` on success, or the rejection to propagate.
+    private mutating func emitAssociationChange<S: ~Copyable & ProtocolActionSink>(
+        plan: AssociationPlan,
+        frame: BorrowedProtocolFrame,
+        frameDeliveryKey: BorrowedProtocolDeliveryKey,
+        routeClassification: ProtocolRouteClassification,
+        sink: inout S
+    ) -> ProtocolProcessOutcome? {
+        // Capture the small codec value, not `self`, inside the borrowed
+        // payload closure. An unoptimized build otherwise materializes the
+        // whole fixed processor for the closure context.
+        let codec = self.codec
+        let reader = frame.payload.withBytes { pointer, length in
+            codec.reader(bytes: pointer.assumingMemoryBound(to: UInt8.self), length: length)
+        }
+        guard let event = try? AssociateWireData(from: reader) else { return .rejected(.malformedPayload) }
+        let oldAssociation: Association?
+        let proposedAssociation: Association?
+        switch plan {
+        case .remove(let index):
+            oldAssociation = associations[index]
+            proposedAssociation = nil
+        case .upsert(let index, let association):
+            oldAssociation = associations[index].active ? associations[index] : nil
+            proposedAssociation = association
+        case .none:
+            oldAssociation = nil
+            proposedAssociation = nil
+        }
+        let change: ProtocolIoAssociationChange
+        switch plan {
+        case .remove: change = .removed
+        case .upsert(let index, _): change = associations[index].active ? .updated : .established
+        case .none: change = .established
+        }
+        let transitionClassification = proposedAssociation?.routeKind.classification
+            ?? oldAssociation?.routeKind.classification
+            ?? routeClassification
+        let delivery = BorrowedProtocolDelivery(
+            routingKey: frame.routingKey,
+            deliveryKey: frameDeliveryKey,
+            routeClassification: transitionClassification,
+            topic: frame.topic,
+            payload: frame.payload
+        )
+        let transitionRoute: BorrowedProtocolRouteSnapshot?
+        if let proposedAssociation {
+            transitionRoute = associationRouteSnapshot(proposedAssociation)
+        } else if let oldAssociation {
+            transitionRoute = associationRouteSnapshot(oldAssociation)
+        } else {
+            transitionRoute = nil
+        }
+
+        let localActor = isLocalIoActor(event.ioActorId)
+        if localActor,
+           let oldAssociation,
+           oldAssociation.routeKind == .external,
+           (proposedAssociation == nil || proposedAssociation!.routeKind != .external || !Self.routeEquals(oldAssociation, proposedAssociation!)),
+           let route = associationRouteSnapshot(oldAssociation) {
+            guard emitExternalRouteDeactivated(
+                sourceID: oldAssociation.sourceID,
+                actorID: oldAssociation.actorID,
+                route: route,
+                sink: &sink
+            ) else { return .rejected(.capacityExceeded) }
+        }
+        guard emitAssociationTransition(
+            delivery: delivery,
+            sourceID: event.ioSourceId,
+            actorID: event.ioActorId,
+            change: change,
+            route: transitionRoute,
+            routeClassification: transitionClassification,
+            sink: &sink
+        ) else { return .rejected(.capacityExceeded) }
+
+        if localActor,
+           let proposedAssociation,
+           proposedAssociation.routeKind == .external,
+           (oldAssociation == nil || oldAssociation!.routeKind != .external || !Self.routeEquals(oldAssociation!, proposedAssociation)),
+           let route = associationRouteSnapshot(proposedAssociation) {
+            guard emitExternalRouteActivated(
+                sourceID: proposedAssociation.sourceID,
+                actorID: proposedAssociation.actorID,
+                route: route,
+                sink: &sink
+            ) else { return .rejected(.capacityExceeded) }
+        }
+        return nil
+    }
+
+    /// Appends one association transition action.
+    private mutating func emitAssociationTransition<S: ~Copyable & ProtocolActionSink>(
+        delivery: BorrowedProtocolDelivery,
+        sourceID: UUID16,
+        actorID: UUID16,
+        change: ProtocolIoAssociationChange,
+        route: BorrowedProtocolRouteSnapshot?,
+        routeClassification: ProtocolRouteClassification,
+        sink: inout S
+    ) -> Bool {
+        let transition = BorrowedIoAssociationTransition(
+            delivery: delivery,
+            sourceID: sourceID,
+            actorID: actorID,
+            change: change,
+            route: route,
+            routeClassification: routeClassification
+        )
+        return sink.append(.associationChanged(transition))
+    }
+
+    /// Appends one external-route deactivation action.
+    private mutating func emitExternalRouteDeactivated<S: ~Copyable & ProtocolActionSink>(
+        sourceID: UUID16,
+        actorID: UUID16,
+        route: BorrowedProtocolRouteSnapshot,
+        sink: inout S
+    ) -> Bool {
+        sink.append(.externalRouteDeactivated(BorrowedExternalRouteTransition(
+            sourceID: sourceID,
+            actorID: actorID,
+            route: route
+        )))
+    }
+
+    /// Appends one external-route activation action.
+    private mutating func emitExternalRouteActivated<S: ~Copyable & ProtocolActionSink>(
+        sourceID: UUID16,
+        actorID: UUID16,
+        route: BorrowedProtocolRouteSnapshot,
+        sink: inout S
+    ) -> Bool {
+        sink.append(.externalRouteActivated(BorrowedExternalRouteTransition(
+            sourceID: sourceID,
+            actorID: actorID,
+            route: route
+        )))
     }
 
     private mutating func processExternalInbound<Classifier: ProtocolRouteClassifier, S: ~Copyable & ProtocolActionSink>(

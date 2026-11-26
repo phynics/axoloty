@@ -188,6 +188,41 @@ present with `budget: 0` (exact-zero); when approved, `measured` must
 also equal `0`. The production `esp32c6-mqtt` hot path measured `0`
 allocations.
 
+### Static receive-path stack
+
+Issue [#1061](https://github.com/phynics/axoloty/issues/1061) measured about
+25 KB of main-task stack below the application frame while
+`StaticRuntime.receive` processed the first inbound frame. The dominant frame
+was `ProtocolProcessor.processProfileInbound`, which held every family's
+planning and action-emission temporaries in one stack slot. Fixed-inline
+values are large: an association row is about 300 bytes (including its
+256-byte route) and one borrowed action is about 400 bytes.
+
+That function now keeps only validation, planning, and commit. Per-family
+emission lives in separate helpers:
+
+| Function | Release frame | Debug frame |
+|----------|--------------:|------------:|
+| `processProfileInbound` (before) | 9,208 B | 34,968 B |
+| `processProfileInbound` (after) | 1,672 B | 5,832 B |
+| `emitDeliveryAndReleases` | 2,904 B | 2,712 B |
+| `emitIoValueDeliveries` | 1,016 B | 1,480 B |
+| `emitAssociationChange` | 6,488 B | 19,480 B |
+
+For the common one-way frame, the peak call chain on x86_64 fell from about
+9.2 KB to about 4.6 KB in a release build and from about 35 KB to about 8.5 KB
+in a debug build. An Associate frame now peaks at about 8.2 KB release and
+25 KB debug, also below the previous single frame. Host frame sizes are a
+proxy: regenerate them for the embedded toolchain before claiming a device
+budget.
+
+The quoted 3x difference between CBOR and JSON `State` initialization is not
+visible in this receive path. The processor layout is profile-independent;
+`wireCodec` selects the reader and writer but adds no per-profile state. That
+peak must come from the application's lazy `State` initializer or its
+surrounding code, and needs a stack-painting run that initializes `State`
+without calling `receive` to attribute it.
+
 ### Size limits
 
 | Input | Limit | Behavior |
