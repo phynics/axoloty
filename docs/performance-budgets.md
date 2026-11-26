@@ -218,10 +218,13 @@ budget.
 
 The quoted 3x difference between CBOR and JSON `State` initialization is not
 visible in this receive path. The processor layout is profile-independent;
-`wireCodec` selects the reader and writer but adds no per-profile state. That
-peak must come from the application's lazy `State` initializer or its
-surrounding code, and needs a stack-painting run that initializes `State`
-without calling `receive` to attribute it.
+`wireCodec` selects the reader and writer but adds no per-profile state.
+`StaticRuntime<2, 512>`, the sensor-node runtime, is 6,881 bytes on x86_64.
+The reported 15 KB CBOR peak is about two runtime temporaries, while the
+5.2 KB JSON peak is below one runtime, so the CBOR branch materializes the
+value (likely a missed move elision around the `try!` initializer) while the
+JSON branch initializes in place. Confirm on the embedded toolchain with a
+stack-painted `State` initialization that does not call `receive`.
 
 ### Size limits
 
