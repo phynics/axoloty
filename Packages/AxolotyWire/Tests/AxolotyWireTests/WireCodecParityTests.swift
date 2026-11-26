@@ -219,6 +219,63 @@ struct WireCodecParityTests {
         let jsonBytes = Array(#"{"object":{},"leaseMs":0,"ownerEpoch":0}"#.utf8)
         let value = try decode(.coaty3JSON, jsonBytes, as: AdvertiseWireData.self)
         #expect(value.leaseMS == 0 && value.ownerEpoch == 0)
+
+        let cborBytes = cborMap([
+            (cborText("object"), cborMap([])),
+            (cborText("leaseMs"), cborInt(0)),
+            (cborText("ownerEpoch"), cborInt(0)),
+        ])
+        let cborValue = try decode(.axoloty1CBOR, cborBytes, as: AdvertiseWireData.self)
+        #expect(cborValue.leaseMS == 0 && cborValue.ownerEpoch == 0)
+    }
+
+    @Test("advertise rejects wrong-typed presence fields on both profiles")
+    func advertisePresenceWrongTypes() {
+        #expect(throws: WireDecodeError.self) {
+            _ = try decode(.coaty3JSON, Array(#"{"object":{},"leaseMs":"10000"}"#.utf8), as: AdvertiseWireData.self)
+        }
+        #expect(throws: WireDecodeError.self) {
+            _ = try decode(.coaty3JSON, Array(#"{"object":{},"leaseMs":10.5}"#.utf8), as: AdvertiseWireData.self)
+        }
+        #expect(throws: WireDecodeError.self) {
+            _ = try decode(.coaty3JSON, Array(#"{"object":{},"ownerEpoch":"7"}"#.utf8), as: AdvertiseWireData.self)
+        }
+        let cborTextMap = cborMap([
+            (cborText("object"), cborMap([])),
+            (cborText("leaseMs"), cborText("10000")),
+        ])
+        #expect(throws: WireDecodeError.self) {
+            _ = try decode(.axoloty1CBOR, cborTextMap, as: AdvertiseWireData.self)
+        }
+        let cborFloat: [UInt8] = [0xFA, 0x46, 0x1C, 0x40, 0x00] // 10000.0
+        let cborFloatMap = cborMap([
+            (cborText("object"), cborMap([])),
+            (cborText("leaseMs"), cborFloat),
+        ])
+        #expect(throws: WireDecodeError.self) {
+            _ = try decode(.axoloty1CBOR, cborFloatMap, as: AdvertiseWireData.self)
+        }
+    }
+
+    @Test("advertise treats null presence fields as absent and permits a partial pair")
+    func advertisePresenceNullAndPartial() throws {
+        let jsonNull = Array(#"{"object":{},"leaseMs":null,"ownerEpoch":null}"#.utf8)
+        let nullValue = try decode(.coaty3JSON, jsonNull, as: AdvertiseWireData.self)
+        #expect(nullValue.leaseMS == nil && nullValue.ownerEpoch == nil)
+
+        let cborNullBytes = cborMap([
+            (cborText("object"), cborMap([])),
+            (cborText("leaseMs"), cborNull),
+            (cborText("ownerEpoch"), cborNull),
+        ])
+        let cborNullValue = try decode(.axoloty1CBOR, cborNullBytes, as: AdvertiseWireData.self)
+        #expect(cborNullValue.leaseMS == nil && cborNullValue.ownerEpoch == nil)
+
+        // The presence policy rejects a partial pair; the DTO still round-trips it.
+        let partialJSON = Array(#"{"object":{},"leaseMs":10000}"#.utf8)
+        let partial = try decode(.coaty3JSON, partialJSON, as: AdvertiseWireData.self)
+        #expect(partial.leaseMS == 10_000 && partial.ownerEpoch == nil)
+        #expect(try encode(.coaty3JSON, partial) == partialJSON)
     }
 
     // MARK: - Deadvertise

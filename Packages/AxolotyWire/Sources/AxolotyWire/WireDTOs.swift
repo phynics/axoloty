@@ -96,11 +96,14 @@ public struct AdvertiseWireData: WireDecodable, WireEncodable, Equatable {
     /// Decodes an advertise event from `reader`.
     ///
     /// `object` is required; `privateData`, `leaseMs`, and `ownerEpoch` are
-    /// optional. The presence fields are decoded without validation so a
-    /// presence-off processor keeps accepting the same frames as before.
+    /// optional. An explicit `null` is treated as absent. A present presence
+    /// field must be an integer; range validation belongs to the presence
+    /// policy, not this DTO, so presence-off processors keep accepting the
+    /// frames they accept today.
     ///
     /// - Parameter reader: A ``WireReader`` over the payload bytes.
-    /// - Throws: ``WireDecodeError`` if the `object` field is missing.
+    /// - Throws: ``WireDecodeError`` if the `object` field is missing, or if a
+    ///   presence field is present and not an integer.
     public init(from reader: WireReader) throws(WireDecodeError) {
         try reader.validate()
         guard let obj = reader.readField("object") else {
@@ -108,8 +111,16 @@ public struct AdvertiseWireData: WireDecodable, WireEncodable, Equatable {
         }
         self.object = obj
         self.privateData = reader.readOptionalRaw("privateData")
-        self.leaseMS = reader.readInt("leaseMs")
-        self.ownerEpoch = reader.readInt("ownerEpoch")
+        self.leaseMS = try Self.optionalInteger("leaseMs", from: reader)
+        self.ownerEpoch = try Self.optionalInteger("ownerEpoch", from: reader)
+    }
+
+    private static func optionalInteger(_ field: StaticString, from reader: WireReader) throws(WireDecodeError) -> Int? {
+        guard reader.readOptionalRaw(field) != nil else { return nil }
+        guard let value = reader.readInt(field) else {
+            throw WireDecodeError(.invalidValue, field: field)
+        }
+        return value
     }
 
     /// Encodes this event into `writer` as an object wrapping `object`,

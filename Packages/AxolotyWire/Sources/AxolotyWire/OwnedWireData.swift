@@ -6,12 +6,24 @@ public struct OwnedAdvertiseWireData: Sendable, Equatable {
     public let object: [UInt8]
     /// Optional private data as complete bytes in ``profile``'s encoding.
     public let privateData: [UInt8]?
+    /// The optional presence lease in milliseconds.
+    public let leaseMS: Int?
+    /// The optional owner incarnation counter.
+    public let ownerEpoch: Int?
     /// The wire profile whose encoding the raw fields carry.
     public let profile: WireProfile
 
-    init(unchecked object: [UInt8], privateData: [UInt8]?, profile: WireProfile) {
+    init(
+        unchecked object: [UInt8],
+        privateData: [UInt8]?,
+        leaseMS: Int?,
+        ownerEpoch: Int?,
+        profile: WireProfile
+    ) {
         self.object = object
         self.privateData = privateData
+        self.leaseMS = leaseMS
+        self.ownerEpoch = ownerEpoch
         self.profile = profile
     }
 
@@ -19,8 +31,19 @@ public struct OwnedAdvertiseWireData: Sendable, Equatable {
     ///
     /// - Throws: ``WireDecodeError`` if a field is malformed or has the wrong
     ///   JSON shape.
-    public init(object: [UInt8], privateData: [UInt8]?) throws(WireDecodeError) {
-        try self.init(profile: .coaty3JSON, object: object, privateData: privateData)
+    public init(
+        object: [UInt8],
+        privateData: [UInt8]?,
+        leaseMS: Int? = nil,
+        ownerEpoch: Int? = nil
+    ) throws(WireDecodeError) {
+        try self.init(
+            profile: .coaty3JSON,
+            object: object,
+            privateData: privateData,
+            leaseMS: leaseMS,
+            ownerEpoch: ownerEpoch
+        )
     }
 
     /// Creates owned Advertise payload fields for one profile after validating.
@@ -29,12 +52,26 @@ public struct OwnedAdvertiseWireData: Sendable, Equatable {
     ///   - profile: The profile whose encoding the raw fields carry.
     ///   - object: The complete encoded object.
     ///   - privateData: Optional complete encoded private data.
+    ///   - leaseMS: Optional presence lease.
+    ///   - ownerEpoch: Optional owner incarnation.
     /// - Throws: ``WireDecodeError`` if a field is malformed or has the wrong
     ///   shape for `profile`.
-    public init(profile: WireProfile, object: [UInt8], privateData: [UInt8]?) throws(WireDecodeError) {
+    public init(
+        profile: WireProfile,
+        object: [UInt8],
+        privateData: [UInt8]?,
+        leaseMS: Int? = nil,
+        ownerEpoch: Int? = nil
+    ) throws(WireDecodeError) {
         try validateOwnedValue(object, profile: profile, field: "object", shape: .object)
         try validateOptionalOwnedValue(privateData, profile: profile, field: "privateData", shape: .object)
-        self.init(unchecked: object, privateData: privateData, profile: profile)
+        self.init(
+            unchecked: object,
+            privateData: privateData,
+            leaseMS: leaseMS,
+            ownerEpoch: ownerEpoch,
+            profile: profile
+        )
     }
 }
 

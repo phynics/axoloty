@@ -191,6 +191,7 @@ unleased announce as a re-announce, and expires an entry after
 `lastSeen + leaseMs` without a refresh. A processor with presence disabled
 ignores both fields; `coaty/3` never carries them. The fields are an additive
 `axoloty/1` extension ([ADR 0015](../adr/0015-axoloty-1-soft-state-presence.md)).
+Receiver behavior is specified here and implemented by #1060.
 
 The CDDL shows the emitted field set. Map keys are sorted by their
 deterministic encoded bytes, so key order in a payload is not the order above.

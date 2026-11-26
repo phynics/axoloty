@@ -68,11 +68,11 @@ frames (`activeObjects=4`). With no further traffic, `expire(nowMS: 600000)`
 (ten minutes later) returned `false` and `activeObjects` stayed `4`: `expire`
 at `ProtocolProcessor.swift:196` walks only pending request correlations, never
 objects. A fifth peer's Advertise was `rejected(capacityExceeded)` and
-delivered nothing (`ProtocolProcessor.swift:932`). A Deadvertise from a
+delivered nothing (`ProtocolProcessor.swift`, object planning). A Deadvertise from a
 different source was `accepted` (at `v0.10.0`: `rejected(malformedFrame)`) but
 removed nothing, because an inbound
 Deadvertise removes only entries its own source owns
-(`markDeadvertisedObjects`, `:1083`). The owning source's Deadvertise freed
+(`markDeadvertisedObjects`). The owning source's Deadvertise freed
 exactly one slot and the fifth peer then fit. `resetTransport()` (`:226`)
 discarded all four. Identical under both profiles. So only a Deadvertise from
 the owner or a local transport reset ever frees a lost peer's slot.
@@ -80,7 +80,7 @@ the owner or a local transport reset ever frees a lost peer's slot.
 **Claim 2: a repeated Advertise for the same source and object is rejected as
 `.duplicate`. Confirmed (measured), and stronger than the issue states.**
 `planObjectTransition` returns `.rejected(.duplicate)` at
-`ProtocolProcessor.swift:923` for any active entry with the same `sourceID` and
+`ProtocolProcessor.swift`, object planning, for any active entry with the same `sourceID` and
 `objectID` unless it is a local, not-yet-announced replay. In the run the
 identical repeat, a repeat with a changed `name`, and a repeat carrying an extra
 envelope field were all `rejected(duplicate)` with zero deliveries, and
@@ -89,7 +89,7 @@ therefore refreshes nothing today, and neither does a changed object: a
 re-Advertise cannot update a held entry.
 
 **Claim 3: an older decoder ignores an unknown Advertise envelope field.
-Confirmed (measured) for current code and for `v0.10.0`.** `AdvertiseWireData(from:)` reads `object` and `privateData` only
+Confirmed (measured) for `v0.10.0` and for the code before this ADR's wire fields.** `AdvertiseWireData(from:)` reads `object` and `privateData` only
 (`WireDTOs.swift:80`). With an extra `leaseMs` field next to `object`,
 `AdvertiseWireData` returned byte-identical `object` bytes and a `nil`
 `privateData`, and the processor returned `accepted` with one delivery, under
@@ -333,7 +333,7 @@ announce and as a refresh, because deterministic key order re-encodes the map.
 
 The host timer is one runtime-owned task over a time-parameterized processor
 function. It is cancelled and awaited before the graceful Deadvertise, is
-epoch-checked like the reconnect path (#1080), and does not refresh while
+epoch-checked like the reconnect path (#1076), and does not refresh while
 reconnecting, where the publication would queue in offline work. The host
 passes its own monotonic clock to both inbound presence stamping and expiry, so
 there is one clock; the transport's frame timestamp is not used for presence.
@@ -358,7 +358,7 @@ decision 2 row 2.
   Deadvertise; (b) a bounded tombstone table of recently removed
   (source, object) pairs; (c) accept the window.
 - **Accepted: (c), plus an owner rule.** The ghost is bounded by the
-  lease: it expires in at most L (40 s by default) and the failure is
+  lease: it expires in at most L (45 s by default) and the failure is
   self-healing, which is the point of soft state. The owner rule is: stop the
   refresh timer before publishing Deadvertise, and never refresh after it, so
   only frames already in flight can race.
@@ -431,7 +431,7 @@ and is out of scope here.
 
 Today `resetTransport()` discards every peer-only entry and keeps local ones
 replayable (`ProtocolProcessor.swift:226`); the host runtime calls it on
-reconnect (`AxolotyRuntime.swift:311`, `:1507`) and reports
+reconnect (`AxolotyRuntime.swift`, reconnect and ingress-pump paths) and reports
 `RuntimePresenceEvidence.transportReset`. With that behaviour a 4 s reconnect (the issue's figure for a forced
 Wi-Fi drop; not reproducible here), long enough to pass the binding's
 one-second loss debounce, drops every peer
