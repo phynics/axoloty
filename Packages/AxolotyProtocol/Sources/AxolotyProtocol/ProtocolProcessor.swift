@@ -2,6 +2,20 @@
 
 @_spi(AxolotyProtocol) import AxolotyWire
 
+/// Opt-in soft-state presence handling for `axoloty/1` Advertise frames.
+public enum ProtocolPresencePolicy: Sendable, Equatable {
+    /// Presence is ignored; the processor behaves exactly as before.
+    case disabled
+    /// Leased Advertise frames renew, re-announce, and expire.
+    case enabled
+}
+
+/// A presence policy that cannot be applied to the selected wire profile.
+public enum ProtocolPresenceConfigurationError: Error, Sendable, Equatable {
+    /// Presence is an `axoloty/1` feature; `coaty/3` stays sealed.
+    case unsupportedWireProfile
+}
+
 /// Shared fixed-inline protocol processor for host and Embedded bindings.
 public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
     private enum StoredAssociationRouteKind: Equatable {
@@ -40,6 +54,12 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
         var local = false
         var announced = false
         var role: ObjectRole = .other
+        /// Declared presence lease in milliseconds; zero means no lease.
+        var leaseMS: UInt32 = 0
+        /// Caller-supplied time of the last announce or renew.
+        var lastSeenMS: UInt32 = 0
+        /// Owner incarnation; zero means no presence epoch.
+        var ownerEpoch: UInt32 = 0
     }
 
     private struct PendingRecord {
@@ -93,6 +113,24 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
         case rejected(ProtocolError.Code)
     }
 
+    private enum PresenceState {
+        case disabled
+        case active
+        case suspended
+    }
+
+    private struct PresenceLease {
+        var leaseMS: UInt32
+        var ownerEpoch: UInt32
+    }
+
+    /// Packed association indices and exact action count for one re-announce.
+    private struct AssociationReleasePlan {
+        var indices = InlineArray<capacity, Int>(repeating: -1)
+        var count = 0
+        var actionCount = 0
+    }
+
     private var associations: InlineArray<capacity, Association>
     private var objects: InlineArray<capacity, ObjectRecord>
     private var pending: InlineArray<capacity, PendingRecord>
@@ -102,6 +140,7 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
     private let maximumPayloadBytes: Int
     private let maximumObjects: Int
     private let maximumPendingCorrelations: Int
+    private var presenceState: PresenceState
 
     /// Creates a processor with caller-selected capabilities and fixed limits.
     ///
@@ -123,6 +162,59 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
         maximumObjects: Int = capacity,
         maximumPendingCorrelations: Int = capacity
     ) {
+        self.init(
+            capabilities: capabilities,
+            wireCodec: wireCodec,
+            maximumPayloadBytes: maximumPayloadBytes,
+            maximumObjects: maximumObjects,
+            maximumPendingCorrelations: maximumPendingCorrelations,
+            presenceState: .disabled
+        )
+    }
+
+    /// Creates a processor with an explicit presence policy.
+    ///
+    /// Presence is an `axoloty/1` feature; enabling it with any other wire
+    /// profile throws before any state is initialized.
+    ///
+    /// - Parameters:
+    ///   - capabilities: Families accepted by this binding.
+    ///   - wireCodec: The selected wire profile.
+    ///   - maximumPayloadBytes: Largest accepted borrowed payload.
+    ///   - maximumObjects: Maximum simultaneous advertised objects.
+    ///   - maximumPendingCorrelations: Maximum outstanding requests.
+    ///   - presencePolicy: Whether leased Advertise frames renew and expire.
+    /// - Throws: ``ProtocolPresenceConfigurationError/unsupportedWireProfile``
+    ///   when presence is enabled for a non-`axoloty/1` codec.
+    public init(
+        capabilities: ProtocolCapabilities = .coatyCore3,
+        wireCodec: WireCodec,
+        maximumPayloadBytes: Int = WireBufferConfig.maxPayloadSize,
+        maximumObjects: Int = capacity,
+        maximumPendingCorrelations: Int = capacity,
+        presencePolicy: ProtocolPresencePolicy
+    ) throws(ProtocolPresenceConfigurationError) {
+        if presencePolicy == .enabled, wireCodec.profile != .axoloty1CBOR {
+            throw .unsupportedWireProfile
+        }
+        self.init(
+            capabilities: capabilities,
+            wireCodec: wireCodec,
+            maximumPayloadBytes: maximumPayloadBytes,
+            maximumObjects: maximumObjects,
+            maximumPendingCorrelations: maximumPendingCorrelations,
+            presenceState: presencePolicy == .enabled ? .active : .disabled
+        )
+    }
+
+    private init(
+        capabilities: ProtocolCapabilities,
+        wireCodec: WireCodec,
+        maximumPayloadBytes: Int,
+        maximumObjects: Int,
+        maximumPendingCorrelations: Int,
+        presenceState: PresenceState
+    ) {
         self.capabilities = capabilities
         self.codec = wireCodec
         self.maximumPayloadBytes = maximumPayloadBytes
@@ -131,6 +223,7 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
         self.pending = InlineArray(repeating: PendingRecord())
         self.maximumObjects = min(max(0, maximumObjects), capacity)
         self.maximumPendingCorrelations = min(max(0, maximumPendingCorrelations), capacity)
+        self.presenceState = presenceState
     }
 
     /// Returns the current fixed-storage state.
@@ -205,6 +298,69 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
         return expired
     }
 
+    /// Removes the first leased peer object whose lease has elapsed.
+    ///
+    /// This is the presence pass, separate from request `expire`. It removes
+    /// only the object record; Associate rows stay until a wire signal or a
+    /// reset releases them. The caller loops until it returns `nil`.
+    ///
+    /// - Parameter nowMS: Caller-supplied monotonic time in milliseconds.
+    /// - Returns: The removed source and object identities, or `nil`.
+    public mutating func expirePresence(nowMS: UInt32) -> (sourceID: UUID16, objectID: UUID16)? {
+        guard presenceState == .active else { return nil }
+        for index in 0..<capacity {
+            let object = objects[index]
+            guard object.active, !object.local, object.leaseMS > 0 else { continue }
+            guard Self.reached(nowMS, object.lastSeenMS &+ object.leaseMS) else { continue }
+            objects[index] = ObjectRecord()
+            generation &+= 1
+            return (object.sourceID, object.id)
+        }
+        return nil
+    }
+
+    /// Suspends peer expiry for an interrupted transport.
+    ///
+    /// Leased peer entries and local replayable entries survive; unleased peer
+    /// entries are discarded like a hard reset. Like ``resetTransport()``, it
+    /// also clears every association row and every pending request correlation;
+    /// a re-announce after resume re-establishes routing. The first suspend on
+    /// the active edge advances the generation even when no entry changes;
+    /// repeated calls on the suspended edge are idempotent.
+    public mutating func suspendPresence() {
+        guard presenceState == .active else { return }
+        for index in 0..<capacity {
+            associations[index] = Association()
+            pending[index] = PendingRecord()
+            if objects[index].active && objects[index].local {
+                objects[index].announced = false
+            } else if objects[index].active && objects[index].leaseMS > 0 {
+                continue
+            } else {
+                objects[index] = ObjectRecord()
+            }
+        }
+        presenceState = .suspended
+        generation &+= 1
+    }
+
+    /// Re-bases retained leased peers after the transport is usable again.
+    ///
+    /// The caller supplies the resume time; the processor never reads a clock.
+    /// Only peer entries are re-based; local entries keep their own time.
+    /// Repeated calls on the resolved edge are idempotent, and a resume without
+    /// a preceding suspend is a no-op that neither re-bases nor advances the
+    /// generation.
+    ///
+    /// - Parameter nowMS: Caller-supplied monotonic time in milliseconds.
+    public mutating func resumePresence(nowMS: UInt32) {
+        guard presenceState == .suspended else { return }
+        for index in 0..<capacity where objects[index].active && !objects[index].local && objects[index].leaseMS > 0 {
+            objects[index].lastSeenMS = nowMS
+        }
+        presenceState = .active
+    }
+
     /// Cancels one outstanding request without emitting a wire operation.
     ///
     /// Cancellation is local policy: the peer may still publish a response,
@@ -223,6 +379,11 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
     /// Resets transport-local state while retaining the processor's static
     /// configuration. Local advertisement identities remain in the logical
     /// registry and become replayable; peer-only records are discarded.
+    ///
+    /// With presence enabled this is a hard reset: it discards leased peers,
+    /// clears any suspension, and returns the policy to active. Soft transport
+    /// loss must use ``suspendPresence()`` and ``resumePresence(nowMS:)`` so a
+    /// short reconnect inside the lease causes no departure.
     public mutating func resetTransport() {
         for index in 0..<capacity {
             associations[index] = Association()
@@ -233,6 +394,7 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
                 objects[index] = ObjectRecord()
             }
         }
+        if presenceState != .disabled { presenceState = .active }
         generation &+= 1
     }
 
@@ -307,6 +469,9 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
         }
         let valid = validatePayload(frame.payload, for: frame.routingKey.capability)
         guard valid else { return .rejected(.malformedPayload) }
+        if presenceState != .disabled, frame.routingKey.capability == .advertise {
+            return processPresenceAdvertise(frame, nowMS: nowMS, sink: &sink)
+        }
         var ioActorActionCount = 0
         if frame.routingKey.capability == .ioValue {
             for index in 0..<capacity where matchesIoValue(index, source: frame.routingKey.sourceID) {
@@ -502,28 +667,9 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
         // forged Associate delivery, so runtimes must not dispatch these
         // transitions as wire Associate events.
         for index in 0..<capacity where releaseMask[index] {
-            let association = associations[index]
-            // An active row normally carries a route, but the transition
-            // itself models an absent route. Emit the release regardless so
-            // clearing the slot never happens without an observer report.
-            let route = associationRouteSnapshot(association)
-            if association.routeKind == .external, let route {
-                guard emitExternalRouteDeactivated(
-                    sourceID: association.sourceID,
-                    actorID: association.actorID,
-                    route: route,
-                    sink: &sink
-                ) else { return .rejected(.capacityExceeded) }
+            guard emitAssociationRelease(at: index, delivery: delivery, sink: &sink) else {
+                return .rejected(.capacityExceeded)
             }
-            guard emitAssociationTransition(
-                delivery: delivery,
-                sourceID: association.sourceID,
-                actorID: association.actorID,
-                change: .removed,
-                route: route,
-                routeClassification: association.routeKind.classification,
-                sink: &sink
-            ) else { return .rejected(.capacityExceeded) }
         }
         return nil
     }
@@ -678,6 +824,371 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
         )))
     }
 
+    private enum PresenceParseResult {
+        case success(PresenceLease?)
+        case rejected(ProtocolError.Code)
+    }
+
+    private borrowing func presenceLease(from payload: ByteSlice) -> PresenceParseResult {
+        let codec = self.codec
+        let reader = payload.withBytes { pointer, length in
+            codec.reader(bytes: pointer.assumingMemoryBound(to: UInt8.self), length: length)
+        }
+        guard let advertised = try? AdvertiseWireData(from: reader) else {
+            return .rejected(.malformedPayload)
+        }
+        let declaredLease = advertised.leaseMS
+        let declaredEpoch = advertised.ownerEpoch
+        guard (declaredLease == nil) == (declaredEpoch == nil) else {
+            return .rejected(.malformedPayload)
+        }
+        guard let declaredLease, let declaredEpoch else { return .success(nil) }
+        guard (1_000...3_600_000).contains(declaredLease),
+              (1...2_147_483_647).contains(declaredEpoch) else {
+            return .rejected(.malformedPayload)
+        }
+        return .success(PresenceLease(
+            leaseMS: UInt32(declaredLease),
+            ownerEpoch: UInt32(declaredEpoch)
+        ))
+    }
+
+    /// Processes one `axoloty/1` Advertise with opt-in presence.
+    ///
+    /// Kept out of line so the presence planner and release batch do not
+    /// inflate the common receive frame.
+    @inline(never)
+    private mutating func processPresenceAdvertise<S: ~Copyable & ProtocolActionSink>(
+        _ frame: BorrowedProtocolFrame,
+        nowMS: UInt32,
+        sink: inout S
+    ) -> ProtocolProcessOutcome {
+        guard frameProfile(frame) == .axoloty1CBOR else { return .rejected(.malformedFrame) }
+        let presence: PresenceLease?
+        switch presenceLease(from: frame.payload) {
+        case .success(let value): presence = value
+        case .rejected(let code): return .rejected(code)
+        }
+
+        let sourceID = frame.routingKey.sourceID
+        let objectID = advertisedObjectID(frame.payload) ?? sourceID
+        let role = advertisedObjectRole(frame.payload)
+        var heldIndex: Int?
+        for index in 0..<capacity where objects[index].active {
+            guard objects[index].sourceID == sourceID, objects[index].id == objectID else { continue }
+            heldIndex = index
+            break
+        }
+        if let index = heldIndex {
+            if objects[index].local { return .rejected(.duplicate) }
+            if let presence,
+               objects[index].leaseMS > 0,
+               objects[index].ownerEpoch == presence.ownerEpoch {
+                objects[index].lastSeenMS = nowMS
+                objects[index].leaseMS = presence.leaseMS
+                return .accepted
+            }
+            if presence == nil, objects[index].leaseMS == 0 { return .rejected(.duplicate) }
+            return reannouncePresence(
+                index: index,
+                objectID: objectID,
+                role: role,
+                presence: presence,
+                frame: frame,
+                nowMS: nowMS,
+                sink: &sink
+            )
+        }
+
+        let deliveryKey = deliveryKey(for: frame)
+        guard Self.deliveryKeyFits(deliveryKey) else { return .rejected(.capacityExceeded) }
+        var activeCount = 0
+        var freeIndex: Int?
+        for index in 0..<capacity {
+            if objects[index].active {
+                activeCount += 1
+            } else if freeIndex == nil {
+                freeIndex = index
+            }
+        }
+        guard activeCount < maximumObjects, let freeIndex else {
+            return .rejected(.capacityExceeded)
+        }
+        guard sink.preflight(actionCount: 1) else { return .rejected(.capacityExceeded) }
+        let delivery = BorrowedProtocolDelivery(
+            routingKey: frame.routingKey,
+            deliveryKey: deliveryKey,
+            routeClassification: .coaty,
+            topic: frame.topic,
+            payload: frame.payload
+        )
+        guard sink.append(.deliver(delivery)) else { return .rejected(.capacityExceeded) }
+        objects[freeIndex] = ObjectRecord(
+            id: objectID,
+            sourceID: sourceID,
+            active: true,
+            local: false,
+            announced: true,
+            role: role,
+            leaseMS: presence?.leaseMS ?? 0,
+            lastSeenMS: presence != nil ? nowMS : 0,
+            ownerEpoch: presence?.ownerEpoch ?? 0
+        )
+        generation &+= 1
+        return .accepted
+    }
+
+    /// Emits a re-announcement after the sink admits every action.
+    ///
+    /// Kept out of line so its route, role, and release temporaries do not
+    /// inflate the generic inbound frame.
+    @inline(never)
+    private mutating func reannouncePresence<S: ~Copyable & ProtocolActionSink>(
+        index: Int,
+        objectID: UUID16,
+        role: ObjectRole,
+        presence: PresenceLease?,
+        frame: BorrowedProtocolFrame,
+        nowMS: UInt32,
+        sink: inout S
+    ) -> ProtocolProcessOutcome {
+        let deliveryKey = deliveryKey(for: frame)
+        guard Self.deliveryKeyFits(deliveryKey) else { return .rejected(.capacityExceeded) }
+        let releasePlan = planAssociationReleases(for: objectID)
+        guard sink.preflight(actionCount: 1 + releasePlan.actionCount) else {
+            return .rejected(.capacityExceeded)
+        }
+        let delivery = BorrowedProtocolDelivery(
+            routingKey: frame.routingKey,
+            deliveryKey: deliveryKey,
+            routeClassification: .coaty,
+            topic: frame.topic,
+            payload: frame.payload
+        )
+        guard sink.append(.deliver(delivery)) else { return .rejected(.capacityExceeded) }
+        guard emitAssociationReleases(releasePlan, delivery: delivery, sink: &sink) else {
+            return .rejected(.capacityExceeded)
+        }
+        for offset in 0..<releasePlan.count {
+            associations[releasePlan.indices[offset]] = Association()
+        }
+        objects[index].role = role
+        objects[index].leaseMS = presence?.leaseMS ?? 0
+        objects[index].lastSeenMS = presence != nil ? nowMS : 0
+        objects[index].ownerEpoch = presence?.ownerEpoch ?? 0
+        generation &+= 1
+        return .accepted
+    }
+
+    /// The profile prefix carried by a borrowed frame's topic bytes.
+    private borrowing func frameProfile(_ frame: BorrowedProtocolFrame) -> WireProfile? {
+        frame.topic.withBytes { pointer, length in
+            let view = TopicView(
+                topicBytes: pointer.assumingMemoryBound(to: UInt8.self),
+                length: length
+            )
+            return view.profile
+        }
+    }
+
+    private borrowing func planAssociationReleases(for objectID: UUID16) -> AssociationReleasePlan {
+        var plan = AssociationReleasePlan()
+        for index in 0..<capacity where associations[index].active
+            && (associations[index].sourceID == objectID || associations[index].actorID == objectID) {
+            plan.indices[plan.count] = index
+            plan.count += 1
+            plan.actionCount += associationReleaseActionCount(at: index)
+        }
+        return plan
+    }
+
+    /// One release action plus an optional external-route deactivation.
+    private borrowing func associationReleaseActionCount(at index: Int) -> Int {
+        let association = associations[index]
+        return 1 + (association.routeKind == .external && association.routeLength > 0 ? 1 : 0)
+    }
+
+    /// Emits the packed release batch after the caller admits its preflight.
+    ///
+    /// Kept out of line so the route snapshot and action temporaries do not
+    /// inflate the inbound or re-announce frame.
+    @inline(never)
+    private func emitAssociationReleases<S: ~Copyable & ProtocolActionSink>(
+        _ plan: borrowing AssociationReleasePlan,
+        delivery: borrowing BorrowedProtocolDelivery,
+        sink: inout S
+    ) -> Bool {
+        for offset in 0..<plan.count {
+            guard emitAssociationRelease(at: plan.indices[offset], delivery: delivery, sink: &sink) else {
+                return false
+            }
+        }
+        return true
+    }
+
+    private func emitAssociationRelease<S: ~Copyable & ProtocolActionSink>(
+        at index: Int,
+        delivery: borrowing BorrowedProtocolDelivery,
+        sink: inout S
+    ) -> Bool {
+        let association = associations[index]
+        let route = associationRouteSnapshot(association)
+        if association.routeKind == .external, let route {
+            guard emitExternalRouteDeactivated(
+                sourceID: association.sourceID,
+                actorID: association.actorID,
+                route: route,
+                sink: &sink
+            ) else { return false }
+        }
+        return emitAssociationTransition(
+            delivery: delivery,
+            sourceID: association.sourceID,
+            actorID: association.actorID,
+            change: .removed,
+            route: route,
+            routeClassification: association.routeKind.classification,
+            sink: &sink
+        )
+    }
+
+    /// Emits the profile publications for one local operation.
+    ///
+    /// Used by the legacy outbound path and the opt-in presence path so both
+    /// keep the same filter order and preflight count.
+    private func emitProfilePublications<S: ~Copyable & ProtocolActionSink>(
+        _ operation: ProtocolLocalOperation,
+        key: ProtocolRoutingKey,
+        sink: inout S
+    ) -> Bool {
+        let filters = outboundEventTypeFilters(for: operation)
+        guard Self.eventTypeFiltersFit(filters) else { return false }
+        let actionCount = filters.secondary == nil ? 1 : 2
+        guard sink.preflight(actionCount: actionCount) else { return false }
+        guard sink.append(.publish(BorrowedProtocolPublication(
+            routingKey: key,
+            target: .profile(
+                eventTypeFilter: filters.primary?.value,
+                filterKind: filters.primary?.kind ?? .direct
+            ),
+            payload: operation.payload,
+            isApplicationDelivery: true
+        ))) else { return false }
+        if let secondary = filters.secondary {
+            guard sink.append(.publish(BorrowedProtocolPublication(
+                routingKey: key,
+                target: .profile(
+                    eventTypeFilter: secondary.value,
+                    filterKind: secondary.kind
+                ),
+                payload: operation.payload,
+                isApplicationDelivery: false
+            ))) else { return false }
+        }
+        return true
+    }
+
+    /// Processes one local `axoloty/1` Advertise with opt-in presence.
+    ///
+    /// Kept out of line so presence planning and eviction do not inflate the
+    /// common outbound frame.
+    @inline(never)
+    private mutating func processPresenceOutboundAdvertise<S: ~Copyable & ProtocolActionSink>(
+        _ operation: ProtocolLocalOperation,
+        nowMS: UInt32,
+        sink: inout S
+    ) -> ProtocolProcessOutcome {
+        let presence: PresenceLease?
+        switch presenceLease(from: operation.payload) {
+        case .success(let value): presence = value
+        case .rejected(let code): return .rejected(code)
+        }
+        guard let key = try? ProtocolRoutingKey(
+            capability: .advertise,
+            sourceID: operation.sourceID,
+            correlationID: nil
+        ) else { return .rejected(.invalidCorrelation) }
+        let objectID = advertisedObjectID(operation.payload) ?? operation.sourceID
+        let role = advertisedObjectRole(operation.payload)
+
+        var heldIndex: Int?
+        for index in 0..<capacity where objects[index].active && objects[index].local {
+            guard objects[index].sourceID == operation.sourceID, objects[index].id == objectID else { continue }
+            heldIndex = index
+            break
+        }
+        if let index = heldIndex {
+            let isRenew = presence != nil
+                && objects[index].leaseMS > 0
+                && objects[index].ownerEpoch == presence?.ownerEpoch
+            guard emitProfilePublications(operation, key: key, sink: &sink) else {
+                return .rejected(.capacityExceeded)
+            }
+            objects[index].announced = true
+            // A same-epoch renew keeps the stored role: refresh bytes are
+            // stale content by contract, so a buggy owner cannot flap routing.
+            if !isRenew {
+                objects[index].role = role
+                generation &+= 1
+            }
+            objects[index].leaseMS = presence?.leaseMS ?? 0
+            objects[index].lastSeenMS = presence != nil ? nowMS : 0
+            objects[index].ownerEpoch = presence?.ownerEpoch ?? 0
+            return .accepted
+        }
+
+        var activeCount = 0
+        var freeIndex: Int?
+        for index in 0..<capacity {
+            if objects[index].active {
+                activeCount += 1
+            } else if freeIndex == nil {
+                freeIndex = index
+            }
+        }
+        let slot: Int
+        if let freeIndex, activeCount < maximumObjects {
+            slot = freeIndex
+        } else if presenceState == .suspended,
+                  let victim = oldestSuspendedPeer(nowMS: nowMS) {
+            slot = victim
+        } else {
+            return .rejected(.capacityExceeded)
+        }
+        guard emitProfilePublications(operation, key: key, sink: &sink) else {
+            return .rejected(.capacityExceeded)
+        }
+        objects[slot] = ObjectRecord(
+            id: objectID,
+            sourceID: operation.sourceID,
+            active: true,
+            local: true,
+            announced: true,
+            role: role,
+            leaseMS: presence?.leaseMS ?? 0,
+            lastSeenMS: presence != nil ? nowMS : 0,
+            ownerEpoch: presence?.ownerEpoch ?? 0
+        )
+        generation &+= 1
+        return .accepted
+    }
+
+    /// The oldest suspended leased peer, with the lowest slot breaking ties.
+    private borrowing func oldestSuspendedPeer(nowMS: UInt32) -> Int? {
+        var victim: Int?
+        var oldestAge: UInt32 = 0
+        for index in 0..<capacity {
+            let object = objects[index]
+            guard object.active, !object.local, object.leaseMS > 0 else { continue }
+            let age = nowMS &- object.lastSeenMS
+            if victim == nil || age > oldestAge {
+                victim = index
+                oldestAge = age
+            }
+        }
+        return victim
+    }
+
     private mutating func processExternalInbound<Classifier: ProtocolRouteClassifier, S: ~Copyable & ProtocolActionSink>(
         route: ByteSlice,
         payload: ByteSlice,
@@ -755,6 +1266,9 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
         }
         let valid = validatePayload(operation.payload, for: operation.capability)
         guard valid else { return .rejected(.malformedPayload) }
+        if presenceState != .disabled, operation.capability == .advertise {
+            return processPresenceOutboundAdvertise(operation, nowMS: nowMS, sink: &sink)
+        }
         guard let key = try? ProtocolRoutingKey(capability: operation.capability, sourceID: operation.sourceID, correlationID: operation.correlationID) else { return .rejected(.invalidCorrelation) }
         var requestPlan: (index: Int, correlationID: UUID16, deadlineMS: UInt32?)?
         switch operation.capability {
@@ -850,29 +1364,8 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
                 guard appended else { return .rejected(.capacityExceeded) }
             }
         } else {
-            let filters = outboundEventTypeFilters(for: operation)
-            guard Self.eventTypeFiltersFit(filters) else { return .rejected(.capacityExceeded) }
-            let actionCount = filters.secondary == nil ? 1 : 2
-            guard sink.preflight(actionCount: actionCount) else { return .rejected(.capacityExceeded) }
-            guard sink.append(.publish(BorrowedProtocolPublication(
-                routingKey: key,
-                target: .profile(
-                    eventTypeFilter: filters.primary?.value,
-                    filterKind: filters.primary?.kind ?? .direct
-                ),
-                payload: operation.payload,
-                isApplicationDelivery: true
-            ))) else { return .rejected(.capacityExceeded) }
-            if let secondary = filters.secondary {
-                guard sink.append(.publish(BorrowedProtocolPublication(
-                    routingKey: key,
-                    target: .profile(
-                        eventTypeFilter: secondary.value,
-                        filterKind: secondary.kind
-                    ),
-                    payload: operation.payload,
-                    isApplicationDelivery: false
-                ))) else { return .rejected(.capacityExceeded) }
+            guard emitProfilePublications(operation, key: key, sink: &sink) else {
+                return .rejected(.capacityExceeded)
             }
         }
         if let requestPlan {
