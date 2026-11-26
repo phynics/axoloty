@@ -1008,6 +1008,10 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
         return 1 + (association.routeKind == .external && association.routeLength > 0 ? 1 : 0)
     }
 
+    /// Emits the packed release batch after the caller admits its preflight.
+    ///
+    /// Kept out of line so the route snapshot and action temporaries do not
+    /// inflate the inbound or re-announce frame.
     @inline(never)
     private func emitAssociationReleases<S: ~Copyable & ProtocolActionSink>(
         _ plan: borrowing AssociationReleasePlan,
@@ -1085,6 +1089,9 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
     }
 
     /// Processes one local `axoloty/1` Advertise with opt-in presence.
+    ///
+    /// Kept out of line so presence planning and eviction do not inflate the
+    /// common outbound frame.
     @inline(never)
     private mutating func processPresenceOutboundAdvertise<S: ~Copyable & ProtocolActionSink>(
         _ operation: ProtocolLocalOperation,
@@ -1118,9 +1125,9 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
                 return .rejected(.capacityExceeded)
             }
             objects[index].announced = true
+            // A same-epoch renew keeps the stored role: refresh bytes are
+            // stale content by contract, so a buggy owner cannot flap routing.
             if !isRenew {
-                // A same-epoch refresh is stale content by contract; keep the
-                // stored role so a buggy owner cannot flap endpoint routing.
                 objects[index].role = role
                 generation &+= 1
             }
@@ -1140,21 +1147,16 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
             }
         }
         let slot: Int
-        var evicted = false
         if let freeIndex, activeCount < maximumObjects {
             slot = freeIndex
         } else if presenceState == .suspended,
                   let victim = oldestSuspendedPeer(nowMS: nowMS) {
             slot = victim
-            evicted = true
         } else {
             return .rejected(.capacityExceeded)
         }
         guard emitProfilePublications(operation, key: key, sink: &sink) else {
             return .rejected(.capacityExceeded)
-        }
-        if evicted {
-            objects[slot] = ObjectRecord()
         }
         objects[slot] = ObjectRecord(
             id: objectID,
