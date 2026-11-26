@@ -29,6 +29,7 @@ pre-1.0 declarations are recorded in the audit and in the
 | `AxolotyIoRouting` | Optional typed routing between runtime events and fixed IO endpoints. |
 | `AxolotySensorThingsModel` | Portable bounded SensorThings schemas and JSON codecs. |
 | `AxolotySensorThings` | Optional bounded SensorThings source and observation workflows built on the model package. |
+| `AxolotyObservedObjects` | Experimental host object views and explicit Discover reconciliation. |
 
 Every host and static protocol transition enters `AxolotyProtocol`. The host
 runtime owns transport and concurrency policy; the static runtime owns only a
@@ -228,6 +229,27 @@ oldest buffered values. When the buffer is full, a new diagnostic is dropped;
 detect loss. Capturing history, redacting metadata, and presenting
 observations belong to the consumer, not to Core. The contract requires no
 MCP service, file storage, or `axoloty-debug` dependency.
+
+## Experimental observed objects
+
+Select `AxolotyObservedObjects` explicitly to retain a bounded, read-only
+view for known object IDs. Create an `ObjectView` with the attached runtime's
+wire profile and the application's stale and retention intervals. Start a
+session for that feed and supply observation times from one monotonic clock.
+Snapshot reads hide bytes at the retention boundary. Applications choose
+their schema version and can keep the exact bytes when typed decoding fails.
+
+Prepare an explicit exact-ID Discover with `ReconciliationInterest`. The
+application submits the request, checks the runtime epoch and known loss while
+collecting matching Resolve evidence, and closes the correlation. Coverage
+stays uncertain after a reset. Pass Deadvertise events from the attached feed
+to `noteDeadvertise` to record a reporter's withdrawal. The view retains
+advertised bytes with uncertainty because the separate streams cannot
+establish event order.
+
+`ObservedObjectsExample` shows a manual schema and a captured Resolve
+without a broker. The host tests exercise both live runtime encoding paths
+with an in-process transport.
 
 ## Wire and route authority
 

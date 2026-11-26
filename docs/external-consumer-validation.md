@@ -44,6 +44,11 @@ resolution is not host product linkage. The checker records both the resolved
 graph and the target build log, and rejects host-target compilation in the
 Wire-only build.
 
+Set `AXOLOTY_CONSUMER_SCOPE=observed-objects` to also build and run the
+macro-free `ObservedObjectsExample` as a fresh opt-in consumer in debug and
+release. The checker records the linker inputs for every executable. Only
+the opt-in consumer may include `AxolotyObservedObjects`.
+
 `AxolotyZenoh` remains experimental in its separate nested package. A root URL
 consumer cannot select a SwiftPM package manifest from a repository
 subdirectory; host consumers use the documented checkout workflow and pinned

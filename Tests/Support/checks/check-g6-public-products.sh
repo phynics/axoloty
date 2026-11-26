@@ -70,7 +70,7 @@ if [ -d "$root/Examples" ]; then
             exit 1
         fi
     done
-    for example in HostRuntimeExample WireExample; do
+    for example in HostRuntimeExample WireExample ObservedObjectsExample; do
         log="${TMPDIR:-/tmp}/axoloty-g6-example-smoke-${example}.log"
         if ! (cd "$root" && swift run --disable-automatic-resolution --package-path Examples --skip-build "$example" --help) >"$log" 2>&1; then
             cat "$log" >&2
