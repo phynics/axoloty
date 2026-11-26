@@ -188,6 +188,54 @@ present with `budget: 0` (exact-zero); when approved, `measured` must
 also equal `0`. The production `esp32c6-mqtt` hot path measured `0`
 allocations.
 
+### Static receive-path stack
+
+Issue [#1061](https://github.com/phynics/axoloty/issues/1061) measured about
+25 KB of main-task stack below the application frame while
+`StaticRuntime.receive` processed the first inbound frame. The dominant frame
+was `ProtocolProcessor.processProfileInbound`, which held every family's
+planning and action-emission temporaries in one stack slot. Fixed-inline
+values are large: an association row is about 300 bytes (including its
+256-byte route) and one borrowed action is about 400 bytes.
+
+That function now keeps only validation, planning, and commit. Per-family
+emission lives in separate helpers:
+
+| Function | Release frame | Debug frame |
+|----------|--------------:|------------:|
+| `processProfileInbound` (before) | 9,208 B | 34,968 B |
+| `processProfileInbound` (after) | 1,672 B | 5,768 B |
+| `emitDeliveryAndReleases` | 2,904 B | 2,712 B |
+| `emitIoValueDeliveries` | 952 B | 1,432 B |
+| `emitAssociationChange` | 6,488 B | 19,480 B |
+
+Frames come from `objdump -d` (`sub $…,%rsp`) on x86_64 Linux with Swift
+6.4.3: release from `swift build -c release` (`-O`) and debug from the test
+build (`-Onone`). Runtime size uses `MemoryLayout<StaticRuntime<2, 512>>.size`.
+The three family helpers are `@inline(never)`; inlining them restores the
+merged frame.
+
+For the common one-way frame, the `processProfileInbound` subtree's peak fell
+from about 9.2 KB to about 4.6 KB in a release build and from about 35 KB to
+about 8.5 KB in a debug build. An Associate frame now peaks at about 8.2 KB
+release and 25.2 KB debug, also below the previous single frame. The
+`emitAssociationChange` helper is now the largest remaining frame and the next
+reduction target. Frames above `processProfileInbound` (`StaticRuntime.receive`
+and its callers) still add to the end-to-end peak. Host frame sizes are a
+proxy: regenerate them for the embedded toolchain before claiming a device
+budget.
+
+The quoted 3x difference between CBOR and JSON `State` initialization is not
+visible in this receive path. The processor layout is profile-independent;
+`wireCodec` selects the reader and writer but adds no per-profile state.
+`StaticRuntime<2, 512>`, the sensor-node runtime, is 6,881 bytes on x86_64.
+The reported 15 KB CBOR peak is about two runtime temporaries, while the
+5.2 KB JSON peak is below one runtime. That is consistent with a materialized
+copy (for example a missed move elision around the
+[`State.runtime` initializer](https://github.com/phynics/axoloty-embedded/blob/main/Applications/sensor-node/main/SensorNodeApplication.swift)),
+but it is unconfirmed; check the embedded toolchain with a stack-painted
+`State` initialization that does not call `receive`.
+
 ### Size limits
 
 | Input | Limit | Behavior |
