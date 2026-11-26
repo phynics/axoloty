@@ -51,6 +51,12 @@ actor ProtocolExecutor {
         var payload: [UInt8]
     }
 
+    /// One random owner epoch per host process.
+    private static let processPresenceEpoch: UInt32 = {
+        let value = UInt32.random(in: 1...UInt32(Int32.max))
+        return value == 0 ? 1 : value
+    }()
+
     let definition: RuntimeDefinition
     let transport: AxolotyRuntimeTransport
     /// The binding's single wire profile, read once at composition time.
@@ -142,7 +148,7 @@ actor ProtocolExecutor {
         self.presenceConfigurationFailure = requestedPresence == .enabled && !presenceSupported
             ? "soft-state presence requires the axoloty/1 profile"
             : nil
-        let epoch = max(1, UInt32(truncatingIfNeeded: monotonicNowMS()) | 1)
+        let epoch = Self.processPresenceEpoch
         self.presenceEpoch = epoch
         if self.presencePolicy == .enabled {
             do {
@@ -493,7 +499,7 @@ actor ProtocolExecutor {
         guard presencePolicy == .enabled, presenceTask == nil else { return }
         presenceTask = Task { [weak self] in
             while !Task.isCancelled {
-                do { try await Task.sleep(for: .milliseconds(500)) } catch { return }
+                do { try await Task.sleep(for: .milliseconds(50)) } catch { return }
                 guard !Task.isCancelled else { return }
                 await self?.presenceTick()
             }
@@ -518,7 +524,7 @@ actor ProtocolExecutor {
         }
         for index in localPresence.indices {
             let record = localPresence[index]
-            let refreshInterval = max(1_000, record.leaseMS &* 2 / 9)
+            let refreshInterval = max(50, record.leaseMS &* 2 / 9)
             guard nowMS &- record.lastRefreshMS >= refreshInterval else { continue }
             let receipt = publish(.advertise(sourceID: definition.sourceID, payload: record.payload), nowMS: nowMS)
             if case .accepted = receipt {
