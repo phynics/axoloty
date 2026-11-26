@@ -240,12 +240,22 @@ struct WireCodecParityTests {
         #expect(throws: WireDecodeError.self) {
             _ = try decode(.coaty3JSON, Array(#"{"object":{},"ownerEpoch":"7"}"#.utf8), as: AdvertiseWireData.self)
         }
+        #expect(throws: WireDecodeError.self) {
+            _ = try decode(.coaty3JSON, Array(#"{"object":{},"ownerEpoch":7.5}"#.utf8), as: AdvertiseWireData.self)
+        }
         let cborTextMap = cborMap([
             (cborText("object"), cborMap([])),
             (cborText("leaseMs"), cborText("10000")),
         ])
         #expect(throws: WireDecodeError.self) {
             _ = try decode(.axoloty1CBOR, cborTextMap, as: AdvertiseWireData.self)
+        }
+        let cborEpochTextMap = cborMap([
+            (cborText("object"), cborMap([])),
+            (cborText("ownerEpoch"), cborText("7")),
+        ])
+        #expect(throws: WireDecodeError.self) {
+            _ = try decode(.axoloty1CBOR, cborEpochTextMap, as: AdvertiseWireData.self)
         }
         let cborFloat: [UInt8] = [0xFA, 0x46, 0x1C, 0x40, 0x00] // 10000.0
         let cborFloatMap = cborMap([
@@ -254,6 +264,13 @@ struct WireCodecParityTests {
         ])
         #expect(throws: WireDecodeError.self) {
             _ = try decode(.axoloty1CBOR, cborFloatMap, as: AdvertiseWireData.self)
+        }
+        let cborEpochFloatMap = cborMap([
+            (cborText("object"), cborMap([])),
+            (cborText("ownerEpoch"), cborFloat),
+        ])
+        #expect(throws: WireDecodeError.self) {
+            _ = try decode(.axoloty1CBOR, cborEpochFloatMap, as: AdvertiseWireData.self)
         }
     }
 
@@ -276,6 +293,37 @@ struct WireCodecParityTests {
         let partial = try decode(.coaty3JSON, partialJSON, as: AdvertiseWireData.self)
         #expect(partial.leaseMS == 10_000 && partial.ownerEpoch == nil)
         #expect(try encode(.coaty3JSON, partial) == partialJSON)
+
+        let partialCBOR = cborMap([
+            (cborText("object"), cborMap([])),
+            (cborText("leaseMs"), cborInt(10_000)),
+        ])
+        let partialCBORValue = try decode(.axoloty1CBOR, partialCBOR, as: AdvertiseWireData.self)
+        #expect(partialCBORValue.leaseMS == 10_000 && partialCBORValue.ownerEpoch == nil)
+        #expect(try encode(.axoloty1CBOR, partialCBORValue) == partialCBOR)
+
+        let singleNullJSON = Array(#"{"object":{},"leaseMs":null,"ownerEpoch":7}"#.utf8)
+        let singleNull = try decode(.coaty3JSON, singleNullJSON, as: AdvertiseWireData.self)
+        #expect(singleNull.leaseMS == nil && singleNull.ownerEpoch == 7)
+    }
+
+    @Test("owned advertise preserves presence fields through the owned event path")
+    func advertisePresenceOwnedPath() throws {
+        let objectCBOR = cborMap([(cborText("objectType"), cborText("example.Thing"))])
+        let cborBytes = cborMap([
+            (cborText("object"), objectCBOR),
+            (cborText("leaseMs"), cborInt(10_000)),
+            (cborText("ownerEpoch"), cborInt(7)),
+        ])
+        let value = try decode(.axoloty1CBOR, cborBytes, as: AdvertiseWireData.self)
+        let owned = try BorrowedWireEvent.advertise(value).owned(profile: .axoloty1CBOR)
+        guard case let .advertise(advertise) = owned else {
+            Issue.record("expected an owned advertise event")
+            return
+        }
+        #expect(advertise.leaseMS == 10_000)
+        #expect(advertise.ownerEpoch == 7)
+        #expect(advertise.profile == .axoloty1CBOR)
     }
 
     // MARK: - Deadvertise

@@ -184,14 +184,18 @@ rather than a forged Associate frame. See
 [`docs/wire-compatibility.md`](../wire-compatibility.md).
 
 An Advertise may carry the optional `leaseMs` and `ownerEpoch` presence fields.
-Both are present together or absent together; `leaseMs` is 1,000 to 3,600,000
+Senders emit both together or neither; a receiver with presence on rejects a
+partial pair as malformed, while the wire DTO itself carries whatever fields are
+present. `leaseMs` is 1,000 to 3,600,000
 and `ownerEpoch` is 1 to 2,147,483,647. A receiver with presence enabled renews
 a held entry silently when the epoch matches, treats a changed epoch or an
 unleased announce as a re-announce, and expires an entry after
 `lastSeen + leaseMs` without a refresh. A processor with presence disabled
-ignores both fields; `coaty/3` never carries them. The fields are an additive
+ignores well-formed fields (malformed presence fields are still rejected at
+decode); `coaty/3` never carries them. The fields are an additive
 `axoloty/1` extension ([ADR 0015](../adr/0015-axoloty-1-soft-state-presence.md)).
-Receiver behavior is specified here and implemented by #1060.
+Receiver behavior is specified by ADR 0015, summarized here, and implemented
+across #1060 (presence policy, processor, and runtime land in follow-up PRs).
 
 The CDDL shows the emitted field set. Map keys are sorted by their
 deterministic encoded bytes, so key order in a payload is not the order above.

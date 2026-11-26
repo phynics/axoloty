@@ -66,8 +66,7 @@ removes nothing. Either way it frees no slot.
 Confirmed (measured).** A `ProtocolProcessor<4>` received four peers' Advertise
 frames (`activeObjects=4`). With no further traffic, `expire(nowMS: 600000)`
 (ten minutes later) returned `false` and `activeObjects` stayed `4`: `expire`
-at `ProtocolProcessor.swift:196` walks only pending request correlations, never
-objects. A fifth peer's Advertise was `rejected(capacityExceeded)` and
+walks only pending request correlations, never objects. A fifth peer's Advertise was `rejected(capacityExceeded)` and
 delivered nothing (`ProtocolProcessor.swift`, object planning). A Deadvertise from a
 different source was `accepted` (at `v0.10.0`: `rejected(malformedFrame)`) but
 removed nothing, because an inbound
@@ -430,7 +429,7 @@ and is out of scope here.
 ### 7. Transport reset (not in the issue's list)
 
 Today `resetTransport()` discards every peer-only entry and keeps local ones
-replayable (`ProtocolProcessor.swift:226`); the host runtime calls it on
+replayable (`ProtocolProcessor.swift`, transport reset); the host runtime calls it on
 reconnect (`AxolotyRuntime.swift`, reconnect and ingress-pump paths) and reports
 `RuntimePresenceEvidence.transportReset`. With that behaviour a 4 s reconnect (the issue's figure for a forced
 Wi-Fi drop; not reproducible here), long enough to pass the binding's
