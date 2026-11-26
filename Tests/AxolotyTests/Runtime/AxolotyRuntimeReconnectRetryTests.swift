@@ -217,6 +217,7 @@ extension AxolotyRuntimeTests {
         #expect(await runtime.state() == .running)
         #expect(await runtime.diagnosticsSnapshot().malformedFrames == 1)
         #expect(await runtime.diagnosticsSnapshot().dispatchSaturation == 0)
+        #expect(await runtime.diagnosticsSnapshot().reconnects == 2)
         #expect((await transport.lifecycle).filter { $0 == "start" }.count == 2)
         #expect((await transport.lifecycle).filter { $0 == "stop" }.count == 1)
         #expect(await transport.deliveredMessages().count == 3)

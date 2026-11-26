@@ -8,6 +8,7 @@ import AxolotyProtocol
 import AxolotyObjectModel
 @_spi(AxolotyProtocol) import AxolotyWire
 import Foundation
+import Synchronization
 
 /// Routes transport callbacks into the current bounded ingress stream.
 ///
@@ -36,6 +37,17 @@ private final class RuntimeTransportIngressRelay: @unchecked Sendable {
         let result = lock.withLock { continuation?.yield(frame) }
         guard case .dropped? = result else { return false }
         return overflowGate.claim()
+    }
+}
+
+private final class RuntimeTransportNotificationSequence: Sendable {
+    private let sequence = Mutex<UInt64>(0)
+
+    func next() -> UInt64 {
+        sequence.withLock {
+            $0 &+= 1
+            return $0
+        }
     }
 }
 
@@ -98,6 +110,7 @@ actor ProtocolExecutor {
     private var softRecoveryEpoch: UInt64?
     private var transportEpoch: UInt64 = 0
     private var transportCallbackEpoch: UInt64?
+    private var recoveredThroughNotification: UInt64 = 0
     private var transportIngressContinuation: AsyncStream<RuntimeInboundFrame>.Continuation?
     private var transportIngressTask: Task<Void, Never>?
     private var outboundContinuation: AsyncStream<RuntimeTransportEffectBatch>.Continuation?
@@ -458,25 +471,35 @@ actor ProtocolExecutor {
 
     private func installTransportCallbacks(epoch: UInt64) async {
         guard epoch == transportEpoch else { return }
+        let notifications = RuntimeTransportNotificationSequence()
         await transport.setFailureHandler { [weak self] failure in
-            Task { await self?.transportDidFail(failure, callbackEpoch: epoch) }
+            let notification = notifications.next()
+            Task { await self?.transportDidFail(failure, callbackEpoch: epoch, notification: notification) }
         }
         guard epoch == transportEpoch else { return }
         await transport.setRecoveryHandler { [weak self] in
-            Task { await self?.transportDidRecover(callbackEpoch: epoch) }
+            let notification = notifications.next()
+            Task { await self?.transportDidRecover(callbackEpoch: epoch, notification: notification) }
         }
         guard epoch == transportEpoch else { return }
+        recoveredThroughNotification = 0
         transportCallbackEpoch = epoch
     }
 
-    private func transportDidFail(_ failure: RuntimeTransportFailure, callbackEpoch: UInt64) async {
-        guard transportCallbackEpoch == callbackEpoch else { return }
+    private func transportDidFail(
+        _ failure: RuntimeTransportFailure,
+        callbackEpoch: UInt64,
+        notification: UInt64
+    ) async {
+        // Callback tasks can reach the executor out of order. A loss reported
+        // before an accepted soft recovery belongs to the interrupted session.
+        guard transportCallbackEpoch == callbackEpoch, notification > recoveredThroughNotification else { return }
         await transportFailed(failure)
     }
 
-    private func transportDidRecover(callbackEpoch: UInt64) async {
-        guard transportCallbackEpoch == callbackEpoch else { return }
-        await transportRecovered()
+    private func transportDidRecover(callbackEpoch: UInt64, notification: UInt64) async {
+        guard transportCallbackEpoch == callbackEpoch, notification > recoveredThroughNotification else { return }
+        await transportRecovered(notification: notification)
     }
 
     /// The bounded stream of peer objects removed by presence expiry.
@@ -710,7 +733,7 @@ actor ProtocolExecutor {
         await startRuntimeModules(restarting: true)
     }
 
-    private func transportRecovered() async {
+    private func transportRecovered(notification: UInt64? = nil) async {
         guard state == .running || state == .reconnecting else { return }
         guard state == .reconnecting else {
             guard !softRecoveryConsumed, !recoveryArrivedBeforeFailure else { return }
@@ -718,6 +741,7 @@ actor ProtocolExecutor {
             return
         }
         guard !softRecoveryConsumed, softRecoveryEpoch == nil else { return }
+        if let notification { recoveredThroughNotification = notification }
         // The recovered session can supersede an explicit reconnect. Its
         // pumps and timer must belong to a distinct epoch.
         transportEpoch &+= 1
