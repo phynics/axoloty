@@ -14573,6 +14573,13 @@
           "classification": "intentional-stable-api"
         },
         {
+          "identifier": "s:20AxolotyStaticRuntime0bC0V14expirePresence5nowMS0A4Wire6UUID16V8sourceID_AH06objectK0tSgs6UInt32V_tF",
+          "name": "expirePresence(nowMS:)",
+          "kind": "swift.method",
+          "declaration": "mutating func expirePresence(nowMS: UInt32) -> (sourceID: UUID16, objectID: UUID16)?",
+          "classification": "intentional-stable-api"
+        },
+        {
           "identifier": "s:20AxolotyStaticRuntime0bC0V14publishIoValue_4from5nowMS0A8Protocol0E18PublicationReceiptOqd___AG0E6SourceVyqd__Gs6UInt32VtAG0e8EndpointF0Rd__lF",
           "name": "publishIoValue(_:from:nowMS:)",
           "kind": "swift.method",
@@ -14587,10 +14594,24 @@
           "classification": "intentional-stable-api"
         },
         {
+          "identifier": "s:20AxolotyStaticRuntime0bC0V14resumePresence5nowMSys6UInt32V_tF",
+          "name": "resumePresence(nowMS:)",
+          "kind": "swift.method",
+          "declaration": "mutating func resumePresence(nowMS: UInt32)",
+          "classification": "intentional-stable-api"
+        },
+        {
           "identifier": "s:20AxolotyStaticRuntime0bC0V15registerIoActor8metadata7handler23recommendedUpdateRateMS0A8Protocol0eF0Vy5ValueQyd__G0A11ObjectModel07BoundedO0VyAH0eF8MetadataV$2047_$23_Gn_AA0bE7HandlerVyqd__Gs6UInt32VSgtAH0M5ErrorVYKAA0befS0Rd__lF",
           "name": "registerIoActor(metadata:handler:recommendedUpdateRateMS:)",
           "kind": "swift.method",
           "declaration": "mutating func registerIoActor<Handler>(metadata: consuming Object<IoActorMetadata>, handler: StaticIoHandler<Handler>, recommendedUpdateRateMS: UInt32? = nil) throws(ProtocolError) -> IoActor<Handler.Value> where Handler : StaticIoActorHandler",
+          "classification": "intentional-stable-api"
+        },
+        {
+          "identifier": "s:20AxolotyStaticRuntime0bC0V15suspendPresenceyyF",
+          "name": "suspendPresence()",
+          "kind": "swift.method",
+          "declaration": "mutating func suspendPresence()",
           "classification": "intentional-stable-api"
         },
         {
@@ -14769,6 +14790,13 @@
           "classification": "intentional-stable-api"
         },
         {
+          "identifier": "s:20AxolotyStaticRuntime0bC10DefinitionV10registryID12capabilities14maximumObjects0H19PendingCorrelations9wireCodec14presencePolicyACyxG0A11ObjectModel0pF0V_0A8Protocol0R12CapabilitiesVSiSgAQ0A4Wire0tM0VAN0r8PresenceO0OtAA0bcD5ErrorOYKcfc",
+          "name": "init(registryID:capabilities:maximumObjects:maximumPendingCorrelations:wireCodec:presencePolicy:)",
+          "kind": "swift.init",
+          "declaration": "init(registryID: ObjectID, capabilities: ProtocolCapabilities = .coatyCore3, maximumObjects: Int? = nil, maximumPendingCorrelations: Int? = nil, wireCodec: WireCodec = WireCodec(profile: .coaty3JSON), presencePolicy: ProtocolPresencePolicy) throws(StaticRuntimeDefinitionError)",
+          "classification": "intentional-stable-api"
+        },
+        {
           "identifier": "s:20AxolotyStaticRuntime0bC10DefinitionV10registryID12capabilities14maximumObjects0H19PendingCorrelations9wireCodecACyxG0A11ObjectModel0nF0V_0A8Protocol0P12CapabilitiesVSiSgAP0A4Wire0rM0VtAM0P13CapacityErrorVYKcfc",
           "name": "init(registryID:capabilities:maximumObjects:maximumPendingCorrelations:wireCodec:)",
           "kind": "swift.init",
@@ -14787,6 +14815,13 @@
           "name": "maximumObjects",
           "kind": "swift.property",
           "declaration": "let maximumObjects: Int?",
+          "classification": "intentional-stable-api"
+        },
+        {
+          "identifier": "s:20AxolotyStaticRuntime0bC10DefinitionV14presencePolicy0A8Protocol0g8PresenceF0Ovp",
+          "name": "presencePolicy",
+          "kind": "swift.property",
+          "declaration": "let presencePolicy: ProtocolPresencePolicy",
           "classification": "intentional-stable-api"
         },
         {
@@ -14815,6 +14850,27 @@
           "name": "wireCodec",
           "kind": "swift.property",
           "declaration": "let wireCodec: WireCodec",
+          "classification": "intentional-stable-api"
+        },
+        {
+          "identifier": "s:20AxolotyStaticRuntime0bC15DefinitionErrorO",
+          "name": "StaticRuntimeDefinitionError",
+          "kind": "swift.enum",
+          "declaration": "enum StaticRuntimeDefinitionError",
+          "classification": "intentional-stable-api"
+        },
+        {
+          "identifier": "s:20AxolotyStaticRuntime0bC15DefinitionErrorO8capacityyAC0A8Protocol0g8CapacityE0VcACmF",
+          "name": "StaticRuntimeDefinitionError.capacity(_:)",
+          "kind": "swift.enum.case",
+          "declaration": "case capacity(ProtocolCapacityError)",
+          "classification": "intentional-stable-api"
+        },
+        {
+          "identifier": "s:20AxolotyStaticRuntime0bC15DefinitionErrorO8presenceyAC0A8Protocol0g21PresenceConfigurationE0OcACmF",
+          "name": "StaticRuntimeDefinitionError.presence(_:)",
+          "kind": "swift.enum.case",
+          "declaration": "case presence(ProtocolPresenceConfigurationError)",
           "classification": "intentional-stable-api"
         },
         {
