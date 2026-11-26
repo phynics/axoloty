@@ -4,6 +4,14 @@ import AxolotyObjectModel
 @_spi(AxolotyRuntimeAdapter) import AxolotyProtocol
 import AxolotyWire
 
+/// A static composition that cannot be constructed.
+public enum StaticRuntimeDefinitionError: Error, Sendable {
+    /// A capacity or limit is outside the fixed storage bounds.
+    case capacity(ProtocolCapacityError)
+    /// Presence was requested for a non-`axoloty/1` profile.
+    case presence(ProtocolPresenceConfigurationError)
+}
+
 /// Fixed configuration consumed exactly once by a static runtime.
 public struct StaticRuntimeDefinition<let payloadCapacity: Int>: ~Copyable {
     /// Opaque identity used to reject handles from another runtime registry.
@@ -43,10 +51,6 @@ public struct StaticRuntimeDefinition<let payloadCapacity: Int>: ~Copyable {
     ///   - maximumPendingCorrelations: Optional maximum number of outstanding request correlations.
     ///   - wireCodec: The wire profile this binding reads and writes. The
     ///     default is the sealed `coaty/3` JSON profile.
-    ///   - presencePolicy: Opt-in soft-state presence. Enabling it requires
-    ///     `axoloty/1`.
-    /// - Precondition: `presencePolicy` must be `.disabled` unless `wireCodec`
-    ///   selects `axoloty/1`.
     /// - Throws: ``ProtocolCapacityError`` if the payload specialization is
     ///   outside the wire payload bound.
     public init(
@@ -54,14 +58,52 @@ public struct StaticRuntimeDefinition<let payloadCapacity: Int>: ~Copyable {
         capabilities: ProtocolCapabilities = .coatyCore3,
         maximumObjects: Int? = nil,
         maximumPendingCorrelations: Int? = nil,
-        wireCodec: WireCodec = WireCodec(profile: .coaty3JSON),
-        presencePolicy: ProtocolPresencePolicy = .disabled
+        wireCodec: WireCodec = WireCodec(profile: .coaty3JSON)
     ) throws(ProtocolCapacityError) {
         guard payloadCapacity >= 0 else {
             throw ProtocolCapacityError(.negativeCapacity, parameter: "payloadCapacity")
         }
         guard payloadCapacity <= WireBufferConfig.maxPayloadSize else {
             throw ProtocolCapacityError(.exceedsMaximum, parameter: "payloadCapacity")
+        }
+        self.registryID = registryID
+        self.capabilities = capabilities
+        self.maximumObjects = maximumObjects
+        self.maximumPendingCorrelations = maximumPendingCorrelations
+        self.wireCodec = wireCodec
+        self.presencePolicy = .disabled
+    }
+
+    /// Creates a bounded static definition with an explicit presence policy.
+    ///
+    /// Presence requires `axoloty/1`; an invalid combination throws before the
+    /// definition exists.
+    ///
+    /// - Parameters:
+    ///   - registryID: Opaque identity used to reject handles from another runtime registry.
+    ///   - capabilities: Families accepted by this binding.
+    ///   - maximumObjects: Optional maximum number of simultaneously advertised objects.
+    ///   - maximumPendingCorrelations: Optional maximum number of outstanding request correlations.
+    ///   - wireCodec: The wire profile this binding reads and writes.
+    ///   - presencePolicy: Opt-in soft-state presence.
+    /// - Throws: ``StaticRuntimeDefinitionError`` when a capacity is outside
+    ///   the payload bound or presence is requested for another profile.
+    public init(
+        registryID: ObjectID,
+        capabilities: ProtocolCapabilities = .coatyCore3,
+        maximumObjects: Int? = nil,
+        maximumPendingCorrelations: Int? = nil,
+        wireCodec: WireCodec = WireCodec(profile: .coaty3JSON),
+        presencePolicy: ProtocolPresencePolicy
+    ) throws(StaticRuntimeDefinitionError) {
+        guard payloadCapacity >= 0 else {
+            throw .capacity(ProtocolCapacityError(.negativeCapacity, parameter: "payloadCapacity"))
+        }
+        guard payloadCapacity <= WireBufferConfig.maxPayloadSize else {
+            throw .capacity(ProtocolCapacityError(.exceedsMaximum, parameter: "payloadCapacity"))
+        }
+        if presencePolicy == .enabled, wireCodec.profile != .axoloty1CBOR {
+            throw .presence(.unsupportedWireProfile)
         }
         self.registryID = registryID
         self.capabilities = capabilities
@@ -86,6 +128,7 @@ public struct StaticRuntime<let capacity: Int, let payloadCapacity: Int>: ~Copya
     var subscriptions: ProtocolSubscriptionRegistry<capacity>
     var sink: InlineOwnedProtocolActionSink<capacity, payloadCapacity>
     let routeClassifier: ExactProtocolRouteClassifier
+    let presencePolicy: ProtocolPresencePolicy
     var ioRegistry: StaticIoEndpointRegistry<capacity, payloadCapacity>
     var receiveContext: StaticIoReceiveContext?
 
@@ -129,6 +172,7 @@ public struct StaticRuntime<let capacity: Int, let payloadCapacity: Int>: ~Copya
         self.routeClassifier = ExactProtocolRouteClassifier(
             externalRoute: "external/wire-compat-v1/io-external-1"
         )
+        self.presencePolicy = .disabled
         self.processor = ProtocolProcessor<capacity>(
             capabilities: capabilities,
             wireCodec: wireCodec,
@@ -153,7 +197,7 @@ public struct StaticRuntime<let capacity: Int, let payloadCapacity: Int>: ~Copya
         precondition(maximumPendingCorrelations >= 0 && maximumPendingCorrelations <= capacity)
         self.registryID = definition.registryID
         self.routeClassifier = routeClassifier
-        precondition(definition.presencePolicy == .disabled || definition.wireCodec.profile == .axoloty1CBOR)
+        self.presencePolicy = definition.presencePolicy
         do {
             self.processor = try ProtocolProcessor<capacity>(
                 capabilities: definition.capabilities,
@@ -309,14 +353,21 @@ public struct StaticRuntime<let capacity: Int, let payloadCapacity: Int>: ~Copya
     /// - Parameter nowMS: Caller-supplied monotonic time in milliseconds.
     /// - Returns: The removed source and object identities, or `nil`.
     public mutating func expirePresence(nowMS: UInt32) -> (sourceID: UUID16, objectID: UUID16)? {
-        processor.expirePresence(nowMS: nowMS)
+        guard let expired = processor.expirePresence(nowMS: nowMS) else { return nil }
+        if let slot = ioRegistry.sourceSlot(forID: ObjectID(uuid: expired.sourceID)) {
+            ioRegistry.clearSourceTransportState(at: slot)
+        }
+        return expired
     }
 
     /// Suspends presence for an interrupted static transport.
     ///
-    /// Leased peers and local replay entries survive in the processor; the
-    /// retained action batch and transport-local IO state are released.
+    /// Leased peers survive; unleased peer entries are discarded like a hard
+    /// reset. The retained action batch and transport-local IO state are
+    /// released; drain before calling if the batch must be delivered. A
+    /// presence-disabled runtime treats this as a no-op.
     public mutating func suspendPresence() {
+        guard presencePolicy == .enabled else { return }
         processor.suspendPresence()
         sink.removeAll()
         ioRegistry.clearAllTransportState()
@@ -324,6 +375,10 @@ public struct StaticRuntime<let capacity: Int, let payloadCapacity: Int>: ~Copya
     }
 
     /// Re-bases retained peers after the static transport is usable again.
+    ///
+    /// Repeated calls on the resolved edge are idempotent, and a resume without
+    /// a preceding suspend is a no-op. Peer expiry stays suppressed until this
+    /// call.
     ///
     /// - Parameter nowMS: Caller-supplied monotonic time in milliseconds.
     public mutating func resumePresence(nowMS: UInt32) {

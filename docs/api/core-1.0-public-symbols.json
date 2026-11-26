@@ -14790,10 +14790,17 @@
           "classification": "intentional-stable-api"
         },
         {
-          "identifier": "s:20AxolotyStaticRuntime0bC10DefinitionV10registryID12capabilities14maximumObjects0H19PendingCorrelations9wireCodec14presencePolicyACyxG0A11ObjectModel0pF0V_0A8Protocol0R12CapabilitiesVSiSgAQ0A4Wire0tM0VAN0r8PresenceO0OtAN0R13CapacityErrorVYKcfc",
+          "identifier": "s:20AxolotyStaticRuntime0bC10DefinitionV10registryID12capabilities14maximumObjects0H19PendingCorrelations9wireCodec14presencePolicyACyxG0A11ObjectModel0pF0V_0A8Protocol0R12CapabilitiesVSiSgAQ0A4Wire0tM0VAN0r8PresenceO0OtAA0bcD5ErrorOYKcfc",
           "name": "init(registryID:capabilities:maximumObjects:maximumPendingCorrelations:wireCodec:presencePolicy:)",
           "kind": "swift.init",
-          "declaration": "init(registryID: ObjectID, capabilities: ProtocolCapabilities = .coatyCore3, maximumObjects: Int? = nil, maximumPendingCorrelations: Int? = nil, wireCodec: WireCodec = WireCodec(profile: .coaty3JSON), presencePolicy: ProtocolPresencePolicy = .disabled) throws(ProtocolCapacityError)",
+          "declaration": "init(registryID: ObjectID, capabilities: ProtocolCapabilities = .coatyCore3, maximumObjects: Int? = nil, maximumPendingCorrelations: Int? = nil, wireCodec: WireCodec = WireCodec(profile: .coaty3JSON), presencePolicy: ProtocolPresencePolicy) throws(StaticRuntimeDefinitionError)",
+          "classification": "intentional-stable-api"
+        },
+        {
+          "identifier": "s:20AxolotyStaticRuntime0bC10DefinitionV10registryID12capabilities14maximumObjects0H19PendingCorrelations9wireCodecACyxG0A11ObjectModel0nF0V_0A8Protocol0P12CapabilitiesVSiSgAP0A4Wire0rM0VtAM0P13CapacityErrorVYKcfc",
+          "name": "init(registryID:capabilities:maximumObjects:maximumPendingCorrelations:wireCodec:)",
+          "kind": "swift.init",
+          "declaration": "init(registryID: ObjectID, capabilities: ProtocolCapabilities = .coatyCore3, maximumObjects: Int? = nil, maximumPendingCorrelations: Int? = nil, wireCodec: WireCodec = WireCodec(profile: .coaty3JSON)) throws(ProtocolCapacityError)",
           "classification": "intentional-stable-api"
         },
         {
@@ -14843,6 +14850,27 @@
           "name": "wireCodec",
           "kind": "swift.property",
           "declaration": "let wireCodec: WireCodec",
+          "classification": "intentional-stable-api"
+        },
+        {
+          "identifier": "s:20AxolotyStaticRuntime0bC15DefinitionErrorO",
+          "name": "StaticRuntimeDefinitionError",
+          "kind": "swift.enum",
+          "declaration": "enum StaticRuntimeDefinitionError",
+          "classification": "intentional-stable-api"
+        },
+        {
+          "identifier": "s:20AxolotyStaticRuntime0bC15DefinitionErrorO8capacityyAC0A8Protocol0g8CapacityE0VcACmF",
+          "name": "StaticRuntimeDefinitionError.capacity(_:)",
+          "kind": "swift.enum.case",
+          "declaration": "case capacity(ProtocolCapacityError)",
+          "classification": "intentional-stable-api"
+        },
+        {
+          "identifier": "s:20AxolotyStaticRuntime0bC15DefinitionErrorO8presenceyAC0A8Protocol0g21PresenceConfigurationE0OcACmF",
+          "name": "StaticRuntimeDefinitionError.presence(_:)",
+          "kind": "swift.enum.case",
+          "declaration": "case presence(ProtocolPresenceConfigurationError)",
           "classification": "intentional-stable-api"
         },
         {

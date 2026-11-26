@@ -94,6 +94,7 @@ private func presenceReceive(
 @Suite("Static presence")
 struct StaticPresenceTests {
     private static let peer = "00000000-0000-4000-8000-000000000301"
+    private static let other = "00000000-0000-4000-8000-000000000302"
 
     private func makeRuntime() throws -> StaticRuntime<4, 512> {
         let definition = try StaticRuntimeDefinition<512>(
@@ -162,5 +163,134 @@ struct StaticPresenceTests {
         runtime.resetTransport()
         #expect(runtime.state.activeObjects == 0)
         #expect(runtime.expirePresence(nowMS: 1_000_000) == nil)
+    }
+
+    @Test("presence requires an axoloty/1 definition")
+    func constructionRejectsCoatyPresence() throws {
+        do {
+            _ = try StaticRuntimeDefinition<512>(
+                registryID: presenceObjectID("00000000-0000-4000-8000-000000000303"),
+                wireCodec: WireCodec(profile: .coaty3JSON),
+                presencePolicy: .enabled
+            )
+            Issue.record("expected presence construction to fail")
+        } catch {
+            guard case .presence(.unsupportedWireProfile) = error else {
+                Issue.record("unexpected error \(error)")
+                return
+            }
+        }
+    }
+
+    @Test("expiry frees the slot for a new peer")
+    func expiryReusesSlot() throws {
+        var runtime = try makeRuntime()
+        let peer = try presenceAdvertisePayload(objectID: Self.peer, leaseMS: 1_000, ownerEpoch: 1)
+        #expect(presenceReceive(&runtime, topic: "axoloty/1/static/ADV/\(Self.peer)", payload: peer, nowMS: 100) == .accepted)
+        _ = runtime.drain { _ in }
+        #expect(runtime.expirePresence(nowMS: 1_100) != nil)
+        let replacement = try presenceAdvertisePayload(objectID: Self.other, leaseMS: 1_000, ownerEpoch: 1)
+        #expect(presenceReceive(&runtime, topic: "axoloty/1/static/ADV/\(Self.other)", payload: replacement, nowMS: 200) == .accepted)
+        #expect(runtime.state.activeObjects == 1)
+    }
+
+    @Test("suspend drops unleased peers and keeps leased ones")
+    func suspendDropsUnleasedPeers() throws {
+        var runtime = try makeRuntime()
+        let leased = try presenceAdvertisePayload(objectID: Self.peer, leaseMS: 1_000, ownerEpoch: 1)
+        let unleased = try presenceAdvertisePayload(objectID: Self.other, leaseMS: nil, ownerEpoch: nil)
+        #expect(presenceReceive(&runtime, topic: "axoloty/1/static/ADV/\(Self.peer)", payload: leased, nowMS: 100) == .accepted)
+        _ = runtime.drain { _ in }
+        #expect(presenceReceive(&runtime, topic: "axoloty/1/static/ADV/\(Self.other)", payload: unleased, nowMS: 101) == .accepted)
+        _ = runtime.drain { _ in }
+        runtime.suspendPresence()
+        #expect(runtime.state.activeObjects == 1)
+        runtime.suspendPresence()
+        #expect(runtime.state.activeObjects == 1)
+        runtime.resumePresence(nowMS: 1_000)
+        runtime.resumePresence(nowMS: 1_001)
+        #expect(runtime.expirePresence(nowMS: 2_000) != nil)
+    }
+
+    @Test("presence disabled leaves suspend, expiry, and coaty/3 unchanged")
+    func presenceDisabledIsNoOp() throws {
+        let definition = try StaticRuntimeDefinition<512>(
+            registryID: presenceObjectID("00000000-0000-4000-8000-000000000304")
+        )
+        var runtime = StaticRuntime<4, 512>(
+            definition: definition,
+            routeClassifier: ExactProtocolRouteClassifier(externalRoute: "external/static-none")
+        )
+        let payload = """
+        {"object":{"objectId":"\(Self.peer)","coreType":"IoSource","objectType":"coaty.IoSource","name":"json"},"leaseMs":1000,"ownerEpoch":1}
+        """
+        let topicBytes = Array("coaty/3/static/ADV/\(Self.peer)".utf8)
+        let payloadBytes = Array(payload.utf8)
+        let outcome = topicBytes.withUnsafeBufferPointer { topicBuffer in
+            payloadBytes.withUnsafeBufferPointer { payloadBuffer in
+                runtime.receive(
+                    topic: ByteSlice(bytes: topicBuffer.baseAddress!, length: topicBuffer.count),
+                    payload: ByteSlice(bytes: payloadBuffer.baseAddress!, length: payloadBuffer.count),
+                    nowMS: 100
+                )
+            }
+        }
+        #expect(outcome == .accepted)
+        let actionsBefore = runtime.actionCount
+        runtime.suspendPresence()
+        #expect(runtime.actionCount == actionsBefore)
+        #expect(runtime.state.activeObjects == 1)
+        #expect(runtime.expirePresence(nowMS: 1_000_000) == nil)
+    }
+
+    @Test("suspend releases the retained action batch")
+    func suspendReleasesBatch() throws {
+        var runtime = try makeRuntime()
+        let payload = try presenceAdvertisePayload(objectID: Self.peer, leaseMS: 1_000, ownerEpoch: 1)
+        let payloadBytes = payload
+        let outcome = payloadBytes.withUnsafeBufferPointer { buffer in
+            runtime.send(
+                .advertise(
+                    sourceID: presenceUUID(Self.peer),
+                    payload: ByteSlice(bytes: buffer.baseAddress!, length: buffer.count)
+                ),
+                nowMS: 100
+            )
+        }
+        #expect(outcome == .accepted)
+        #expect(runtime.actionCount > 0)
+        runtime.suspendPresence()
+        #expect(runtime.actionCount == 0)
+    }
+
+    @Test("a local leased object never expires and renews after resume")
+    func localPresenceSurvivesResume() throws {
+        var runtime = try makeRuntime()
+        let payload = try presenceAdvertisePayload(objectID: Self.peer, leaseMS: 1_000, ownerEpoch: 1)
+        let outcome = payload.withUnsafeBufferPointer { buffer in
+            runtime.send(
+                .advertise(
+                    sourceID: presenceUUID(Self.peer),
+                    payload: ByteSlice(bytes: buffer.baseAddress!, length: buffer.count)
+                ),
+                nowMS: 100
+            )
+        }
+        #expect(outcome == .accepted)
+        _ = runtime.drain { _ in }
+        #expect(runtime.expirePresence(nowMS: 1_000_000) == nil)
+        runtime.suspendPresence()
+        runtime.resumePresence(nowMS: 1_000_000)
+        let renew = payload.withUnsafeBufferPointer { buffer in
+            runtime.send(
+                .advertise(
+                    sourceID: presenceUUID(Self.peer),
+                    payload: ByteSlice(bytes: buffer.baseAddress!, length: buffer.count)
+                ),
+                nowMS: 1_000_100
+            )
+        }
+        #expect(renew == .accepted)
+        #expect(runtime.state.activeObjects == 1)
     }
 }
