@@ -73,7 +73,7 @@ API absences and typed failures; see
 |---|---|---|
 | Object lifecycle | Validated | `AxolotyRuntime` owns the single-use lifecycle, bounded ingress, reconnect, cancellation, and diagnostics. G4 lifecycle tests cover startup, failure, reconnect, and shutdown ordering. |
 | Object lifecycle controllers | Unsupported | The inherited controller hierarchy is not part of the current runtime; use explicit runtime modules and handlers. |
-| Dynamic object-type registration | Validated | Concurrent registration test (1000 iterations). Unregistered-type reporting test. |
+| Dynamic object-type registration | Validated | `registryUseIsIdempotentAndSaturationIsAtomic` covers idempotent repeats and atomic saturation. `manualSchemaValidationRejectsUnsafeDescriptors` covers invalid schema rejection. |
 | Unknown/custom object decoding | Validated | Wire parser bounds tests cover unknown fields, malformed input, and truncated payloads. Borrowed and owned raw JSON boundary tests cover nested values, exact-number lexemes, and bounded-capacity failures. |
 | Dynamic controller registration | Unsupported | Process-global controller registration was retired with the manager APIs and has no current replacement contract. |
 | Runtime event and responder registration | Supported | Runtime definitions register bounded event streams and responders before startup. Registration belongs to the runtime definition, not a process-global controller manager. |

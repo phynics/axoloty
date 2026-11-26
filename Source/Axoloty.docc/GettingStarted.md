@@ -67,14 +67,16 @@ are rejected at the protocol boundary.
 ## Static execution
 
 Embedded applications use `AxolotyStaticRuntime` with a fixed capacity and a
-caller-owned action sink. Firmware owns only transport, clock, persistence,
-and device callbacks; protocol transitions remain in ``AxolotyProtocol``.
+caller-drained owning action sink. Firmware owns only transport, clock,
+persistence, and device callbacks; protocol transitions remain in
+``AxolotyProtocol``.
 
 ## Next steps
 
 Read the project README for build and verification instructions. Typed IO
-endpoint and SensorThings APIs are available through their optional 0.7
-products.
+endpoint and SensorThings APIs are available through the optional experimental
+products `AxolotyIoRouting`, `AxolotySensorThingsModel`, and
+`AxolotySensorThings`.
 
 SensorThings sources and fixed-Sensor observations are installed together with
 one `RuntimeBuilder.sensorThings(limits:_:)` transaction. The

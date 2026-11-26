@@ -12,12 +12,14 @@ released. Their history is in [`docs/ROADMAP.md`](./docs/ROADMAP.md),
 ## Current implementation (1.0.1)
 
 The released implementation consists of the root `Axoloty` host library, the
-Foundation-free `AxolotyWire`, `AxolotyObjectModel`, and `AxolotyProtocol`
-products, the separate `AxolotyMQTT` transport adapter, `AxolotyCoatyModels`
-convenience product, and optional `AxolotyIoRouting`, `AxolotySensorThingsModel`,
-and `AxolotySensorThings` products. The root package declares no executable
-products: the `Tools` package owns the `axoloty-tool`/`ax` orchestration
-harness, and the sibling `phynics/axoloty-debug` package owns the
+Foundation-free `AxolotyWire`, `AxolotyObjectModel`, `AxolotyProtocol`, and
+`AxolotyStaticRuntime` products, the separate `AxolotyMQTT` transport adapter,
+`AxolotyCoatyModels` convenience product, and optional `AxolotyIoRouting`,
+`AxolotySensorThingsModel`, and `AxolotySensorThings` products. The separate
+`AxolotyZenoh` package provides the experimental `AxolotyZenoh` host adapter
+and its portable `AxolotyZenohCore` core. The root package declares no
+executable products: the `Tools` package owns the `axoloty-tool`/`ax`
+orchestration harness, and the sibling `phynics/axoloty-debug` package owns the
 `axoloty-inspect` inspector and `axoloty-mcp` server, so neither `swift-sdk`
 nor a development-tool dependency graph reaches a runtime consumer. The inherited class-object,
 controller, manager, and SensorThings runtime hierarchy has been removed
@@ -26,9 +28,9 @@ from active production targets.
 The host runtime target, `Axoloty`, contains the ``AxolotyRuntime``
 lifecycle and the ``AxolotyRuntimeTransport`` port; it imports no MQTT or
 SwiftNIO code. `AxolotyMQTT` is the sole MQTT/SwiftNIO adapter: it depends on
-`Axoloty`, implements `AxolotyRuntimeTransport`, and is the only target a
-consumer must add to obtain a working transport. `perform(_:)` takes a
-`RuntimeTransportEffect` carrying a finished `RuntimeOutboundMessage` — route
+`Axoloty`, implements `AxolotyRuntimeTransport`, and is the only Core 1.0
+product a consumer must add to obtain a supported transport. `perform(_:)` takes
+a `RuntimeTransportEffect` carrying a finished `RuntimeOutboundMessage` — route
 synthesis (`CoatyRoute`) happens in the runtime, so an adapter needs no
 Coaty-profile knowledge to address a publication. `ExternalIoRoute` is the
 one typed external-IO route type; there is no MQTT-specific route type.
@@ -56,10 +58,11 @@ runtime surface, and SensorThings supports Thing-driven observation through
 a bounded registry that performs exact Thing discovery and a
 parent-filtered Sensor query.
 
-[`docs/module-policy.yml`](./docs/module-policy.yml) declares every target's
-role, platform class, and permitted/forbidden imports; `axoloty-tool
-repository validate` checks every Swift source against it, so a new
-cross-target dependency is a policy change rather than a silent one.
+[`docs/module-policy.yml`](./docs/module-policy.yml) declares a role, platform
+class, and permitted/forbidden imports for each target it covers.
+`axoloty-tool repository validate` checks each declared target's Swift sources
+against it, so a new cross-target dependency in a covered target is a policy
+change rather than a silent one.
 
 This section is the source of truth for what exists today. It must be updated whenever a gate changes the implemented package graph or removes a legacy path.
 
@@ -99,18 +102,19 @@ maintains host and sanitizer evidence for the fixed-storage claims.
 
 The `Axoloty` target has an explicit source list: runtime definition, host
 runtime, the ``AxolotyRuntimeTransport`` port, and the error boundary. It
-contains no MQTT or transport-client source. Its private actor executor owns
-bounded ingress, dispatch, lifecycle, reconnect, cancellation, and
+contains no MQTT or transport-client source. Its module-internal actor executor
+owns bounded ingress, dispatch, lifecycle, reconnect, cancellation, and
 diagnostics, and all thirteen protocol families enter the shared
 ``ProtocolProcessor``. ``AxolotyStaticRuntime`` is the fixed synchronous
 profile for Embedded Swift. Inspector and MCP use the same runtime contracts.
 
 The module policy in `docs/module-policy.yml`, enforced by the required
-`repository-authority` check, rejects transport and networking imports outside
-the adapter targets. `AxolotySensorThings` supplies bounded Foundation-free schemas and
-one atomic runtime-owned source and direct-observation module. Sources
-validate Sensor-to-Thing parentage and deduplicate bounded Thing
-advertisements; direct observation subscribes only to its configured Channel.
+`repository-authority` check, keeps transport and networking imports out of the
+portable and host runtime targets. `AxolotySensorThingsModel` supplies bounded
+Foundation-free schemas, and `AxolotySensorThings` supplies one atomic
+runtime-owned source and direct-observation module. Sources validate
+Sensor-to-Thing parentage and deduplicate bounded Thing advertisements; direct
+observation subscribes only to its configured Channel.
 
 ### Decision: transport-session mechanics stay in `ProtocolExecutor`
 
@@ -227,8 +231,8 @@ Inbound processing is:
 ```text
 transport frame
   -> binding interpretation and topic validation
-  -> event decoding and semantic validation
   -> routing-key derivation
+  -> event decoding and semantic validation
   -> protocol-state transition
   -> normalized protocol actions
   -> runtime/application adapter
@@ -239,11 +243,12 @@ Outbound processing follows the same boundary in reverse, beginning with a typed
 ## Target dependency direction
 
 The diagram below is the human-readable form. The enforced form is
-[`docs/module-policy.yml`](./docs/module-policy.yml): one declaration per
+[`docs/module-policy.yml`](./docs/module-policy.yml): a policy entry per covered
 target giving its role, platform class, allowed imports, and forbidden
-imports. `axoloty-tool repository validate` checks every Swift source against
-it, so a new dependency is a policy change rather than a silent one. Where the
-two disagree, the policy is authoritative and this section is the defect.
+imports. `axoloty-tool repository validate` checks each declared target's Swift
+sources against it, so a new dependency is a policy change rather than a silent
+one. Where the two disagree, the policy is authoritative and this section is
+the defect.
 
 ```text
 AxolotyWire
@@ -289,7 +294,7 @@ logging, actor, or controller framework.
 
 `AxolotyStaticRuntime` owns fixed composition, static delivery, bounded presets, and portable endpoint integration. It contains no protocol rule absent from `AxolotyProtocol`.
 
-`AxolotyMQTT` owns the MQTT/SwiftNIO transport adapter: it implements `AxolotyRuntimeTransport` against `mqtt-nio` and is the only target in the graph that imports MQTT or SwiftNIO code. It depends on `Axoloty`, `AxolotyProtocol`, and `AxolotyWire`; nothing in those three imports it back, so a consumer that composes a runtime definition without constructing a transport never resolves or links MQTT/SwiftNIO.
+`AxolotyMQTT` owns the MQTT/SwiftNIO transport adapter: it implements `AxolotyRuntimeTransport` against `mqtt-nio` and is the only runtime target that imports MQTT or SwiftNIO code. The test-only `AxolotyTestBroker` imports NIO for its in-process broker and stays outside every shipped product's dependency closure. `AxolotyMQTT` depends on `Axoloty`, `AxolotyProtocol`, and `AxolotyWire`; nothing in those three imports it back, so a consumer that composes a runtime definition without constructing a transport never resolves or links MQTT/SwiftNIO.
 
 ## Architectural invariants
 

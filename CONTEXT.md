@@ -102,5 +102,6 @@ A bounded typed expression for Coaty-compatible object-filter encode, decode,
 and local evaluation.
 
 **External IO route**:
-A transport-binding-specific non-Coaty route associated with a Coaty IO endpoint.
+A carrier-neutral non-Coaty route associated with a Coaty IO endpoint. Each
+transport applies its own additional rules when it uses the value.
 _Avoid_: raw MQTT route

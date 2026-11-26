@@ -51,7 +51,7 @@ from that JSON, field by field. It rejects rather than drops or coerces:
 |---|---|---|---|
 | Integer within IEEE 754 double range | Integer lexeme (`1`, `-42`) | Major type 0 or 1, shortest head | Yes |
 | Integer beyond double precision (for example `2^60 + 1`) | Integer lexeme | Major type 0 or 1 (exact) | Yes, CBOR is exact; JSON text is exact |
-| Fractional decimal with a binary-exact value (`0.5`) | Number lexeme (`0.5`) | Major type 7 float or a scaled integer, as chosen by the producer | Yes within a profile |
+| Fractional decimal with a binary-exact value (`0.5`) | Number lexeme (`0.5`) | Major type 7 float, single or double precision as needed | Yes within a profile |
 | Fractional decimal without a binary-exact value (`0.1`) | Number lexeme (`0.1`) | Major type 7 float | Not across profiles; retained as text or as a float within one profile |
 | Exponent form (`1e2`, `1e999`) | Number lexeme | Major type 7 float, or rejected when it overflows | Not across profiles |
 | Overflowing integer literal | Number lexeme; the object model keeps the lexeme | Rejected unless it fits a major-type integer or float | No generic mapping |

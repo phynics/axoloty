@@ -31,8 +31,8 @@ pre-1.0 declarations are recorded in the audit and in the
 | `AxolotySensorThings` | Optional bounded SensorThings source and observation workflows built on the model package. |
 
 Every host and static protocol transition enters `AxolotyProtocol`. The host
-runtime owns transport and concurrency policy; the static runtime owns only a
-caller-supplied clock, transport loop, and fixed callbacks.
+runtime owns transport and concurrency policy; the static runtime holds fixed
+inline storage and receives time and transport events from the caller.
 
 ## Host runtime
 
@@ -64,31 +64,34 @@ registrations used by one `AxolotyRuntime` instance. A runtime is single-use:
 `start()` transitions it to `.running`, `stop()` drains bounded work and leaves
 it `.stopped`, and a new instance is required after shutdown.
 
-The public lifecycle states are `initialized`, `starting`, `running`,
-`reconnecting`, `stopping`, `stopped`, and `failed`. `run()` owns a normal
-long-lived lifecycle loop; `start()` and `stop()` are useful for callers that
-own their surrounding task.
+`state()` reports the public lifecycle states `initialized`, `starting`,
+`running`, `reconnecting`, `stopping`, `stopped`, `failed`, and `closed`;
+`lifecycleState()` reports the equivalent `RuntimeLifecycleState` without
+`initialized`. `run()` owns the normal long-lived lifecycle; `start()` and
+`stop()` are useful for callers that own their surrounding task, and `close()`
+permanently closes the instance and finishes its streams.
 
 ## Host transport interface
 
 `AxolotyRuntimeTransport` is the adapter interface between the host runtime and
 its carrier. Implementations report one immutable `wireProfile` and
-`RuntimeTransportCapabilities`, install receive and failure callbacks in
-`start(receive:lastWill:)`, apply effects with `perform(_:)`, and release
+`RuntimeTransportCapabilities`, install the receive callback in
+`start(receive:lastWill:)`, install the post-start failure callback with
+`setFailureHandler(_:)`, apply effects with `perform(_:)`, and release
 callbacks when idempotent `stop()` returns. No installed callback may run after
 `stop()` returns. The pre-1.0 `start(receive:)` overload is removed.
 
 The adapter must report every post-start failure through the required failure
 handler. A recoverable failure may use the optional recovery callback when the
-adapter reports `.recoveryNotifications`. Synchronous startup, effect, and
-profile-interest failures use `AxolotyError`.
+adapter reports `.recoveryNotifications`. Failures thrown by `start`,
+`perform`, and the profile-interest methods are `AxolotyError` values.
 
 The runtime awaits each effect before it offers the next. Adapters must preserve
 that order when applying effects to their carrier. Publication routes are
-already resolved. `RuntimeOutboundMessage` and
-`RuntimeTransportLastWill` reject empty routes, routes longer than
-`WireBufferConfig.maxTopicLength`, and payloads longer than
-`WireBufferConfig.maxPayloadSize`. `OwnedExternalRouteTransition` rejects
+already resolved. `RuntimeOutboundMessage` rejects an empty route, a route
+longer than `WireBufferConfig.maxTopicLength`, and a payload longer than
+`WireBufferConfig.maxPayloadSize`. `RuntimeTransportLastWill` applies the same
+bounds to its `topic` and `payload`. `OwnedExternalRouteTransition` rejects
 routes outside the protocol's fixed route capacity. Adapters that do not
 report `.externalRouteSubscriptions` reject external-route effects.
 
@@ -121,7 +124,7 @@ values:
 Submit these values through the matching runtime entry point: `publish(_:)`
 for one-way operations, `request(_:)` for requests, and `respond(_:)` for
 responses. The runtime supplies its configured source identity when it
-translates each value to the shared protocol operation. Associate accepts an
+translates each value to the shared protocol operation. Associate accepts a
 context name through `.associateInContext(contextName:payload:)`; use the
 existing `.associate(_:)` spelling when no context is required.
 
@@ -152,17 +155,19 @@ Reconnect restores profile subscriptions and local advertisements, but it does
 not replay accepted request commands or reopen their pending correlations.
 
 Application event streams are registered before startup and use one bounded
-`RuntimeBufferingPolicy`: `fail`, `dropOldest`, `dropNewest`, or
-`coalesceLatest`. Transport ingress is never lossy. If its bounded queue is
-full, the runtime reports a structured overload failure rather than silently
-discarding protocol input.
+`RuntimeBufferingPolicy`: `failAfterDrop` (the default), `fail`, `dropOldest`,
+`dropNewest`, or `coalesceLatest`. Transport ingress never silently discards
+protocol input. If its bounded queue is full, the runtime reports a structured
+overload failure and stops rather than continuing with a gap.
 
 ## Static runtime
 
 `AxolotyStaticRuntime.StaticRuntime<capacity, payloadCapacity>` composes one
-`ProtocolProcessor`, one `ProtocolSubscriptionRegistry`, and one inline action
-sink. `receive`, `send`, `expire`, `cancel`, and `drain` are synchronous. The
-caller drains actions before borrowed topic or payload bytes leave scope.
+`ProtocolProcessor`, one `ProtocolSubscriptionRegistry`, one inline owning
+action sink, and one fixed IO endpoint registry. `receive`, `send`, `expire`,
+`cancel`, and `drain` are synchronous. The sink deep-copies every borrowed
+byte, so the caller may return before draining; a borrowed action view is valid
+only during the synchronous `drain` call.
 
 `payloadCapacity` is a compile-time value between 0 and Axoloty's sealed
 2,048-byte payload limit. This is a bounded-platform constraint and an
@@ -178,9 +183,12 @@ JSON array indexing and decoded predicate comparisons retain their separately
 measured 512-element and 512-byte bounds. Oversized values fail with a
 structured capacity error instead of expanding the ESP32 stack.
 
-The accepted storage profiles are `tiny = 1`, `esp32C6Static = 16`, and
-`hostDefault = 64`. Static handlers are noncapturing thin functions with
-caller-owned numeric context handles; no task, actor, Foundation value, or
+The `ProtocolBufferConfig.Preset` capacity profiles are `tiny = 1`,
+`esp32C6Static = 16`, and `hostDefault = 64`. The public type aliases
+`StaticRuntimeTiny`, `StaticRuntimeESP32C6`, and `StaticRuntimeHostTest` combine
+those capacities with the 2,048-byte payload limit, and `AxolotyStaticRuntime`
+aliases `StaticRuntimeESP32C6`. Static handlers are noncapturing thin functions
+with caller-owned numeric context handles; no task, actor, Foundation value, or
 growable collection is part of the static runtime.
 
 ## Borrowed-value lifetime rules
@@ -202,21 +210,22 @@ Public runtime boundaries wrap foreign failures in `AxolotyError`. Stable
 categories include invalid arguments, invalid configuration, decoding
 failures, runtime state failures, transport failures, and caught underlying
 errors. Runtime receipts preserve protocol categories such as malformed frame,
-malformed payload, capacity exceeded, duplicate, deadline expired, stale
-correlation, and unsupported capability.
+malformed payload, capacity exceeded, duplicate, deadline expired, invalid or
+mismatched correlation, and unsupported capability.
 
-`RuntimeDiagnostics` provides bounded counters for ingress saturation, stream
-drops, handler saturation, reconnects, expired requests, malformed frames, and
-transport failures. It also reports current lifecycle, presence, request, and
-capability state without exposing transport handles.
+`RuntimeDiagnostics` provides bounded counters for ingress, dispatch, and
+handler saturation, reconnects, expired requests, malformed frames, transport
+failures, and diagnostic-stream drops. It also reports current lifecycle,
+presence, request, and capability state without exposing transport handles.
 
 The diagnostics snapshot carries the current typed `lifecycle` transition and
 `capabilities` information, so a consumer that connects after startup does not
 need replayed stream values. `RuntimeDiagnostic` values carry a monotonic
 `sequence`, a runtime `timestampMS`, and an optional typed
 `RuntimeObservation`. The stream observation families are `reconnect`,
-`admission`, `request`, `presence`, and `transportFailure`. Each case owns its
-values. A request
+`admission`, `request`, `presence`, and `transportFailure`. The
+`RuntimeObservation` cases `lifecycle` and `capabilities` carry snapshot state
+and are not emitted as stream values. Each case owns its values. A request
 observation records a correlation and outcome, never the request or response
 payload. A presence observation records identities and counts, never object
 metadata. The free-form `detail` string is for bounded operational context;

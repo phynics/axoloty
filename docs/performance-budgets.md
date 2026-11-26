@@ -11,9 +11,10 @@ scope, issue #277).
 > The C surrogate (`#302`) that did not exercise production AxolotyWire
 > Swift interfaces is now recorded only as historical evidence. Production
 > Embedded Swift measurements for the `esp32c6-mqtt` profile (JSON) are
-> recorded in the manifest; the `esp32c6-zenoh` profile is pending the CBOR
-> codec decision. Issue `#322` is closed; final per-profile budget
-> re-derivation is tracked in `#987` and phynics/axoloty-embedded#63.
+> recorded in the manifest; the `esp32c6-zenoh` profile has no CBOR device
+> numbers in the manifest yet. Issues `#322` and `#987` are closed. PR `#1036`
+> closed `#987` and re-derived the `esp32c6-mqtt` budgets from production
+> measurements.
 > The manifest may only move to `approved` once host budgets are populated
 > and every device profile satisfies each approval gate enforced by
 > `Tests/Support/checks/check-budget-manifest.sh`. No host/device numbers were
@@ -139,11 +140,10 @@ least 250 ms, subtracts loop overhead, and takes 30 samples over the 39-case
 corpus with no serial I/O in the timed window; p50 and p95 differ by 3 ns and
 repeat exactly across runs. These are measurements, not upper bounds.
 
-The `esp32c6-zenoh` (CBOR, Zenoh) profile is `pending-baseline`: the CBOR
-codec decision (#977) has not yet produced device numbers. Per the
-2026-10-11 decision, the Zenoh budgets are re-derived from CBOR
-measurements, while the JSON numbers below remain the `esp32c6-mqtt`
-baseline.
+The `esp32c6-zenoh` (CBOR, Zenoh) profile is `pending-baseline`: the manifest
+records no CBOR device numbers. Per the 2026-10-11 decision, the Zenoh budgets
+are re-derived from CBOR measurements, while the JSON numbers below remain the
+`esp32c6-mqtt` baseline.
 
 #### `esp32c6-mqtt` latency
 
@@ -272,8 +272,10 @@ prerequisites for beginning Phase 4.
 At least 5 gates, each with `id`, `description`, `threshold`, and
 `thresholdType`:
 
-1. **`clean-cross-build-flash`** — `make embedded-swift-flash` and `make
-   embedded-device-smoke` succeed from a clean checkout (pass-fail).
+1. **`clean-cross-build-flash`** — the firmware cross-build, flash, and device
+   smoke succeed from a clean checkout in `phynics/axoloty-embedded` (pass-fail).
+   This repository no longer has `make embedded-swift-flash` or
+   `make embedded-device-smoke`.
 2. **`max-size-wire-pass`** — `make benchmark-wire-bounds` passes with
    all 36 bounds tests green (numeric).
 3. **`no-reset-watchdog-race-exhaustion`** — the device benchmark
