@@ -309,7 +309,7 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
         guard valid else { return .rejected(.malformedPayload) }
         var ioActorActionCount = 0
         if frame.routingKey.capability == .ioValue {
-            for index in 0..<capacity where associations[index].active && associations[index].sourceID == frame.routingKey.sourceID {
+            for index in 0..<capacity where matchesIoValue(index, source: frame.routingKey.sourceID) {
                 ioActorActionCount += 1
             }
         }
@@ -449,13 +449,16 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
     /// Emits the deliveries for one IoValue frame's matching associations.
     ///
     /// Kept separate so the fixed delivery and action temporaries do not
-    /// inflate the generic inbound frame's stack slot.
+    /// inflate the generic inbound frame's stack slot. `@inline(never)` is
+    /// load-bearing: inlining this back into `processProfileInbound` restores
+    /// the merged frame this split removes.
     /// - Returns: `nil` on success, or the rejection to propagate.
-    private mutating func emitIoValueDeliveries<S: ~Copyable & ProtocolActionSink>(
-        frame: BorrowedProtocolFrame,
+    @inline(never)
+    private func emitIoValueDeliveries<S: ~Copyable & ProtocolActionSink>(
+        frame: borrowing BorrowedProtocolFrame,
         sink: inout S
     ) -> ProtocolProcessOutcome? {
-        for index in 0..<capacity where associations[index].active && associations[index].sourceID == frame.routingKey.sourceID {
+        for index in 0..<capacity where matchesIoValue(index, source: frame.routingKey.sourceID) {
             let delivery = BorrowedProtocolDelivery(
                 routingKey: frame.routingKey,
                 deliveryKey: .ioActor(associations[index].actorID),
@@ -472,13 +475,16 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
     /// a Deadvertise triggered.
     ///
     /// Kept separate so the fixed delivery, route, and action temporaries do
-    /// not inflate the generic inbound frame's stack slot.
+    /// not inflate the generic inbound frame's stack slot. `@inline(never)` is
+    /// load-bearing: inlining this back into `processProfileInbound` restores
+    /// the merged frame this split removes.
     /// - Returns: `nil` on success, or the rejection to propagate.
-    private mutating func emitDeliveryAndReleases<S: ~Copyable & ProtocolActionSink>(
-        frame: BorrowedProtocolFrame,
+    @inline(never)
+    private func emitDeliveryAndReleases<S: ~Copyable & ProtocolActionSink>(
+        frame: borrowing BorrowedProtocolFrame,
         frameDeliveryKey: BorrowedProtocolDeliveryKey,
         routeClassification: ProtocolRouteClassification,
-        releaseMask: InlineArray<capacity, Bool>,
+        releaseMask: borrowing InlineArray<capacity, Bool>,
         sink: inout S
     ) -> ProtocolProcessOutcome? {
         let delivery = BorrowedProtocolDelivery(
@@ -527,11 +533,14 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
     ///
     /// This is a separate function so its fixed route and association
     /// temporaries do not inflate the generic inbound frame's stack slot.
+    /// `@inline(never)` is load-bearing: inlining this back into
+    /// `processProfileInbound` restores the merged frame this split removes.
     ///
     /// - Returns: `nil` on success, or the rejection to propagate.
-    private mutating func emitAssociationChange<S: ~Copyable & ProtocolActionSink>(
-        plan: AssociationPlan,
-        frame: BorrowedProtocolFrame,
+    @inline(never)
+    private func emitAssociationChange<S: ~Copyable & ProtocolActionSink>(
+        plan: borrowing AssociationPlan,
+        frame: borrowing BorrowedProtocolFrame,
         frameDeliveryKey: BorrowedProtocolDeliveryKey,
         routeClassification: ProtocolRouteClassification,
         sink: inout S
@@ -621,12 +630,12 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
     }
 
     /// Appends one association transition action.
-    private mutating func emitAssociationTransition<S: ~Copyable & ProtocolActionSink>(
-        delivery: BorrowedProtocolDelivery,
+    private func emitAssociationTransition<S: ~Copyable & ProtocolActionSink>(
+        delivery: borrowing BorrowedProtocolDelivery,
         sourceID: UUID16,
         actorID: UUID16,
         change: ProtocolIoAssociationChange,
-        route: BorrowedProtocolRouteSnapshot?,
+        route: borrowing BorrowedProtocolRouteSnapshot?,
         routeClassification: ProtocolRouteClassification,
         sink: inout S
     ) -> Bool {
@@ -642,10 +651,10 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
     }
 
     /// Appends one external-route deactivation action.
-    private mutating func emitExternalRouteDeactivated<S: ~Copyable & ProtocolActionSink>(
+    private func emitExternalRouteDeactivated<S: ~Copyable & ProtocolActionSink>(
         sourceID: UUID16,
         actorID: UUID16,
-        route: BorrowedProtocolRouteSnapshot,
+        route: borrowing BorrowedProtocolRouteSnapshot,
         sink: inout S
     ) -> Bool {
         sink.append(.externalRouteDeactivated(BorrowedExternalRouteTransition(
@@ -656,10 +665,10 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
     }
 
     /// Appends one external-route activation action.
-    private mutating func emitExternalRouteActivated<S: ~Copyable & ProtocolActionSink>(
+    private func emitExternalRouteActivated<S: ~Copyable & ProtocolActionSink>(
         sourceID: UUID16,
         actorID: UUID16,
-        route: BorrowedProtocolRouteSnapshot,
+        route: borrowing BorrowedProtocolRouteSnapshot,
         sink: inout S
     ) -> Bool {
         sink.append(.externalRouteActivated(BorrowedExternalRouteTransition(
@@ -1199,6 +1208,12 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
             associationCount: count,
             recommendedUpdateRateMS: recommended
         )
+    }
+
+    /// One predicate for the preflight count and the IoValue fan-out so the
+    /// two cannot drift.
+    private borrowing func matchesIoValue(_ index: Int, source: UUID16) -> Bool {
+        associations[index].active && associations[index].sourceID == source
     }
 
     private borrowing func isLocalIoActor(_ id: UUID16) -> Bool {
