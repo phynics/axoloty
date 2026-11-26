@@ -311,6 +311,13 @@
           "classification": "intentional-stable-api"
         },
         {
+          "identifier": "s:7Axoloty0A7RuntimeC16presenceExpiriesScSyAA0B14PresenceExpiryVGyYaF",
+          "name": "presenceExpiries()",
+          "kind": "swift.method",
+          "declaration": "func presenceExpiries() async -> AsyncStream<RuntimePresenceExpiry>",
+          "classification": "intentional-stable-api"
+        },
+        {
           "identifier": "s:7Axoloty0A7RuntimeC19diagnosticsSnapshotAA0B11DiagnosticsVyYaF",
           "name": "diagnosticsSnapshot()",
           "kind": "swift.method",
@@ -406,6 +413,13 @@
           "name": "respond(_:nowMS:)",
           "kind": "swift.method",
           "declaration": "func respond(_ response: RuntimeResponse, nowMS: UInt32? = nil) async -> RuntimeReceipt",
+          "classification": "intentional-stable-api"
+        },
+        {
+          "identifier": "s:7Axoloty0A7RuntimeC9advertise8objectID0D07leaseMSAA0B7ReceiptO0A4Wire6UUID16V_Says5UInt8VGs6UInt32VtYaF",
+          "name": "advertise(objectID:object:leaseMS:)",
+          "kind": "swift.method",
+          "declaration": "func advertise(objectID: UUID16, object: [UInt8], leaseMS: UInt32) async -> RuntimeReceipt",
           "classification": "intentional-stable-api"
         },
         {
@@ -563,10 +577,10 @@
           "classification": "intentional-stable-api"
         },
         {
-          "identifier": "s:7Axoloty14RuntimeBuilderV8identity9namespace10capacitiesAcA0B8IdentityV_SSAA0B10CapacitiesVSgtKcfc",
-          "name": "init(identity:namespace:capacities:)",
+          "identifier": "s:7Axoloty14RuntimeBuilderV8identity9namespace10capacities14presencePolicyAcA0B8IdentityV_SSAA0B10CapacitiesVSg0A8Protocol0k8PresenceH0OtKcfc",
+          "name": "init(identity:namespace:capacities:presencePolicy:)",
           "kind": "swift.init",
-          "declaration": "init(identity: RuntimeIdentity, namespace: String, capacities: RuntimeCapacities? = nil) throws",
+          "declaration": "init(identity: RuntimeIdentity, namespace: String, capacities: RuntimeCapacities? = nil, presencePolicy: ProtocolPresencePolicy = .disabled) throws",
           "classification": "intentional-stable-api"
         },
         {
@@ -591,10 +605,10 @@
           "classification": "intentional-stable-api"
         },
         {
-          "identifier": "s:7Axoloty14RuntimeBuilderV8sourceID9namespace8identity10capacitiesAC0A4Wire6UUID16V_SSAA0B8IdentityVSgAA0B10CapacitiesVSgtKcfc",
-          "name": "init(sourceID:namespace:identity:capacities:)",
+          "identifier": "s:7Axoloty14RuntimeBuilderV8sourceID9namespace8identity10capacities14presencePolicyAC0A4Wire6UUID16V_SSAA0B8IdentityVSgAA0B10CapacitiesVSg0A8Protocol0o8PresenceJ0OtKcfc",
+          "name": "init(sourceID:namespace:identity:capacities:presencePolicy:)",
           "kind": "swift.init",
-          "declaration": "init(sourceID: UUID16, namespace: String, identity: RuntimeIdentity? = nil, capacities: RuntimeCapacities? = nil) throws",
+          "declaration": "init(sourceID: UUID16, namespace: String, identity: RuntimeIdentity? = nil, capacities: RuntimeCapacities? = nil, presencePolicy: ProtocolPresencePolicy = .disabled) throws",
           "classification": "intentional-stable-api"
         },
         {
@@ -1120,6 +1134,13 @@
           "name": "handlerCount",
           "kind": "swift.property",
           "declaration": "var handlerCount: Int { get }",
+          "classification": "intentional-stable-api"
+        },
+        {
+          "identifier": "s:7Axoloty17RuntimeDefinitionV14presencePolicy0A8Protocol0f8PresenceE0Ovp",
+          "name": "presencePolicy",
+          "kind": "swift.property",
+          "declaration": "var presencePolicy: ProtocolPresencePolicy { get }",
           "classification": "intentional-stable-api"
         },
         {
@@ -2037,6 +2058,41 @@
           "name": "RuntimeLifecycleState.stopping",
           "kind": "swift.enum.case",
           "declaration": "case stopping",
+          "classification": "intentional-stable-api"
+        },
+        {
+          "identifier": "s:7Axoloty21RuntimePresenceExpiryV",
+          "name": "RuntimePresenceExpiry",
+          "kind": "swift.struct",
+          "declaration": "struct RuntimePresenceExpiry",
+          "classification": "intentional-stable-api"
+        },
+        {
+          "identifier": "s:7Axoloty21RuntimePresenceExpiryV4atMSs6UInt32Vvp",
+          "name": "atMS",
+          "kind": "swift.property",
+          "declaration": "let atMS: UInt32",
+          "classification": "intentional-stable-api"
+        },
+        {
+          "identifier": "s:7Axoloty21RuntimePresenceExpiryV8objectID0A4Wire6UUID16Vvp",
+          "name": "objectID",
+          "kind": "swift.property",
+          "declaration": "let objectID: UUID16",
+          "classification": "intentional-stable-api"
+        },
+        {
+          "identifier": "s:7Axoloty21RuntimePresenceExpiryV8sourceID06objectF04atMSAC0A4Wire6UUID16V_AIs6UInt32Vtcfc",
+          "name": "init(sourceID:objectID:atMS:)",
+          "kind": "swift.init",
+          "declaration": "init(sourceID: UUID16, objectID: UUID16, atMS: UInt32)",
+          "classification": "intentional-stable-api"
+        },
+        {
+          "identifier": "s:7Axoloty21RuntimePresenceExpiryV8sourceID0A4Wire6UUID16Vvp",
+          "name": "sourceID",
+          "kind": "swift.property",
+          "declaration": "let sourceID: UUID16",
           "classification": "intentional-stable-api"
         },
         {
@@ -3315,6 +3371,13 @@
         },
         {
           "identifier": "s:SQsRi_zRi0_zrlE2neoiySbx_xtFZ::SYNTHESIZED::s:7Axoloty21RuntimeLifecycleStateO",
+          "name": "!=(_:_:)",
+          "kind": "swift.func.op",
+          "declaration": "static func != (lhs: borrowing Self, rhs: borrowing Self) -> Bool",
+          "classification": "intentional-stable-api"
+        },
+        {
+          "identifier": "s:SQsRi_zRi0_zrlE2neoiySbx_xtFZ::SYNTHESIZED::s:7Axoloty21RuntimePresenceExpiryV",
           "name": "!=(_:_:)",
           "kind": "swift.func.op",
           "declaration": "static func != (lhs: borrowing Self, rhs: borrowing Self) -> Bool",

@@ -190,6 +190,27 @@ public final class AxolotyRuntime: Sendable {
         await executor.diagnostics()
     }
 
+    /// Publishes one local object with a soft-state presence lease.
+    ///
+    /// - Parameters:
+    ///   - objectID: The local object identity to advertise.
+    ///   - object: The complete object bytes in the transport's wire profile.
+    ///   - leaseMS: Declared lease in milliseconds, `1000...3_600_000`.
+    /// - Returns: The bounded publication receipt. Presence must be enabled and
+    ///   the transport must carry `axoloty/1`.
+    public func advertise(
+        objectID: UUID16,
+        object: [UInt8],
+        leaseMS: UInt32
+    ) async -> RuntimeReceipt {
+        await executor.advertisePresence(objectID: objectID, object: object, leaseMS: leaseMS)
+    }
+
+    /// Returns the bounded stream of peer objects removed by presence expiry.
+    public func presenceExpiries() async -> AsyncStream<RuntimePresenceExpiry> {
+        await executor.presenceExpiries()
+    }
+
     /// Returns coalesced supervision counters without exposing transport state.
     public func diagnosticsSnapshot() async -> RuntimeDiagnostics {
         await executor.diagnosticsSnapshot()

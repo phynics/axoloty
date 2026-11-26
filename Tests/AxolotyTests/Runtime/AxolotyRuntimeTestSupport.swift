@@ -35,6 +35,7 @@ enum SetupFailureStage: String, CaseIterable, Sendable {
 
 actor TestTransport: AxolotyRuntimeTransport, RuntimeTransportContractFixture {
     nonisolated var transport: any AxolotyRuntimeTransport { self }
+    nonisolated let wireProfile: WireProfile
     nonisolated var capabilities: RuntimeTransportCapabilities {
         [.recoveryNotifications, .activityCounters, .profileInterest, .externalRouteSubscriptions]
     }
@@ -60,8 +61,9 @@ actor TestTransport: AxolotyRuntimeTransport, RuntimeTransportContractFixture {
     private var contractExternalRoutes: Set<String> = []
     private var contractStartCount = 0
 
-    init(failing failureStage: SetupFailureStage? = nil) {
+    init(failing failureStage: SetupFailureStage? = nil, wireProfile: WireProfile = .coaty3JSON) {
         self.failureStage = failureStage
+        self.wireProfile = wireProfile
     }
 
     func start(receive: @escaping @Sendable (RuntimeInboundFrame) -> Void) async throws {

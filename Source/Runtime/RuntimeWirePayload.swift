@@ -85,9 +85,33 @@ enum RuntimeWirePayload {
     /// - Returns: The advertise payload bytes.
     /// - Throws: ``ProtocolError`` when the object is malformed or too large.
     static func advertiseEnvelope(object: [UInt8], profile: WireProfile) throws(ProtocolError) -> [UInt8] {
+        try advertiseEnvelope(object: object, leaseMS: nil, ownerEpoch: nil, profile: profile)
+    }
+
+    /// Wraps one complete object in the advertise envelope with presence fields.
+    ///
+    /// - Parameters:
+    ///   - object: The complete object bytes in `profile`'s encoding.
+    ///   - leaseMS: Optional presence lease.
+    ///   - ownerEpoch: Optional owner incarnation.
+    ///   - profile: The bound transport profile.
+    /// - Returns: The advertise payload bytes.
+    /// - Throws: ``ProtocolError`` when the object or fields are malformed.
+    static func advertiseEnvelope(
+        object: [UInt8],
+        leaseMS: Int?,
+        ownerEpoch: Int?,
+        profile: WireProfile
+    ) throws(ProtocolError) -> [UInt8] {
         let fields: OwnedAdvertiseWireData
         do throws(WireDecodeError) {
-            fields = try OwnedAdvertiseWireData(profile: profile, object: object, privateData: nil)
+            fields = try OwnedAdvertiseWireData(
+                profile: profile,
+                object: object,
+                privateData: nil,
+                leaseMS: leaseMS,
+                ownerEpoch: ownerEpoch
+            )
         } catch {
             throw ProtocolError(.malformedPayload)
         }

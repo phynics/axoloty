@@ -34,10 +34,16 @@ struct RuntimeRegistrations: Sendable {
     var modules: [RuntimeModuleRegistration]
     var moduleKeys: Set<String>
     var moduleCorrelationOrdinal: UInt32
+    var presencePolicy: ProtocolPresencePolicy
 
-    init(capacities: RuntimeCapacities, registryID: ObjectID = runtimeRegistryNonce()) {
+    init(
+        capacities: RuntimeCapacities,
+        registryID: ObjectID = runtimeRegistryNonce(),
+        presencePolicy: ProtocolPresencePolicy = .disabled
+    ) {
         self.capacities = capacities
         self.registryID = registryID
+        self.presencePolicy = presencePolicy
         self.handlers = []
         self.eventRegistrations = []
         self.ioEndpointRegistrations = []
@@ -96,10 +102,17 @@ public struct RuntimeBuilder: Sendable {
     public init(
         identity: RuntimeIdentity,
         namespace: String,
-        capacities: RuntimeCapacities? = nil
+        capacities: RuntimeCapacities? = nil,
+        presencePolicy: ProtocolPresencePolicy = .disabled
     ) throws {
         let resolvedCapacities = try capacities ?? RuntimeCapacities()
-        try self.init(sourceID: identity.id, namespace: namespace, identity: identity, capacities: resolvedCapacities)
+        try self.init(
+            sourceID: identity.id,
+            namespace: namespace,
+            identity: identity,
+            capacities: resolvedCapacities,
+            presencePolicy: presencePolicy
+        )
     }
 
     /// Creates a builder from a source identity and optional metadata.
@@ -114,7 +127,8 @@ public struct RuntimeBuilder: Sendable {
         sourceID: UUID16,
         namespace: String,
         identity: RuntimeIdentity? = nil,
-        capacities: RuntimeCapacities? = nil
+        capacities: RuntimeCapacities? = nil,
+        presencePolicy: ProtocolPresencePolicy = .disabled
     ) throws {
         guard !namespace.isEmpty,
               namespace.utf8.count <= 64,
@@ -131,7 +145,7 @@ public struct RuntimeBuilder: Sendable {
         self.namespace = namespace
         self.sourceID = sourceID
         self.identity = identity
-        self.registrations = RuntimeRegistrations(capacities: resolvedCapacities)
+        self.registrations = RuntimeRegistrations(capacities: resolvedCapacities, presencePolicy: presencePolicy)
     }
 
     mutating func commit<T>(_ operation: (inout RuntimeRegistrations) throws -> T) throws -> T {
@@ -319,6 +333,8 @@ public struct RuntimeDefinition: Sendable {
     public let identity: RuntimeIdentity?
     /// The fixed limits for this runtime.
     public var capacities: RuntimeCapacities { registrations.capacities }
+    /// Opt-in soft-state presence policy.
+    public var presencePolicy: ProtocolPresencePolicy { registrations.presencePolicy }
 
     let registrations: RuntimeRegistrations
 
