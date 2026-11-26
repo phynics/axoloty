@@ -454,17 +454,17 @@ caller's choice. The split is not needed for hosted consumers.
 
 ## Implementation plan
 
-Each slice ends in a verifiable state. Gnostic is unblocked after slice 4.
+Each slice ends in a verifiable state and has its own issue. Gnostic is unblocked after slice 4.
 
 | Slice | Content | Size | Main risk |
 |---|---|---|---|
-| 1 | Fix the `isValidJSONValue` unaligned overflow | small | none; a bug fix with a reproduction |
-| 2 | Wire limit through `WireCodec`, readers, validators, nested readers, workspace rule | medium | many call sites; tests that lock 2,048 must keep passing at the default |
-| 3 | `RuntimeCapacities` ceiling, host checks on the configured limit, growing encoder, `assumedPeerPayloadBytes` setting | medium | replacing every global check in `Source/Runtime` without missing one; the table in Context is the checklist |
-| 4 | Transport `maximumPayloadBytes`, builder check, `MQTTBinding` admission check, live Mosquitto test at the limit | medium | broker defaults; the live test is the evidence |
-| 5 | `maxPayloadBytes` declaration, processor storage, response check, requester source on responses, corpus, host and static trace parity | large | frozen-enum constraints on the observation (question 4); parity of the new rule across both runtimes |
-| 6 | Zenoh façade owned handles | large | C façade lifetime of zenoh-c handles across poll |
-| 7 | Static frame and value split | large | separate ADR; frozen generic signature |
+| 1 ([#1088](https://github.com/phynics/axoloty/issues/1088)) | Fix the `isValidJSONValue` unaligned overflow | small | none; a bug fix with a reproduction |
+| 2 ([#1089](https://github.com/phynics/axoloty/issues/1089)) | Wire limit through `WireCodec`, readers, validators, nested readers, workspace rule | medium | many call sites; tests that lock 2,048 must keep passing at the default |
+| 3 ([#1090](https://github.com/phynics/axoloty/issues/1090)) | `RuntimeCapacities` ceiling, host checks on the configured limit, growing encoder, `assumedPeerPayloadBytes` setting | medium | replacing every global check in `Source/Runtime` without missing one; the table in Context is the checklist |
+| 4 ([#1091](https://github.com/phynics/axoloty/issues/1091)) | Transport `maximumPayloadBytes`, builder check, `MQTTBinding` admission check, live Mosquitto test at the limit | medium | broker defaults; the live test is the evidence |
+| 5 ([#1092](https://github.com/phynics/axoloty/issues/1092)) | `maxPayloadBytes` declaration, processor storage, response check, requester source on responses, corpus, host and static trace parity | large | frozen-enum constraints on the observation (question 4); parity of the new rule across both runtimes |
+| 6 ([#1093](https://github.com/phynics/axoloty/issues/1093)) | Zenoh façade owned handles | large | C façade lifetime of zenoh-c handles across poll |
+| 7 ([#1094](https://github.com/phynics/axoloty/issues/1094)) | Static frame and value split | large | separate ADR; frozen generic signature |
 
 Slices 1 to 4 need no peer-limit work. Slice 5 can follow without blocking
 Gnostic. Slices 6 and 7 are independent.
