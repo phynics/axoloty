@@ -558,7 +558,7 @@ This changes no ownership rule in `AGENTS.md`.
 | #1060 acceptance item | Where |
 |---|---|
 | ADR records the decisions | This ADR, accepted 2026-11-26 |
-| Host and static replay identical traces | Core: trace parity tests (both legs on `axoloty/1`) |
+| Host and static replay identical traces | Core: `PresenceTraceParityTests` replays announce, renew, expiry, late refresh, Deadvertise, resurrection, and a malformed leased frame through both legs |
 | Lost peer's objects removed within the lease; slots reusable | Core: processor tests (extends Claim 1) |
 | Rebooted peer's next Advertise delivered | Core: processor tests (owner-epoch re-announce and the post-expiry row) |
 | Short reconnect inside the lease causes no departure | Core: processor and runtime tests (suspend/resume) |
