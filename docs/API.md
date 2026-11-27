@@ -1,10 +1,10 @@
 # Axoloty API
 
 This document describes the current host and portable APIs. The exact public
-declarations selected for Core 1.0 are recorded in the
+declarations of the frozen Core products are recorded in the
 [Core API audit](./api/core-1.0-surface.md) and its generated
 [symbol baseline](./api/core-1.0-public-symbols.json). `VERSION` remains the
-release authority. The current released API is Axoloty 1.0.1.
+release authority. The current released API is Axoloty 1.1.0.
 
 ## Core 1.0 surface
 

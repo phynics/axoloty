@@ -12,14 +12,14 @@ import Testing
 func dispatcherVersionUsesExecutableName() {
     let dispatcher = AxolotyCommandDispatcher(executableName: "ax", environment: [:])
     let result = dispatcher.run(arguments: ["version"])
-    #expect(result.standardOutput == "ax 1.0.1")
+    #expect(result.standardOutput == "ax 1.1.0")
 }
 
 @Test
 func dispatcherDefaultVersionIsAxolotyTool() {
     let dispatcher = AxolotyCommandDispatcher(environment: [:])
     let result = dispatcher.run(arguments: ["version"])
-    #expect(result.standardOutput == "axoloty-tool 1.0.1")
+    #expect(result.standardOutput == "axoloty-tool 1.1.0")
 }
 
 @Test

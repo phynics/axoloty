@@ -7,7 +7,7 @@ record; this document summarizes the active strategy.
 
 ## Current checkpoint
 
-[`VERSION`](../VERSION) identifies the current released version (`1.0.1`). The six Core products listed under [1.0 scope](#10-scope) are frozen and follow the [versioning and deprecation policy](./versioning.md). Everything else remains experimental and may change in any release.
+[`VERSION`](../VERSION) identifies the current released version (`1.1.0`). The six Core products listed under [1.0 scope](#10-scope) are frozen and follow the [versioning and deprecation policy](./versioning.md). Everything else remains experimental and may change in any release.
 
 Historical release outcomes are preserved in [`docs/releases/`](./releases/) and [`CHANGELOG.md`](../CHANGELOG.md). They do not define current strategy.
 
@@ -19,7 +19,8 @@ the `axoloty/1` CBOR profile
 encoding, and 0.9.0, which closed
 [epic #845](https://github.com/phynics/axoloty/issues/845) and moved firmware
 and device qualification into `phynics/axoloty-embedded`. The release records
-are [`docs/releases/1.0.1.md`](./releases/1.0.1.md),
+are [`docs/releases/1.1.0.md`](./releases/1.1.0.md),
+[`docs/releases/1.0.1.md`](./releases/1.0.1.md),
 [`docs/releases/1.0.0.md`](./releases/1.0.0.md),
 [`docs/releases/0.10.0.md`](./releases/0.10.0.md), and
 [`docs/releases/0.9.0.md`](./releases/0.9.0.md). The approved product and
@@ -31,6 +32,10 @@ certified in `phynics/axoloty-embedded` at
 [`1.0.1-embedded.1`](https://github.com/phynics/axoloty-embedded/releases/tag/v1.0.1-embedded.1)
 on Core v1.0.1. That release closed
 [phynics/axoloty-embedded#73](https://github.com/phynics/axoloty-embedded/issues/73).
+Core 1.1.0 adds soft-state presence and is not device-qualified yet. The
+ESP32-C6 refresh loop, power-loss expiry, `DROP` loss, queue drops, and memory
+budgets are tracked in
+[phynics/axoloty-embedded#156](https://github.com/phynics/axoloty-embedded/issues/156).
 The `sensor-node` reference profiles keep their evidence and budgets and are not
 certified. The Embedded v1 epic,
 [phynics/axoloty-embedded#61](https://github.com/phynics/axoloty-embedded/issues/61),
