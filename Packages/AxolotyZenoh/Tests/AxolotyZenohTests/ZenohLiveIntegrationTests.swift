@@ -210,6 +210,58 @@ struct ZenohLiveIntegrationTests {
         #expect(bindingRouterCount(binding) == 0)
     }
 
+    @Test("an abruptly closed owner session expires its leases at the observer")
+    func presenceExpiryAfterAbruptOwnerClose() async throws {
+        let namespace = "presence-live-\(UUID().uuidString.lowercased())"
+        let ownerID = try #require(UUID16(parsing: "00000000-0000-4000-8000-0000000007a1"))
+        let observerID = try #require(UUID16(parsing: "00000000-0000-4000-8000-0000000007a2"))
+        let leaseMS: UInt32 = 2_000
+        let presence = try RuntimePresenceConfiguration(leaseMS: leaseMS)
+
+        let ownerBinding = try ZenohBinding(connectEndpoint: endpoint)
+        let observerBinding = try ZenohBinding(connectEndpoint: endpoint)
+        let owner = AxolotyRuntime(
+            definition: try RuntimeBuilder(
+                identity: try RuntimeIdentity(id: ownerID, name: "live-owner"),
+                namespace: namespace,
+                presence: presence
+            ).finish(),
+            transport: ownerBinding
+        )
+        let observer = AxolotyRuntime(
+            definition: try RuntimeBuilder(
+                sourceID: observerID,
+                namespace: namespace,
+                presence: presence
+            ).finish(),
+            transport: observerBinding
+        )
+        try await owner.start()
+        try await observer.start()
+        var expiries = await observer.presenceExpiries().makeAsyncIterator()
+
+        try await waitFor("the observer receives the leased identity") {
+            let snapshot = await observer.diagnosticsSnapshot()
+            return snapshot.lastPresence?.sourceID == ownerID
+                && snapshot.lastPresence?.objectID == ownerID
+        }
+
+        // Close the owner session without a Deadvertise. This is the live
+        // host-leg equivalent of an owner that vanishes with no last will.
+        await ownerBinding.stop()
+
+        try await waitFor("the observer to expire the absent owner", timeout: .seconds(10)) {
+            await observer.diagnosticsSnapshot().activeObjects == 0
+        }
+        let expiry = try #require(await expiries.next())
+        #expect(expiry.sourceID == ownerID)
+        #expect(expiry.objectID == ownerID)
+
+        await owner.stop()
+        await observer.stop()
+        await observerBinding.stop()
+    }
+
     @Test("the runtime enters soft recovery and resumes after router restart")
     func routerRestartRecovery() async throws {
         let namespace = "restart-\(UUID().uuidString.lowercased())"
