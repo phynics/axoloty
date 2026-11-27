@@ -18,6 +18,28 @@ test("independent cbor-x decode matches every golden JSON", () => {
   assert.deepEqual(verifyGoldenCorpus(goldenDir), []);
 });
 
+test("the verifier requires a declared JSON surrogate for CBOR-only cases", () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "golden-verify-"));
+  try {
+    fs.cpSync(goldenDir, tempDir, { recursive: true });
+    const manifestPath = path.join(tempDir, "manifest.json");
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8")) as {
+      cases: Array<{ id: string; jsonSurrogate: boolean; cborOnly: boolean }>;
+    };
+    const lease = manifest.cases.find(goldenCase => goldenCase.id === "advertise-lease");
+    assert.ok(lease);
+    lease.jsonSurrogate = false;
+    fs.writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+    const problems = verifyGoldenCorpus(tempDir);
+    assert.ok(
+      problems.some(problem => problem.includes("advertise-lease") && problem.includes("surrogate")),
+      `expected a surrogate problem, got ${JSON.stringify(problems)}`,
+    );
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 test("the verifier rejects a float that is not the shortest lossless width", () => {
   // `1.5` encoded as float64 instead of float32 still decodes to `1.5`, so the
   // independent decode alone would accept it. The re-encode check must catch

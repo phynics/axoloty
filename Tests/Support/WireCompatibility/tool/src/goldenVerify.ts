@@ -41,6 +41,9 @@ export function verifyGoldenCorpus(goldenDir: string): string[] {
   const decoder = new Decoder({ useRecords: false, mapsAsObjects: true, tagUint8Array: false });
   const generatorCases = new Map(GOLDEN_CASES.map(goldenCase => [goldenCase.id, goldenCase]));
   for (const goldenCase of manifest.cases) {
+    if (goldenCase.cborOnly && !goldenCase.jsonSurrogate) {
+      problems.push(`${goldenCase.id}: a CBOR-only case must declare its JSON surrogate`);
+    }
     const expected = JSON.parse(fs.readFileSync(path.join(goldenDir, goldenCase.json), "utf8")) as unknown;
     const cborBytes = fs.readFileSync(path.join(goldenDir, goldenCase.cbor));
     let actual: unknown;

@@ -264,7 +264,10 @@ states the wire difference and the exact reference version. The
 `make test-one FILTER='WireGoldenCorpusTests'` proves profile round-trip byte
 identity, and `npm run verify:golden --prefix
 Tests/Support/WireCompatibility/tool` independently decodes every CBOR golden
-with `cbor-x`.
+with `cbor-x`. A CBOR-only case, such as an Advertise carrying the presence
+lease, declares `cborOnly` and an explicit JSON surrogate in the manifest. The
+corpus still decodes and re-encodes its CBOR bytes, but JSON byte identity is
+not claimed for a value `coaty/3` cannot express.
 
 The CI `Live CoatyJS compatibility gate` (issue #457) enforces this record:
 protocol-affecting PRs must run the live suite to completion and upload the
