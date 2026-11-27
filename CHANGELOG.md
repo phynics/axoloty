@@ -7,7 +7,11 @@ Axoloty is a modernized fork of
 fork, through CoatySwift 2.4.0, remain documented in the
 [upstream changelog](https://github.com/coatyio/coaty-swift/blob/master/CHANGELOG.md).
 
-## [Unreleased]
+## [1.1.0] - 2026-11-27
+
+Axoloty 1.1.0 is a minor release of the frozen Core products. It adds the
+soft-state presence API and the optional `axoloty/1` lease fields. `coaty/3`
+bytes and field presence are unchanged. See `docs/releases/1.1.0.md`.
 
 ### Added
 
@@ -762,7 +766,8 @@ and reproducible compatibility and resource evidence.
 Initial Axoloty prerelease as an independently maintained, modernized fork of
 CoatySwift.
 
-[Unreleased]: https://github.com/phynics/axoloty/compare/v1.0.1...HEAD
+[Unreleased]: https://github.com/phynics/axoloty/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/phynics/axoloty/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/phynics/axoloty/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/phynics/axoloty/compare/v0.10.0...v1.0.0
 [0.10.0]: https://github.com/phynics/axoloty/compare/v0.9.0...v0.10.0

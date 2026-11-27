@@ -67,7 +67,7 @@ def main() -> None:
         "baselineVersion": "1.0.0",
         "toolchain": "Swift 6.4",
         "generator": "swift package dump-symbol-graph",
-        "classification": "Every listed declaration is intentional stable API for Core 1.0.",
+        "classification": "Every listed declaration is intentional stable API for the frozen Core 1.0 products in 1.0 and later releases.",
         "products": [read_product(graph_paths, module, ownership) for module, ownership in PRODUCTS],
     }
     output.write_text(json.dumps(document, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")

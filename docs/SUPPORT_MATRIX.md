@@ -1,7 +1,7 @@
-# Axoloty 1.0.1 support matrix
+# Axoloty 1.1.0 support matrix
 
 This matrix records the support level for the current implementation, backed
-by behavioral test evidence. [`VERSION`](../VERSION) is `1.0.1`. Typed IO
+by behavioral test evidence. [`VERSION`](../VERSION) is `1.1.0`. Typed IO
 endpoint ergonomics and the optional SensorThings products are part of the
 product surface. Support levels use a consistent vocabulary:
 
@@ -46,6 +46,7 @@ API absences and typed failures; see
 | Capability | Support level | Evidence |
 |---|---|---|
 | Advertise / Deadvertise | Validated | Offline fixtures and live CoatyJS directions; embedded physical evidence (10/10). Failure/boundary: invalid-object-type rejection and malformed-input rejection. |
+| Soft-state presence (`axoloty/1`) | Validated on host; device pending | Processor, host, static, CBOR-golden, and host/static parity tests; live pinned-`zenohd` expiry after an abrupt owner close. `coaty/3` is unchanged. ESP32-C6 refresh and power-loss expiry are tracked in [embedded #156](https://github.com/phynics/axoloty-embedded/issues/156). |
 | Discover / Resolve | Validated | Offline fixtures and live CoatyJS directions; embedded physical evidence. Failure/boundary: correlation matching, bounded outstanding Discover, 5s timeout, wrong-correlation rejection, and duplicate rejection. |
 | Query / Retrieve | Validated | Offline fixtures and live CoatyJS directions with filter coverage. Failure/boundary: negative filters, unknown-operator rejection, and unknown-sorting-order rejection. |
 | Update / Complete | Validated | Offline fixtures and live CoatyJS directions. Failure/boundary: omitted-optional-field decoding. |
@@ -87,10 +88,10 @@ API absences and typed failures; see
 | TLS | Supported | Platform-conditional implementation (NIOSSL on Linux, NIOTransportServices on Apple). Manual macOS oracle verification only — no automated TLS tests. |
 | mDNS discovery | Unsupported | The G4 runtime does not publish or discover brokers through mDNS. |
 | MQTT QoS configuration | Supported | The G4 MQTT binding uses QoS 0, which matches CoatyJS 2.4.0. Higher QoS is not supported by the current binding. |
-| Zenoh transport, host client mode | Experimental | `AxolotyZenoh` package over pinned `zenoh-c` 1.10.0. Evidence: the offline façade-contract and conformance tier (`zenoh-offline`) and the live pinned-`zenohd` tier (`zenoh-live`), both on Linux x86_64 in the pinned container and natively on macOS arm64, plus MQTT↔Zenoh protocol-trace parity tests. Experimental because the package is consumable only from a checkout (path dependency, ADR 0007) and sits outside the Core 1.0 stability contract. Its wire encoding is `axoloty/1` CBOR, the only Zenoh encoding ([ADR 0009](./adr/0009-zenoh-carries-only-axoloty-1.md)), so 0.9 Zenoh peers do not interoperate with 0.10.0 or 1.0 Zenoh peers. See [docs/transports/zenoh.md](./transports/zenoh.md). |
+| Zenoh transport, host client mode | Experimental | `AxolotyZenoh` package over pinned `zenoh-c` 1.10.0. Evidence: the offline façade-contract and conformance tier (`zenoh-offline`) and the live pinned-`zenohd` tier (`zenoh-live`, including lease expiry after an abrupt owner close), both on Linux x86_64 in the pinned container and natively on macOS arm64, plus MQTT↔Zenoh protocol-trace parity tests. Experimental because the package is consumable only from a checkout (path dependency, ADR 0007) and sits outside the Core 1.0 stability contract. Its wire encoding is `axoloty/1` CBOR, the only Zenoh encoding ([ADR 0009](./adr/0009-zenoh-carries-only-axoloty-1.md)), so 0.9 Zenoh peers do not interoperate with 0.10.0 or 1.0 Zenoh peers. See [docs/transports/zenoh.md](./transports/zenoh.md). |
 | Zenoh transport, host peer mode | Experimental | Routerless scenario in the `zenoh-live` tier. Same limits as client mode. Router loss is not reported in peer mode. |
 | Zenoh Embedded-Swift core (`AxolotyZenohCore`) | Experimental | Compiled and partially linked for RISC-V by the hardware-free `zenoh-core-embedded` pull-request node, which needs no zenoh-c archive, router, or device. No firmware session or device evidence exists in this repository. |
-| Zenoh transport, ESP32-C6 | Experimental | Firmware lives in `phynics/axoloty-embedded`. Profile `esp32c6-zenoh` is certified there at [`1.0.1-embedded.1`](https://github.com/phynics/axoloty-embedded/releases/tag/v1.0.1-embedded.1) on Core v1.0.1; that release states its limits. This repository did not re-verify the certificate. |
+| Zenoh transport, ESP32-C6 | Experimental | Firmware lives in `phynics/axoloty-embedded`. Profile `esp32c6-zenoh` is certified there at [`1.0.1-embedded.1`](https://github.com/phynics/axoloty-embedded/releases/tag/v1.0.1-embedded.1) on Core v1.0.1; that release states its limits. This repository did not re-verify the certificate. Core 1.1.0 is not device-certified; presence qualification is [embedded #156](https://github.com/phynics/axoloty-embedded/issues/156). |
 
 ## Platforms
 
