@@ -9,6 +9,19 @@ fork, through CoatySwift 2.4.0, remain documented in the
 
 ## [Unreleased]
 
+### Added
+
+- Host-runtime soft-state presence on `axoloty/1` for #1060.
+  `RuntimePresenceConfiguration` leases the runtime identity and typed IO
+  endpoints, and `AxolotyRuntime.advertise(objectID:object:leaseMS:)` leases an
+  application object. One bounded timer refreshes retained envelopes with a
+  per-object phase, and `presenceExpiries()` reports peer removals through a
+  bounded additive stream. Each runtime instance carries its own owner epoch.
+  `coaty/3` wire bytes are unchanged; presence stays off there and enabling it
+  fails before the transport opens. Graceful stop now aborts a failing
+  withdrawal sequence at the first transport error on every profile. See the
+  amendment to ADR 0015.
+
 ## [1.0.1] - 2026-11-02
 
 Axoloty 1.0.1 is a patch release. It changes no wire bytes and no public

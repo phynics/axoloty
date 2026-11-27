@@ -141,6 +141,23 @@ public enum RuntimePresenceEvidence: String, Sendable, Equatable, CaseIterable {
     case transportReset
 }
 
+/// One peer object removed by the local presence lease.
+public struct RuntimePresenceExpiry: Sendable, Equatable {
+    /// The peer source that advertised the object.
+    public let sourceID: UUID16
+    /// The expired object identity.
+    public let objectID: UUID16
+    /// Runtime monotonic time of the removal.
+    public let atMS: UInt32
+
+    /// Creates one presence expiry report.
+    public init(sourceID: UUID16, objectID: UUID16, atMS: UInt32) {
+        self.sourceID = sourceID
+        self.objectID = objectID
+        self.atMS = atMS
+    }
+}
+
 /// Presence evidence without any object payload.
 public struct RuntimePresenceObservation: Sendable, Equatable {
     /// The source identity, when known.

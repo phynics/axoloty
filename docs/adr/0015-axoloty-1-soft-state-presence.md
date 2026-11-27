@@ -181,7 +181,7 @@ device at all.
 
 `ownerEpoch` replaces the draft's `isRefresh` flag. A frame cannot prove whether
 it is the last one an owner sends: a lost announce followed by refreshes would
-keep a reboot masked. A per-process epoch is carried on every leased
+keep a reboot masked. A per-runtime-instance epoch is carried on every leased
 Advertise, so any later frame reveals a restart. It costs four bytes per slot
 and about the same on the wire.
 
@@ -324,10 +324,10 @@ refreshing for a wedged application, so the host does not detect that case.
 Refresh phase is anchored to the owner's local clock and is never restarted by
 a reconnect; otherwise a router restart re-synchronizes every owner into
 periodic N·M bursts. The first offset after boot is derived deterministically
-from the source identifier (no random source in the portable core), and a
-post-reconnect re-announce uses the same jitter. The host runtime retains the
-local Advertise bytes it needs to refresh; the static runtime's caller retains
-them. A lease declaration must fit the configured payload capacity both as an
+from the source and object identifiers (no random source in the portable core),
+so objects of one owner spread across the interval, and a post-reconnect
+re-announce uses the same jitter. The host runtime retains the local Advertise
+bytes it needs to refresh; the static runtime's caller retains them. A lease declaration must fit the configured payload capacity both as an
 announce and as a refresh, because deterministic key order re-encodes the map.
 
 The host timer is one runtime-owned task over a time-parameterized processor
@@ -546,8 +546,8 @@ This changes no ownership rule in `AGENTS.md`.
   record (lease, last seen, owner epoch), the refresh transition, and the expiry
   pass and identifier report.
   Time comes from the caller; there is no allocation, task, or timer.
-- `Source/Runtime`: the host timer, the expiry evidence case, and delivery to
-  event streams. It exposes no raw MQTT or raw route API.
+- `Source/Runtime`: the host timer, the additive expiry report, and delivery to
+  a bounded expiry stream. It exposes no raw MQTT or raw route API.
 - `AxolotyStaticRuntime`: the same transitions, driven by its caller.
 - Hardware work (the device refresh loop, `presence-expiry` qualification,
   measurement of heap, stack, drops, and the real reconnect distribution) stays
@@ -611,6 +611,29 @@ design target, heap, stack, and image size with the new fields.
 10. A renew emits no presence diagnostic. It does not clear the runtime's
     `presenceUncertain` flag; only a delivered announce or deadvertisement
     does.
+
+### Implementation amendments for the host slice
+
+These amend the accepted record without changing the wire contract or any
+frozen enum:
+
+- The host owner epoch is allocated once per runtime instance, not once per
+  process, and is injectable for tests. Runtimes are single-use, so a rebuilt
+  instance whose Deadvertise was lost reports a new epoch and re-announces.
+- The refresh phase hashes the source and object identifiers, not the source
+  alone, so one host's objects spread across the interval instead of bursting
+  on one tick.
+- The configured `RuntimePresenceConfiguration.leaseMS` (default 45 s) leases
+  the runtime identity and every registered typed IO endpoint. They share the
+  application object table and timer. Application objects keep their own
+  `leaseMS`.
+- The host rejects a raw Advertise that carries `leaseMs` or `ownerEpoch` while
+  presence is enabled, because no managed record would refresh it.
+- On recovery the host re-announces the identity and typed IO endpoints
+  immediately with their retained envelopes. Application objects re-announce
+  at their unchanged phase. The phase itself is never restarted, so the
+  immediate runtime re-announce is one event per reconnect, not a periodic
+  burst.
 
 ## Consequences
 

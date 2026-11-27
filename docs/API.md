@@ -160,6 +160,35 @@ Application event streams are registered before startup and use one bounded
 protocol input. If its bounded queue is full, the runtime reports a structured
 overload failure and stops rather than continuing with a gap.
 
+## Soft-state presence
+
+Soft-state presence is opt-in on `axoloty/1` and absent from `coaty/3`. Pass a
+`RuntimePresenceConfiguration` to `RuntimeBuilder` to lease the runtime identity
+and every registered typed IO endpoint. The default lease is 45 seconds and
+must be in `1_000...3_600_000` milliseconds.
+
+`AxolotyRuntime.advertise(objectID:object:leaseMS:)` publishes one application
+object with an explicit lease and retains the exact envelope bytes. A repeated
+identical declaration is idempotent; withdraw the object with a local
+Deadvertise before declaring different bytes or a different lease. The runtime
+refreshes accepted objects, the identity, and typed IO endpoints from one
+bounded timer. Refresh phases are deterministic per object, so objects spread
+across the interval and a reconnect does not resynchronize them.
+
+`AxolotyRuntime.presenceExpiries()` returns a bounded stream of
+`RuntimePresenceExpiry` values for peer objects removed by lease expiry. The
+stream is advisory: expiry and Advertise delivery travel on separate streams,
+so a consumer can observe a healing Advertise before the expiry report that
+preceded it. Expiry does not release Associate routing rows; a re-announce, the
+owner's Deadvertise, or a transport reset does. A peer that declares no lease
+never expires.
+
+Presence requires the `axoloty/1` profile. Enabling it on a `coaty/3` transport
+fails `start()` with `AxolotyError.invalidConfiguration(option: "presence", …)`
+before the transport opens. Graceful stop publishes Deadvertise for application
+objects first, then typed IO endpoints, then the identity. A transport failure
+ends that sequence immediately on every profile.
+
 ## Static runtime
 
 `AxolotyStaticRuntime.StaticRuntime<capacity, payloadCapacity>` composes one

@@ -29,7 +29,41 @@ enum RuntimeWirePayload {
     /// - Returns: The canonical CBOR advertise payload.
     /// - Throws: ``ProtocolError`` when the value cannot be encoded.
     static func cborAdvertise(identity: RuntimeIdentity) throws(ProtocolError) -> [UInt8] {
-        let object = try encode(profile: .axoloty1CBOR) { writer in
+        try advertiseEnvelope(object: try cborIdentityObject(identity), profile: .axoloty1CBOR)
+    }
+
+    /// Builds the `axoloty/1` advertise payload for the runtime identity with a
+    /// presence lease.
+    ///
+    /// - Parameters:
+    ///   - identity: The runtime identity to advertise.
+    ///   - leaseMS: The declared presence lease.
+    ///   - ownerEpoch: The owner incarnation carried with the lease.
+    ///   - capacity: The maximum encoded envelope length in bytes.
+    /// - Returns: The canonical CBOR advertise payload.
+    /// - Throws: ``ProtocolError`` when the value cannot be encoded.
+    static func cborAdvertise(
+        identity: RuntimeIdentity,
+        leaseMS: Int,
+        ownerEpoch: Int,
+        capacity: Int
+    ) throws(ProtocolError) -> [UInt8] {
+        try advertiseEnvelope(
+            object: try cborIdentityObject(identity),
+            leaseMS: leaseMS,
+            ownerEpoch: ownerEpoch,
+            profile: .axoloty1CBOR,
+            capacity: capacity
+        )
+    }
+
+    /// Builds the canonical `axoloty/1` identity object, without an envelope.
+    ///
+    /// - Parameter identity: The runtime identity to encode.
+    /// - Returns: The CBOR identity object bytes.
+    /// - Throws: ``ProtocolError`` when the value cannot be encoded.
+    static func cborIdentityObject(_ identity: RuntimeIdentity) throws(ProtocolError) -> [UInt8] {
+        try encode(profile: .axoloty1CBOR) { writer in
             try writer.beginObject()
             try writeStringField(&writer, "coreType", "Identity")
             try writer.writeComma()
@@ -40,7 +74,6 @@ enum RuntimeWirePayload {
             try writeStringField(&writer, "objectType", "coaty.Identity")
             try writer.endObject()
         }
-        return try advertiseEnvelope(object: object, profile: .axoloty1CBOR)
     }
 
     // MARK: - Deadvertise
@@ -85,14 +118,40 @@ enum RuntimeWirePayload {
     /// - Returns: The advertise payload bytes.
     /// - Throws: ``ProtocolError`` when the object is malformed or too large.
     static func advertiseEnvelope(object: [UInt8], profile: WireProfile) throws(ProtocolError) -> [UInt8] {
+        try advertiseEnvelope(object: object, leaseMS: nil, ownerEpoch: nil, profile: profile)
+    }
+
+    /// Wraps one complete object in the advertise envelope with presence fields.
+    ///
+    /// - Parameters:
+    ///   - object: The complete object bytes in `profile`'s encoding.
+    ///   - leaseMS: Optional presence lease.
+    ///   - ownerEpoch: Optional owner incarnation.
+    ///   - profile: The bound transport profile.
+    ///   - capacity: The maximum encoded envelope length in bytes.
+    /// - Returns: The advertise payload bytes.
+    /// - Throws: ``ProtocolError`` when the object or fields are malformed.
+    static func advertiseEnvelope(
+        object: [UInt8],
+        leaseMS: Int?,
+        ownerEpoch: Int?,
+        profile: WireProfile,
+        capacity: Int = WireBufferConfig.maxPayloadSize
+    ) throws(ProtocolError) -> [UInt8] {
         let fields: OwnedAdvertiseWireData
         do throws(WireDecodeError) {
-            fields = try OwnedAdvertiseWireData(profile: profile, object: object, privateData: nil)
+            fields = try OwnedAdvertiseWireData(
+                profile: profile,
+                object: object,
+                privateData: nil,
+                leaseMS: leaseMS,
+                ownerEpoch: ownerEpoch
+            )
         } catch {
             throw ProtocolError(.malformedPayload)
         }
         do throws(WireEncodeError) {
-            return try OwnedWireEvent.advertise(fields).encodedBytes()
+            return try OwnedWireEvent.advertise(fields).encodedBytes(capacity: capacity)
         } catch {
             throw protocolError(error)
         }

@@ -189,6 +189,7 @@ let package = Package(
                 "Runtime/Executor/ProtocolExecutor+Handlers.swift",
                 "Runtime/RuntimeModules.swift",
                 "Runtime/RuntimeSupport.swift",
+                "Runtime/RuntimePresenceClock.swift",
                 "Runtime/CoatyRoute.swift",
             ]
         ),

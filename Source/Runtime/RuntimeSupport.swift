@@ -36,7 +36,11 @@ func runtimeErrorDetail(_ error: Error) -> String {
 }
 
 func monotonicNowMS() -> UInt32 {
-    UInt32(truncatingIfNeeded: DispatchTime.now().uptimeNanoseconds / 1_000_000)
+    UInt32(truncatingIfNeeded: monotonicUptimeMS())
+}
+
+func monotonicUptimeMS() -> UInt64 {
+    DispatchTime.now().uptimeNanoseconds / 1_000_000
 }
 
 /// A once-only saturation latch.

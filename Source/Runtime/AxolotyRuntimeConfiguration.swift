@@ -8,6 +8,35 @@ import AxolotyWire
 
 import Foundation
 
+/// Opt-in soft-state presence for one host runtime instance.
+///
+/// Presence requires an `axoloty/1` transport. The configured lease applies to
+/// the runtime identity and every registered typed IO endpoint. Application
+/// objects declare their own lease through ``AxolotyRuntime/advertise(objectID:object:leaseMS:)``.
+public struct RuntimePresenceConfiguration: Sendable, Equatable {
+    /// The declared lease in milliseconds, `1000...3_600_000`.
+    ///
+    /// The runtime refreshes the identity and typed IO endpoints every
+    /// `max(50, leaseMS * 2 / 9)` milliseconds, so three consecutive lost
+    /// refreshes stay inside the lease.
+    public let leaseMS: UInt32
+
+    /// Creates a presence configuration.
+    ///
+    /// - Parameter leaseMS: The lease to advertise for runtime-owned objects.
+    /// - Throws: ``AxolotyError/invalidArgument(argument:reason:)`` when the
+    ///   lease is outside `1000...3_600_000`.
+    public init(leaseMS: UInt32 = 45_000) throws(AxolotyError) {
+        guard (1_000...3_600_000).contains(leaseMS) else {
+            throw .invalidArgument(
+                argument: "presence.leaseMS",
+                reason: "must be between 1000 and 3600000 milliseconds"
+            )
+        }
+        self.leaseMS = leaseMS
+    }
+}
+
 /// Fixed limits used by one host runtime instance.
 public struct RuntimeCapacities: Sendable, Equatable {
     /// Maximum owned frames waiting for protocol processing.

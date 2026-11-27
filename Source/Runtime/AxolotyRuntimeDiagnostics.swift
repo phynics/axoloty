@@ -50,7 +50,7 @@ public struct RuntimeDiagnostics: Sendable, Equatable {
 
     /// Active objects retained by the shared protocol processor.
     public var activeObjects: Int = 0
-    /// The protocol processor generation at the last presence observation.
+    /// The protocol processor generation at the last presence observation or expiry.
     public var presenceGeneration: UInt32 = 0
     /// Whether a transport reset made peer presence non-authoritative.
     public var presenceUncertain = false
@@ -58,6 +58,8 @@ public struct RuntimeDiagnostics: Sendable, Equatable {
     public var presenceResets: UInt64 = 0
     /// Number of presence changes observed without payload bytes.
     public var presenceChanges: UInt64 = 0
+    /// Expiry reports dropped because the presence expiry stream was full.
+    public var presenceExpiriesDropped: UInt64 = 0
     /// The latest presence observation, or `nil` before the first change.
     public var lastPresence: RuntimePresenceObservation?
 

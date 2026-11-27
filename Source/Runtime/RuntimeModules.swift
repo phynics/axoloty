@@ -118,7 +118,7 @@ private extension RuntimeBuilder {
 }
 
 extension ProtocolExecutor {
-    func runtimeModuleContext() -> RuntimeModuleContext {
+    func runtimeModuleContext(duringShutdown: Bool = false) -> RuntimeModuleContext {
         RuntimeModuleContext(
             namespace: definition.namespace,
             sourceID: definition.sourceID,
@@ -128,7 +128,8 @@ extension ProtocolExecutor {
                 }
                 return await self.publish(
                     RuntimeOperation(oneWay: operation, sourceID: self.definition.sourceID),
-                    nowMS: monotonicNowMS()
+                    nowMS: monotonicNowMS(),
+                    duringModuleShutdown: duringShutdown
                 )
             },
             request: { [weak self] request in
@@ -142,7 +143,7 @@ extension ProtocolExecutor {
             },
             cancelRequest: { [weak self] correlationID in
                 guard let self else { return false }
-                return await self.cancel(correlationID: correlationID)
+                return await self.cancel(correlationID: correlationID, duringModuleShutdown: duringShutdown)
             },
             diagnose: { [weak self] diagnostic in
                 guard let self else { return }
@@ -164,8 +165,10 @@ extension ProtocolExecutor {
         }
     }
 
-    func stopRuntimeModules() async {
-        let context = runtimeModuleContext()
+    func stopRuntimeModules(allowPublications: Bool) async {
+        // A module's stop callback can withdraw its publications after the
+        // runtime stops accepting work from applications.
+        let context = runtimeModuleContext(duringShutdown: allowPublications)
         let tasks = runtimeModuleTasks
         for task in tasks { task.cancel() }
         runtimeModuleTasks.removeAll(keepingCapacity: true)

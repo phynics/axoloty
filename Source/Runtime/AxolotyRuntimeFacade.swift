@@ -4,11 +4,26 @@ import AxolotyProtocol
 import AxolotyWire
 import Foundation
 
+struct RuntimePresencePublicationToken: Sendable, Equatable {
+    let sourceID: UUID16
+    let objectID: UUID16
+    let transportEpoch: UInt64
+    let batchID: UInt64
+}
+
 enum RuntimeQueuedTransportEffect: Sendable {
     case publish(OwnedProtocolPublication)
     case typedIoPublication(OwnedProtocolPublication, token: RuntimeTypedIoPublicationToken)
+    case presencePublication(OwnedProtocolPublication, token: RuntimePresencePublicationToken, completesBatch: Bool)
     case externalRouteActivated(OwnedExternalRouteTransition)
     case externalRouteDeactivated(OwnedExternalRouteTransition)
+
+    var isPublication: Bool {
+        switch self {
+        case .publish, .typedIoPublication, .presencePublication: return true
+        case .externalRouteActivated, .externalRouteDeactivated: return false
+        }
+    }
 
     /// Resolves this effect against `namespace` and `profile` into a transport effect.
     ///
@@ -16,9 +31,7 @@ enum RuntimeQueuedTransportEffect: Sendable {
     /// route is synthesized here so every transport receives finished bytes.
     func transportEffect(namespace: String, profile: WireProfile) throws(AxolotyError) -> RuntimeTransportEffect {
         switch self {
-        case let .publish(publication):
-            return .publish(try RuntimeOutboundMessage(publication, namespace: namespace, profile: profile))
-        case let .typedIoPublication(publication, token: _):
+        case let .publish(publication), let .typedIoPublication(publication, _), let .presencePublication(publication, _, _):
             return .publish(try RuntimeOutboundMessage(publication, namespace: namespace, profile: profile))
         case let .externalRouteActivated(transition): return .externalRouteActivated(transition)
         case let .externalRouteDeactivated(transition): return .externalRouteDeactivated(transition)
@@ -69,7 +82,19 @@ public final class AxolotyRuntime: Sendable {
 
     /// Creates a stopped runtime from an immutable definition.
     public init(definition: RuntimeDefinition, transport: AxolotyRuntimeTransport) {
-        self.executor = ProtocolExecutor(definition: definition, transport: transport)
+        self.executor = ProtocolExecutor(
+            definition: definition,
+            transport: transport,
+            presence: RuntimePresenceEnvironment()
+        )
+    }
+
+    package init(
+        definition: RuntimeDefinition,
+        transport: AxolotyRuntimeTransport,
+        presence environment: RuntimePresenceEnvironment
+    ) {
+        self.executor = ProtocolExecutor(definition: definition, transport: transport, presence: environment)
     }
 
     /// The executor-backed typed IO capability.
@@ -78,7 +103,7 @@ public final class AxolotyRuntime: Sendable {
     /// Starts the runtime transport and protocol executor.
     public func start() async throws {
         if let failure = await executor.start() {
-            throw AxolotyError.runtime(code: failure.0, reason: failure.1)
+            throw failure
         }
     }
 
@@ -188,6 +213,36 @@ public final class AxolotyRuntime: Sendable {
     /// Returns the bounded supervision diagnostic stream.
     public func diagnostics() async -> AsyncStream<RuntimeDiagnostic> {
         await executor.diagnostics()
+    }
+
+    /// Publishes one local object with a soft-state presence lease.
+    ///
+    /// The runtime refreshes the accepted bytes until you publish a Deadvertise
+    /// for the object or stop the runtime. Repeating the same declaration is
+    /// idempotent. Withdraw the object before declaring different bytes or a
+    /// different lease for that identity.
+    ///
+    /// - Parameters:
+    ///   - objectID: The local object identity to advertise.
+    ///   - object: The complete CBOR object, with an `objectId` matching `objectID`.
+    ///   - leaseMS: Declared lease in milliseconds, `1000...3_600_000`.
+    /// - Returns: The admission receipt. Presence must be enabled and the
+    ///   runtime must be running on an `axoloty/1` transport.
+    public func advertise(
+        objectID: UUID16,
+        object: [UInt8],
+        leaseMS: UInt32
+    ) async -> RuntimeReceipt {
+        await executor.advertisePresence(objectID: objectID, object: object, leaseMS: leaseMS)
+    }
+
+    /// Returns the bounded stream of peer objects removed by presence expiry.
+    ///
+    /// The stream finishes at shutdown and is empty and finished when presence
+    /// is disabled. When its buffer fills, it retains the older reports.
+    /// - Returns: The runtime's presence expiry stream.
+    public func presenceExpiries() async -> AsyncStream<RuntimePresenceExpiry> {
+        await executor.presenceExpiries()
     }
 
     /// Returns coalesced supervision counters without exposing transport state.

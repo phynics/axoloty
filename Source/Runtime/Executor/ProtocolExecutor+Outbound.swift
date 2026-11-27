@@ -43,22 +43,33 @@ extension ProtocolExecutor {
     }
 
     /// Processes a lifecycle operation through the portable processor and
-    /// sends the resulting owned publications synchronously. Lifecycle sends
+    /// waits for the resulting transport effects. Lifecycle sends
     /// must complete before startup/reconnect becomes ready or shutdown removes
     /// subscriptions, while ordinary publications continue through the
     /// bounded outbound pump.
-    func publishLifecycle(_ operation: RuntimeOperation, nowMS: UInt32) async throws {
-        var publications: [OwnedProtocolPublication] = []
+    func publishLifecycle(
+        _ operation: RuntimeOperation,
+        nowMS: UInt32,
+        emitApplicationEvents: Bool = true
+    ) async throws(AxolotyError) {
+        var effects: [RuntimeQueuedTransportEffect] = []
         let outcome = processOutboundOperation(
             operation,
             nowMS: nowMS,
             maximumActionCount: definition.capacities.dispatch
         ) {
-            publications.reserveCapacity(actionSink.count)
+            effects.reserveCapacity(actionSink.count)
             for index in 0..<actionSink.count {
                 guard let action = actionSink[index] else { continue }
-                if case .publish(let publication) = action {
-                    publications.append(publication.owned())
+                switch action {
+                case .publish(let publication):
+                    effects.append(.publish(publication.owned()))
+                case .externalRouteActivated(let transition):
+                    effects.append(.externalRouteActivated(transition.owned()))
+                case .externalRouteDeactivated(let transition):
+                    effects.append(.externalRouteDeactivated(transition.owned()))
+                case .deliver, .associationChanged:
+                    break
                 }
             }
             actionSink.removeAll()
@@ -70,17 +81,11 @@ extension ProtocolExecutor {
             )
         }
 
-        for publication in publications {
-            emitRegisteredEvents(for: publication, nowMS: nowMS)
-            try await transport.perform(
-                .publish(
-                    try RuntimeOutboundMessage(
-                        publication,
-                        namespace: definition.namespace,
-                        profile: wireProfile
-                    )
-                )
-            )
+        for effect in effects {
+            if emitApplicationEvents, case .publish(let publication) = effect {
+                emitRegisteredEvents(for: publication, nowMS: nowMS)
+            }
+            try await transport.perform(effect.transportEffect(namespace: definition.namespace, profile: wireProfile))
         }
     }
 
@@ -111,13 +116,23 @@ extension ProtocolExecutor {
         )
     }
 
-    func publishLifecycleDeadvertisement(nowMS: UInt32) async throws {
-        guard lifecycleAdvertisementActive, let identity = definition.identity else { return }
-        let operation = RuntimeOperation.deadvertise(
-            sourceID: identity.id,
-            payload: try RuntimeLifecyclePayload.deadvertise(identity, profile: wireProfile)
+    func publishDeadvertisement(objectID: UUID16, sourceID: UUID16, nowMS: UInt32) async throws(AxolotyError) {
+        let payload: [UInt8]
+        do {
+            payload = try RuntimeWirePayload.deadvertise(uuid: objectID, profile: wireProfile)
+        } catch {
+            throw .caught(error)
+        }
+        try await publishLifecycle(
+            .deadvertise(sourceID: sourceID, payload: payload),
+            nowMS: nowMS,
+            emitApplicationEvents: false
         )
-        try await publishLifecycle(operation, nowMS: nowMS)
+    }
+
+    func publishLifecycleDeadvertisement(nowMS: UInt32) async throws(AxolotyError) {
+        guard lifecycleAdvertisementActive, let identity = definition.identity else { return }
+        try await publishDeadvertisement(objectID: identity.id, sourceID: identity.id, nowMS: nowMS)
         lifecycleAdvertisementActive = false
     }
 
