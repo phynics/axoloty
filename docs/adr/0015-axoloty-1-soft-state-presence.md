@@ -565,7 +565,7 @@ This changes no ownership rule in `AGENTS.md`.
 | Peer with no lease is never expired | Core: processor tests |
 | `coaty/3` bytes and behaviour unchanged | Core: existing goldens untouched, plus the `coaty/3` regression test |
 | Expiry reported without breaking the frozen enums | Core: additive processor pass and host stream tests |
-| Live-wire evidence over Zenoh with an unclean client kill | **Needs device and live-router evidence**: Core `zenoh-live` for the host leg; `phynics/axoloty-embedded` for the device leg and its `presence-expiry` check beside `last-will` |
+| Live-wire evidence over Zenoh with an unclean client kill | Core: `ZenohLiveIntegrationTests/presenceExpiryAfterAbruptOwnerClose` (`zenoh-live`) closes the owner session with no Deadvertise and observes the lease expiry through a second runtime. A real process kill and the device `presence-expiry` check beside `last-will` remain in `phynics/axoloty-embedded`. |
 
 Items that only the embedded repository can produce: refresh and expiry on the
 ESP32-C6, real reconnect and `DROP` loss behaviour, receive-queue drops at the

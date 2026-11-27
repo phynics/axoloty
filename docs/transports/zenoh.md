@@ -87,7 +87,10 @@ and subscriber and has no broker-published will. Epic
 [#796](https://github.com/phynics/axoloty/issues/796) keeps Zenoh liveliness
 out of v1 scope. A graceful runtime stop still publishes Deadvertise before
 it stops the binding; `ZenohBinding.stop()` publishes nothing. After an
-unclean disconnect, peers receive no Deadvertise for the lost node.
+unclean disconnect, peers receive no Deadvertise for the lost node. Soft-state
+presence closes that gap on `axoloty/1`; the host leg is covered by
+`ZenohLiveIntegrationTests/presenceExpiryAfterAbruptOwnerClose` through a real
+router.
 
 ### Peer mode
 
