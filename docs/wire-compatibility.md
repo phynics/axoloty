@@ -44,6 +44,7 @@ test and a row here:
 | CBOR inspection tooling | `InspectorCBORCodecTests`, `InspectorDecodeTests`, and `AxolotyMCPDecodeTests` in `phynics/axoloty-debug` | None; the inspector and MCP decode CBOR payloads read-only and change no wire bytes. |
 | Host-generated envelopes through the profile-aware writer | `RuntimeWirePayloadTests` | None; the `coaty/3` Identity Advertise, Deadvertise, and conformance bytes are unchanged, and the previous JSON-to-CBOR transcode is removed. The IO endpoint metadata re-encoder rejects an unknown field, a fractional number, and an integer that does not fit `Int` exactly with `ProtocolError.malformedPayload`. |
 | Optional Advertise presence fields (`leaseMs`, `ownerEpoch`) | `WireCodecParityTests` covers decoding in both profiles and byte-identical encoding through the owned CBOR event. `WireGoldenCorpusTests` freezes `advertise-lease` and `advertise-refresh` as CBOR-only goldens with explicit JSON surrogates. `AxolotyRuntimePresenceTests` covers host refresh and expiry. | The owned JSON encoder preserves the `coaty/3` field set. The host emits these fields only for leased `axoloty/1` advertisements ([ADR 0015](./adr/0015-axoloty-1-soft-state-presence.md)). |
+| Present-but-wrong-kind event fields | `WireDTOFieldKindTests`, `ProtocolProcessorFieldKindTests`, and `PresenceTraceParityTests` cover both profiles, unchanged state, borrowed/owned parity, and tag-37 shape checks. | No bytes change. Borrowed DTOs now reject wrong-kind fields instead of treating them as absent; malformed Advertise identity is rejected before state mutation. |
 
 Owned raw fields retain the exact bytes of the profile that produced them and
 are tagged with that profile; a cross-profile re-encode is rejected as
@@ -55,6 +56,27 @@ gate replays one corpus through the host `coaty/3` leg and the static
 `axoloty/1` leg; the Zenoh suite replays the same corpus through the MQTT
 `coaty/3` binding and the Zenoh `axoloty/1` binding. Both gates are part of epic
 #977. No `coaty/3` field presence or wire bytes change in this corpus.
+
+### Event DTO field-kind validation
+
+The borrowed DTOs now reject a present field whose lexical kind does not match
+the owned event shape. This closes a state-corruption path where a wrong-kind
+Associate route was interpreted as an omitted route and removed a live row.
+Optional `privateData`, `error`, filter, parameter, and collection fields are
+validated before delivery, so an accepted borrowed event also passes
+`ownedEvent()` for the same profile. Explicit `null` remains absent for the
+data fields whose existing contract treats null as absent; Associate's
+optional route, external-route flag, and update rate reject null because
+CoatyJS rejects it.
+
+Advertise requires a map-valued `object` with a usable UUID `objectId` on both
+profiles and on both presence paths. A non-UUID string is deliberately rejected
+because Axoloty's bounded object table is keyed by `UUID16`; CoatyJS accepts a
+non-empty string there, so this is an intentional acceptance divergence
+recorded in [issue #1099](https://github.com/phynics/axoloty/issues/1099).
+On `axoloty/1`, the skip path also verifies that tag 37 wraps exactly a
+16-byte byte string. These checks tighten acceptance only; they do not alter
+any emitted wire bytes.
 
 ### Deliberate divergences on `axoloty/1`
 

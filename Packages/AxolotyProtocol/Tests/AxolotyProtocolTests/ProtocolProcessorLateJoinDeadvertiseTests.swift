@@ -242,16 +242,24 @@ extension ProtocolProcessorTests {
           arguments: LateJoinProfile.allCases)
     fileprivate func malformedDeadvertiseStaysRejected(profile: LateJoinProfile) throws {
         var processor = profile.makeProcessor()
-        let malformed: [[UInt8]] = [
+        // A wrong-kind element fails the per-element identity check, which the
+        // processor reports as a malformed frame.
+        let malformedElements: [[UInt8]] = [
             try profile.deadvertisePayload(elements: [.uuid(peerA), .text("")]),
             try profile.deadvertisePayload(elements: [.uuid(peerA), .integer(7)]),
-            try profile.nonArrayDeadvertisePayload(),
         ]
-        for payload in malformed {
+        for payload in malformedElements {
             let result = try profile.receive(.deadvertise, from: peerA, payload: payload, into: &processor)
             #expect(result.outcome == .rejected(.malformedFrame))
             #expect(result.delivered.isEmpty)
         }
+        // A present `objectIds` that is not an array is a wrong-kind field, so
+        // the borrowed DTO rejects it as a malformed payload before the
+        // processor sees it.
+        let nonArray = try profile.nonArrayDeadvertisePayload()
+        let rejected = try profile.receive(.deadvertise, from: peerA, payload: nonArray, into: &processor)
+        #expect(rejected.outcome == .rejected(.malformedPayload))
+        #expect(rejected.delivered.isEmpty)
         #expect(processor.state.generation == 0)
         #expect(processor.state.activeObjects == 0)
     }

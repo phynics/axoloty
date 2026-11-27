@@ -549,6 +549,18 @@ public struct WireReader: ~Sendable {
         if slot.kind == .trueValue { return true }; if slot.kind == .falseValue { return false }; return nil
     }
 
+    /// Returns the lexical kind of a top-level field, or `nil` when the field
+    /// is absent.
+    ///
+    /// The typed accessors return `nil` both for an absent field and for a
+    /// present field of another kind. A DTO that distinguishes "absent" from
+    /// "present but wrong kind" checks this first.
+    @inline(__always)
+    func fieldKind(_ key: StaticString) -> WireObjectFieldKind? {
+        guard index.failure == nil, let slot = index.find(bytes: bytes, key: key) else { return nil }
+        return WireObjectFieldKind(rawValue: slot.kind.rawValue)
+    }
+
     /// Reads a floating-point value, widening every CBOR width to `Double`.
     ///
     /// Floating point is a `axoloty/1`-only lexical kind. The CBOR engine

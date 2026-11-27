@@ -120,7 +120,7 @@ uuid = #6.37(bytes .size 16)
 ; Advertise / Deadvertise
 advertise   = {
   "object": object,
-  ? "privateData": any,
+  ? "privateData": object,
   ? "leaseMs": uint,       ; axoloty/1 presence lease, 1000..3600000
   ? "ownerEpoch": uint,    ; axoloty/1 owner incarnation, 1..2147483647
 }
@@ -130,7 +130,7 @@ deadvertise = { "objectIds": [* uuid] }
 channel = {
   ? "object": object,
   ? "objects": [* object],
-  ? "privateData": any,
+  ? "privateData": object,
 }
 
 ; Associate / IoValue
@@ -153,25 +153,25 @@ discover = {
 resolve = {
   "object": object,
   ? "relatedObjects": [* object],
-  ? "privateData": any,
+  ? "privateData": object,
 }
 
 ; Query / Retrieve
 query = {
   ? "objectTypes": [* tstr],
   ? "coreTypes": [* tstr],
-  ? "objectFilter": any,
-  ? "objectJoinConditions": [* any],
+  ? "objectFilter": object,
+  ? "objectJoinConditions": object / [* any],
 }
-retrieve = { "objects": [* object], ? "privateData": any }
+retrieve = { "objects": [* object], ? "privateData": object }
 
 ; Update / Complete
 update   = { "object": object }
-complete = { ? "object": object, ? "privateData": any }
+complete = { ? "object": object, ? "privateData": object }
 
 ; Call / Return
-call   = { ? "parameters": any, ? "filter": any }
-return = { ? "result": any, ? "executionInfo": any, ? "error": any }
+call   = { ? "parameters": object / [* any], ? "filter": object }
+return = { ? "result": any, ? "executionInfo": any, ? "error": object }
 
 object = {
   ? "objectId": uuid,
@@ -214,6 +214,17 @@ locked by the golden corpus:
   plain text UUID string, matching the pinned CoatyJS shape.
 - `retrieve` encodes `objects`; the reader also accepts the legacy `object`
   field so an older peer stays decodable.
+
+Borrowed event DTOs enforce the same top-level shapes as the owned event DTOs:
+present `privateData` and `error` values are objects; collection fields are
+arrays; `objectFilter` is an object; and `parameters` and
+`objectJoinConditions` are objects or arrays. A present Associate optional
+field with the wrong kind, including `null`, is malformed; an omitted field
+still has its documented absent meaning. The Advertise `object` must be a map
+with a UUID `objectId`. A non-map object, missing or malformed `objectId`, and
+a non-UUID string `objectId` are rejected before protocol state changes. The
+last rule is an Axoloty bounded-state divergence from CoatyJS, which accepts a
+non-empty string identifier; it is recorded in [issue #1099](https://github.com/phynics/axoloty/issues/1099).
 
 See [wire-value-mapping.md](../wire-value-mapping.md) for the JSON/CBOR value
 classes and the raw-field retention rules.

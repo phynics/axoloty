@@ -21,7 +21,9 @@ extension ProtocolProcessorTests {
         let occupiedKey = try ProtocolRoutingKey(capability: .channel, sourceID: Self.source)
         let occupiedAppend = sink.append(.deliver(BorrowedProtocolDelivery(routingKey: occupiedKey, payload: occupied)))
         #expect(occupiedAppend)
-        let payload = Array("{\"object\":{}}".utf8)
+        let payload = Array(
+            #"{"object":{"objectId":"10000000-0000-0000-0000-000000000001"}}"#.utf8
+        )
         let outcome = try payload.withUnsafeBufferPointer { buffer in
             let bytes = ByteSlice(bytes: buffer.baseAddress!, length: buffer.count)
             let operation = try ProtocolLocalOperation(

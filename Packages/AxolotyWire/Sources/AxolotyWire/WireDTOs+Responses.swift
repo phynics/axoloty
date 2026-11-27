@@ -13,14 +13,16 @@ public struct ReturnWireData: WireDecodable, WireEncodable, Equatable {
 
     /// Decodes a return event from `reader`.
     ///
-    /// All fields are optional; absent fields default to nil.
+    /// All fields are optional; absent fields default to nil. `result` and
+    /// `executionInfo` carry any value, and `error` must be an object.
     ///
     /// - Parameter reader: A ``WireReader`` over the payload bytes.
+    /// - Throws: ``WireDecodeError`` if `error` is present and not an object.
     public init(from reader: WireReader) throws(WireDecodeError) {
         try reader.validate()
         self.result = reader.readOptionalRaw("result")
         self.executionInfo = reader.readOptionalRaw("executionInfo")
-        self.error = reader.readOptionalRaw("error")
+        self.error = try reader.wireOptionalObject("error")
     }
 
     /// Encodes this event into `writer` as an object, writing only the
@@ -60,18 +62,18 @@ public struct ResolveWireData: WireDecodable, WireEncodable, Equatable {
 
     /// Decodes a resolve event from `reader`.
     ///
-    /// `object` is required; `privateData` is optional.
+    /// `object` is required and must be an object. `relatedObjects` and
+    /// `privateData` are optional; `relatedObjects` must be an array and
+    /// `privateData` must be an object.
     ///
     /// - Parameter reader: A ``WireReader`` over the payload bytes.
-    /// - Throws: ``WireDecodeError`` if the `object` field is missing.
+    /// - Throws: ``WireDecodeError`` if `object` is missing or not an object, or
+    ///   if a present optional field has another kind.
     public init(from reader: WireReader) throws(WireDecodeError) {
         try reader.validate()
-        guard let obj = reader.readField("object") else {
-            throw WireDecodeError(.missingField, field: "object")
-        }
-        self.object = obj
-        self.relatedObjects = reader.readOptionalRaw("relatedObjects")
-        self.privateData = reader.readOptionalRaw("privateData")
+        self.object = try reader.wireRequiredObject("object")
+        self.relatedObjects = try reader.wireOptionalArray("relatedObjects")
+        self.privateData = try reader.wireOptionalObject("privateData")
     }
 
     /// Encodes this event into `writer` as an object. `object` is always
@@ -105,15 +107,26 @@ public struct RetrieveWireData: WireDecodable, WireEncodable, Equatable {
 
     /// Decodes a retrieve event from `reader`.
     ///
+    /// The canonical `objects` field must be an array or an object; the legacy
+    /// single `object` field is accepted as an object. `privateData` must be an
+    /// object.
+    ///
     /// - Parameter reader: A ``WireReader`` over the payload bytes.
-    /// - Throws: ``WireDecodeError`` if the `object` field is missing.
+    /// - Throws: ``WireDecodeError`` if neither field is present, or if a
+    ///   present field has another kind.
     public init(from reader: WireReader) throws(WireDecodeError) {
         try reader.validate()
-        guard let objects = reader.readField("objects") ?? reader.readField("object") else {
+        if reader.fieldKind("objects") != nil {
+            guard let objects = try reader.wireOptionalObjectOrArray("objects") else {
+                throw WireDecodeError(.typeMismatch(expected: "object or array"), field: "objects")
+            }
+            self.objects = objects
+        } else if reader.fieldKind("object") != nil {
+            self.objects = try reader.wireRequiredObject("object")
+        } else {
             throw WireDecodeError(.missingField, field: "objects")
         }
-        self.objects = objects
-        self.privateData = reader.readOptionalRaw("privateData")
+        self.privateData = try reader.wireOptionalObject("privateData")
     }
 
     /// Encodes this event into `writer` as an object wrapping `object`.
@@ -140,14 +153,14 @@ public struct UpdateWireData: WireDecodable, WireEncodable, Equatable {
 
     /// Decodes an update event from `reader`.
     ///
+    /// `object` is required and must be an object.
+    ///
     /// - Parameter reader: A ``WireReader`` over the payload bytes.
-    /// - Throws: ``WireDecodeError`` if the `object` field is missing.
+    /// - Throws: ``WireDecodeError`` if the `object` field is missing or not an
+    ///   object.
     public init(from reader: WireReader) throws(WireDecodeError) {
         try reader.validate()
-        guard let obj = reader.readField("object") else {
-            throw WireDecodeError(.missingField, field: "object")
-        }
-        self.object = obj
+        self.object = try reader.wireRequiredObject("object")
     }
 
     /// Encodes this event into `writer` as an object wrapping `object`.
@@ -172,13 +185,15 @@ public struct CompleteWireData: WireDecodable, WireEncodable, Equatable {
 
     /// Decodes a complete event from `reader`.
     ///
-    /// Both `object` and `completed` are optional; absent fields default to nil.
+    /// Both `object` and `privateData` are optional; absent fields default to
+    /// nil. A present field must be an object.
     ///
     /// - Parameter reader: A ``WireReader`` over the payload bytes.
+    /// - Throws: ``WireDecodeError`` if a present field is not an object.
     public init(from reader: WireReader) throws(WireDecodeError) {
         try reader.validate()
-        self.object = reader.readOptionalRaw("object")
-        self.privateData = reader.readOptionalRaw("privateData")
+        self.object = try reader.wireOptionalObject("object")
+        self.privateData = try reader.wireOptionalObject("privateData")
     }
 
     /// Encodes this event into `writer` as an object, writing only the

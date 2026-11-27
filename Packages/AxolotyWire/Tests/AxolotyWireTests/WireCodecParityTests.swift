@@ -447,9 +447,9 @@ struct WireCodecParityTests {
 
     @Test("call preserves raw parameters and filter on both profiles")
     func callParity() throws {
-        let jsonBytes = Array(#"{"parameters":{"op":1},"filter":["f"]}"#.utf8)
+        let jsonBytes = Array(#"{"parameters":{"op":1},"filter":{"name":"f"}}"#.utf8)
         let cborBytes = cborMap([
-            (cborText("filter"), cborArray([cborText("f")])),
+            (cborText("filter"), cborMap([(cborText("name"), cborText("f"))])),
             (cborText("parameters"), cborMap([(cborText("op"), cborInt(1))])),
         ])
         let jsonValue = try decode(.coaty3JSON, jsonBytes, as: CallWireData.self)

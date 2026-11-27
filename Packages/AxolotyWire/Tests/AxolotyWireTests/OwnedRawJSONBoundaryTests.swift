@@ -58,22 +58,22 @@ struct OwnedRawJSONBoundaryTests {
     @Test("borrowed-to-owned conversion validates field semantics")
     func validatesDuringOwnershipConversion() throws {
         let bytes = Array(#"{"object":[]}"#.utf8)
-        let borrowed = try bytes.withUnsafeBufferPointer { buffer in
-            try BorrowedWireEvent(
-                eventType: .advertise,
-                from: WireReader(bytes: buffer.baseAddress!, length: buffer.count)
-            )
-        }
-
         do {
-            _ = try borrowed.owned()
-            Issue.record("an invalid object shape crossed the ownership boundary")
-        } catch let error {
+            _ = try bytes.withUnsafeBufferPointer { buffer in
+                try BorrowedWireEvent(
+                    eventType: .advertise,
+                    from: WireReader(bytes: buffer.baseAddress!, length: buffer.count)
+                )
+            }
+            Issue.record("an invalid object shape crossed the borrowed boundary")
+        } catch let error as WireDecodeError {
             guard case .typeMismatch = error.reason else {
                 Issue.record("unexpected error reason: \(error.reason)")
                 return
             }
             #expect(error.field != nil)
+        } catch {
+            Issue.record("unexpected error type: \(error)")
         }
     }
 }
