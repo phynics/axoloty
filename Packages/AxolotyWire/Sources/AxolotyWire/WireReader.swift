@@ -451,21 +451,10 @@ public struct WireReader: ~Sendable {
     public static func isValidJSONValue(_ bytes: ByteSlice) -> Bool {
         bytes.withBytes { pointer, count in
             guard count > 0, count <= WireBufferConfig.maxPayloadSize else { return false }
-            if Int(bitPattern: pointer) % MemoryLayout<UInt64>.alignment != 0 {
-                guard count <= WireBufferConfig.maxPayloadSize else { return false }
-                var alignedStorage = SIMD64<UInt64>(repeating: 0)
-                return withUnsafeMutableBytes(of: &alignedStorage) { storage in
-                    let raw = unsafe RawSpan(
-                        _unsafeBytes: UnsafeRawBufferPointer(start: pointer, count: count)
-                    )
-                    for offset in 0..<count {
-                        storage[offset] = raw[offset]
-                    }
-                    let aligned = storage.baseAddress!.assumingMemoryBound(to: UInt8.self)
-                    let reader = WireReader(bytes: aligned, length: count)
-                    return reader.index.failure == nil && reader.index.completeValue
-                }
-            }
+            // `WireReader` owns the alignment and guard-byte handling for both
+            // aligned and unaligned inputs. Copying into a fixed stack SIMD
+            // value here would overflow for an unaligned input above that
+            // value's capacity.
             let reader = WireReader(bytes: pointer.assumingMemoryBound(to: UInt8.self), length: count)
             return reader.index.failure == nil && reader.index.completeValue
         }

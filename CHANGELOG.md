@@ -7,6 +7,16 @@ Axoloty is a modernized fork of
 fork, through CoatySwift 2.4.0, remain documented in the
 [upstream changelog](https://github.com/coatyio/coaty-swift/blob/master/CHANGELOG.md).
 
+## [Unreleased]
+
+### Fixed
+
+- `WireReader.isValidJSONValue` no longer copies an unaligned input into a
+  fixed 512-byte stack value. An unaligned value between 513 and 2,048 bytes
+  could overwrite the stack in release builds. It now uses the reader's
+  alignment and guard-byte handling for every input, with regression tests at
+  600 bytes and at the 2,048-byte bound (#1088).
+
 ## [1.1.0] - 2026-11-27
 
 Axoloty 1.1.0 is a minor release of the frozen Core products. It adds the
