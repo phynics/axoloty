@@ -37,6 +37,9 @@ struct WireGoldenCorpusTests {
             /// CBOR-only value, such as the hex string that stands in for a
             /// byte string.
             let jsonSurrogate: Bool
+            /// True when the case has no `coaty/3` JSON form, so the JSON
+            /// golden is only a documented surrogate.
+            let cborOnly: Bool
         }
 
         let schemaVersion: Int
@@ -173,16 +176,21 @@ struct WireGoldenCorpusTests {
             let variants = manifest.cases.filter { $0.family == family }.map(\.variant)
             #expect(variants.contains("empty"), "\(family) must include an all-optional-absent case")
         }
-        #expect(manifest.cases.count >= 28)
+        #expect(manifest.cases.count >= 39)
         let bytes = manifest.cases.first { $0.id == "iovalue-bytes" }
         #expect(bytes?.jsonSurrogate == true, "the byte-string golden must declare its JSON surrogate")
+        for id in ["advertise-lease", "advertise-refresh"] {
+            let lease = try #require(manifest.cases.first { $0.id == id })
+            #expect(lease.cborOnly, "\(id) must be CBOR-only")
+            #expect(lease.jsonSurrogate, "\(id) must declare its JSON surrogate")
+        }
     }
 
     @Test("coaty/3 JSON goldens re-encode byte-identically")
     func jsonByteIdentity() throws {
         let directory = try corpusDirectory()
         let manifest = try manifest()
-        for `case` in manifest.cases {
+        for `case` in manifest.cases where !`case`.cborOnly {
             let golden = try bytes(`case`, directory, `case`.json)
             let roundTripped = try reencode(family: `case`.family, profile: .coaty3JSON, bytes: golden)
             #expect(roundTripped == golden, "\(`case`.id): coaty/3 JSON bytes changed")
@@ -197,6 +205,25 @@ struct WireGoldenCorpusTests {
             let golden = try bytes(`case`, directory, `case`.cbor)
             let roundTripped = try reencode(family: `case`.family, profile: .axoloty1CBOR, bytes: golden)
             #expect(roundTripped == golden, "\(`case`.id): axoloty/1 CBOR bytes changed")
+        }
+    }
+
+    @Test("CBOR-only presence goldens decode their declared lease fields")
+    func presenceLeaseDecoding() throws {
+        let directory = try corpusDirectory()
+        let manifest = try manifest()
+        let expected: [(id: String, leaseMS: Int, ownerEpoch: Int)] = [
+            ("advertise-lease", 10_000, 7),
+            ("advertise-refresh", 1_000, Int(Int32.max))
+        ]
+        for (id, leaseMS, ownerEpoch) in expected {
+            let entry = try #require(manifest.cases.first { $0.id == id })
+            #expect(entry.family == "advertise")
+            #expect(entry.cborOnly)
+            let golden = try bytes(entry, directory, entry.cbor)
+            let value = try decode(.axoloty1CBOR, golden, as: AdvertiseWireData.self)
+            #expect(value.leaseMS == leaseMS, "\(id): leaseMs changed")
+            #expect(value.ownerEpoch == ownerEpoch, "\(id): ownerEpoch changed")
         }
     }
 }

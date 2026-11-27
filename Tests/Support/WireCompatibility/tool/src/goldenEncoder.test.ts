@@ -41,6 +41,17 @@ test("sorts map keys by encoded bytes, preserving array order", () => {
   );
 });
 
+test("honors an explicit top-level field order and keeps nested maps sorted", () => {
+  assert.equal(
+    toHex(encodeDeterministicCBOR({ b: 1, a: 2 }, [], ["b", "a"])),
+    "a2616201616102",
+  );
+  assert.equal(
+    toHex(encodeDeterministicCBOR({ z: { b: 1, a: 2 } }, [], ["z"])),
+    "a1617aa2616102616201",
+  );
+});
+
 test("encodes pointer-selected strings as tag-37 UUIDs", () => {
   const uuid = "11111111-1111-4111-8111-111111111111";
   assert.equal(

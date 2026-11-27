@@ -43,6 +43,16 @@ interface GoldenCase {
   json?: string;
   /** Marks a `json` surrogate so the manifest records the deliberate mapping. */
   jsonSurrogate?: boolean;
+  /**
+   * True when the value has no `coaty/3` JSON form, so the JSON golden is a
+   * surrogate and the Swift verifier skips JSON byte identity for this case.
+   */
+  cborOnly?: boolean;
+  /**
+   * The top-level CBOR field order when the wire envelope fixes it. Nested
+   * maps still use bytewise deterministic order.
+   */
+  cborFieldOrder?: readonly string[];
 }
 
 /**
@@ -101,6 +111,32 @@ export const GOLDEN_CASES: readonly GoldenCase[] = [
     variant: "special",
     uuidPointers: ["/object/objectId"],
     value: { object: { objectId: OBJECT_ID, objectType: "example.Thing" } },
+  },
+  {
+    id: "advertise-lease",
+    family: "advertise",
+    variant: "special",
+    uuidPointers: [],
+    cborOnly: true,
+    cborFieldOrder: ["object", "leaseMs", "ownerEpoch"],
+    json: '{"object":{"objectType":"example.Thing"},"leaseMs":10000,"ownerEpoch":7}',
+    jsonSurrogate: true,
+    value: { object: { objectType: "example.Thing" }, leaseMs: 10000, ownerEpoch: 7 },
+  },
+  {
+    id: "advertise-refresh",
+    family: "advertise",
+    variant: "special",
+    uuidPointers: [],
+    cborOnly: true,
+    cborFieldOrder: ["object", "leaseMs", "ownerEpoch"],
+    json: '{"object":{"objectType":"example.Thing","name":"Thing"},"leaseMs":1000,"ownerEpoch":2147483647}',
+    jsonSurrogate: true,
+    value: {
+      object: { objectType: "example.Thing", name: "Thing" },
+      leaseMs: 1000,
+      ownerEpoch: 2147483647,
+    },
   },
   {
     id: "deadvertise-single",
@@ -364,6 +400,8 @@ export interface GoldenManifestCase {
    * value, such as the hex string that stands in for a byte string.
    */
   jsonSurrogate: boolean;
+  /** True when the case has no `coaty/3` JSON form. */
+  cborOnly: boolean;
 }
 
 /** The corpus manifest. */
@@ -377,11 +415,19 @@ export interface GoldenManifest {
 export function renderGoldenCorpus(): { manifest: GoldenManifest; files: Map<string, Buffer> } {
   const files = new Map<string, Buffer>();
   for (const goldenCase of GOLDEN_CASES) {
+    if (goldenCase.cborOnly && (goldenCase.json === undefined || goldenCase.jsonSurrogate !== true)) {
+      throw new Error(`${goldenCase.id}: a CBOR-only case needs an explicit JSON surrogate`);
+    }
     files.set(
       `${goldenCase.id}.json`,
       Buffer.from(goldenCase.json ?? JSON.stringify(goldenCase.value), "utf8"),
     );
-    files.set(`${goldenCase.id}.cbor`, Buffer.from(encodeDeterministicCBOR(goldenCase.value, goldenCase.uuidPointers)));
+    files.set(
+      `${goldenCase.id}.cbor`,
+      Buffer.from(
+        encodeDeterministicCBOR(goldenCase.value, goldenCase.uuidPointers, goldenCase.cborFieldOrder),
+      ),
+    );
   }
   const manifest: GoldenManifest = {
     schemaVersion: 1,
@@ -395,6 +441,7 @@ export function renderGoldenCorpus(): { manifest: GoldenManifest; files: Map<str
       cbor: `${goldenCase.id}.cbor`,
       uuidPointers: goldenCase.uuidPointers,
       jsonSurrogate: goldenCase.jsonSurrogate ?? false,
+      cborOnly: goldenCase.cborOnly ?? false,
     })),
   };
   files.set("manifest.json", Buffer.from(`${JSON.stringify(manifest, null, 2)}\n`, "utf8"));

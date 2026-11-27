@@ -38,17 +38,26 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
  *
  * @param value The JSON-compatible value to encode.
  * @param uuidPointers JSON-Pointer paths whose strings become tag-37 UUIDs.
+ * @param fieldOrder Optional top-level key order. An envelope that fixes its
+ *   field order on the wire uses this instead of bytewise key order. Nested
+ *   maps still use deterministic bytewise order.
  * @returns The deterministic CBOR bytes.
  */
 export function encodeDeterministicCBOR(
   value: CBORValue,
   uuidPointers: readonly string[] = [],
+  fieldOrder: readonly string[] = [],
 ): Uint8Array {
   const patterns = uuidPointers.map(pointer => pointer.split("/"));
-  return Uint8Array.from(encodeValue(value, "", patterns));
+  return Uint8Array.from(encodeValue(value, "", patterns, fieldOrder));
 }
 
-function encodeValue(value: CBORValue, pointer: string, patterns: readonly string[][]): number[] {
+function encodeValue(
+  value: CBORValue,
+  pointer: string,
+  patterns: readonly string[][],
+  fieldOrder: readonly string[] = [],
+): number[] {
   if (typeof value === "string" && UUID_PATTERN.test(value) && matchesPointer(pointer, patterns)) {
     return encodeUuid(value);
   }
@@ -63,15 +72,26 @@ function encodeValue(value: CBORValue, pointer: string, patterns: readonly strin
   if (Array.isArray(value)) {
     const out = encodeHead(4, value.length);
     value.forEach((item, index) => {
-      out.push(...encodeValue(item, `${pointer}/${index}`, patterns));
+      out.push(...encodeValue(item, `${pointer}/${index}`, patterns, fieldOrder));
     });
     return out;
   }
   const pairs = Object.keys(value).map(key => ({
+    name: key,
     key: encodeText(key),
-    value: encodeValue(value[key]!, `${pointer}/${key}`, patterns),
+    value: encodeValue(value[key]!, `${pointer}/${key}`, patterns, fieldOrder),
   }));
-  pairs.sort((a, b) => compareBytes(a.key, b.key));
+  const order = pointer === "" ? fieldOrder : [];
+  pairs.sort((a, b) => {
+    const aIndex = order.indexOf(a.name);
+    const bIndex = order.indexOf(b.name);
+    if (aIndex !== -1 || bIndex !== -1) {
+      if (aIndex === -1) return 1;
+      if (bIndex === -1) return -1;
+      return aIndex - bIndex;
+    }
+    return compareBytes(a.key, b.key);
+  });
   const out = encodeHead(5, pairs.length);
   for (const pair of pairs) out.push(...pair.key, ...pair.value);
   return out;

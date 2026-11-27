@@ -33,7 +33,12 @@ test("the corpus covers every event family and field-presence variant", () => {
       `${family} must include an all-optional-absent case`,
     );
   }
-  assert.ok(manifest.cases.length >= 28);
+  assert.ok(manifest.cases.length >= 39);
+  for (const id of ["advertise-lease", "advertise-refresh"]) {
+    const lease = manifest.cases.find(goldenCase => goldenCase.id === id);
+    assert.equal(lease?.cborOnly, true, `${id} must be CBOR-only`);
+    assert.equal(lease?.jsonSurrogate, true, `${id} must declare its JSON surrogate`);
+  }
 });
 
 test("the corpus covers the CBOR value classes the profile must keep", () => {
