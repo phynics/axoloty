@@ -613,7 +613,7 @@ struct ProtocolFoundationTests {
     @Test("transport reset retains local advertisements for one replay")
     func localAdvertisementReplay() throws {
         let source = UUID16.zero
-        let payload = protocolSlice("{\"object\":{}}")
+        let payload = protocolSlice("{\"object\":{\"objectId\":\"00000000-0000-4000-8000-000000000001\"}}")
         let advertise = try ProtocolLocalOperation(
             capability: .advertise,
             sourceID: source,

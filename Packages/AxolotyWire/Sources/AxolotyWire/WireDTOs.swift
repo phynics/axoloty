@@ -40,9 +40,12 @@ public struct AssociateWireData: WireDecodable, WireEncodable, Equatable {
         }
         self.ioSourceId = sourceId
         self.ioActorId = actorId
-        self.associatingRoute = reader.readString("associatingRoute")
-        self.isExternalRoute = reader.readBool("isExternalRoute")
-        self.updateRate = reader.readInt("updateRate")
+        // CoatyJS accepts an absent optional field or a value of the declared
+        // kind. A present value of another kind, including explicit `null`, is
+        // rejected rather than treated as a disassociation.
+        self.associatingRoute = try reader.wireOptionalString("associatingRoute", rejectingNull: true)
+        self.isExternalRoute = try reader.wireOptionalBool("isExternalRoute", rejectingNull: true)
+        self.updateRate = try reader.wireOptionalInteger("updateRate", rejectingNull: true)
     }
 
     /// Encodes this event into `writer` as an object.
@@ -95,22 +98,20 @@ public struct AdvertiseWireData: WireDecodable, WireEncodable, Equatable {
 
     /// Decodes an advertise event from `reader`.
     ///
-    /// `object` is required; `privateData`, `leaseMs`, and `ownerEpoch` are
-    /// optional. An explicit `null` is treated as absent. A present presence
-    /// field must be an integer; range validation belongs to the presence
-    /// policy, not this DTO, so presence-off processors keep accepting the
-    /// frames they accept today.
+    /// `object` is required and must be an object; `privateData` and the
+    /// presence fields are optional. An explicit `null` is treated as absent
+    /// for the optional fields. A present presence field must be an integer;
+    /// range validation belongs to the presence policy, not this DTO, so
+    /// presence-off processors keep accepting the frames they accept today.
     ///
     /// - Parameter reader: A ``WireReader`` over the payload bytes.
-    /// - Throws: ``WireDecodeError`` if the `object` field is missing, or if a
-    ///   presence field is present and not an integer.
+    /// - Throws: ``WireDecodeError`` if the `object` field is missing or not an
+    ///   object, if `privateData` is present and not an object, or if a presence
+    ///   field is present and not an integer.
     public init(from reader: WireReader) throws(WireDecodeError) {
         try reader.validate()
-        guard let obj = reader.readField("object") else {
-            throw WireDecodeError(.missingField, field: "object")
-        }
-        self.object = obj
-        self.privateData = reader.readOptionalRaw("privateData")
+        self.object = try reader.wireRequiredObject("object")
+        self.privateData = try reader.wireOptionalObject("privateData")
         self.leaseMS = try Self.optionalInteger("leaseMs", from: reader)
         self.ownerEpoch = try Self.optionalInteger("ownerEpoch", from: reader)
     }
@@ -161,13 +162,11 @@ public struct DeadvertiseWireData: WireDecodable, WireEncodable, Equatable {
     /// items without normalizing them through ``UUID16``.
     ///
     /// - Parameter reader: A ``WireReader`` over the payload bytes.
-    /// - Throws: ``WireDecodeError`` if the `objectIds` field is missing.
+    /// - Throws: ``WireDecodeError`` if the `objectIds` field is missing or is
+    ///   not an array.
     public init(from reader: WireReader) throws(WireDecodeError) {
         try reader.validate()
-        guard let ids = reader.readField("objectIds") else {
-            throw WireDecodeError(.missingField, field: "objectIds")
-        }
-        self.objectIds = ids
+        self.objectIds = try reader.wireRequiredArray("objectIds")
     }
 
     /// Encodes this event into `writer`, serializing `objectIds` as an
@@ -260,14 +259,16 @@ public struct ChannelWireData: WireDecodable, WireEncodable, Equatable {
     /// Decodes a channel event from `reader`.
     ///
     /// `object`, `objects`, and `privateData` are all optional; absent fields
-    /// default to nil.
+    /// default to nil. A present field must have its declared shape: an object,
+    /// an array of objects, and an object respectively.
     ///
     /// - Parameter reader: A ``WireReader`` over the payload bytes.
+    /// - Throws: ``WireDecodeError`` if a present field has another kind.
     public init(from reader: WireReader) throws(WireDecodeError) {
         try reader.validate()
-        self.object = reader.readOptionalRaw("object")
-        self.objects = reader.readOptionalRaw("objects")
-        self.privateData = reader.readOptionalRaw("privateData")
+        self.object = try reader.wireOptionalObject("object")
+        self.objects = try reader.wireOptionalArray("objects")
+        self.privateData = try reader.wireOptionalObject("privateData")
     }
 
     /// Encodes this event into `writer` as an object, writing only the
@@ -315,15 +316,18 @@ public struct DiscoverWireData: WireDecodable, WireEncodable, Equatable {
 
     /// Decodes a discover event from `reader`.
     ///
-    /// All fields are optional; absent fields default to nil.
+    /// All fields are optional; absent fields default to nil. `externalId` and
+    /// `objectId` must be strings, and `objectTypes` and `coreTypes` must be
+    /// arrays.
     ///
     /// - Parameter reader: A ``WireReader`` over the payload bytes.
+    /// - Throws: ``WireDecodeError`` if a present field has another kind.
     public init(from reader: WireReader) throws(WireDecodeError) {
         try reader.validate()
-        self.externalId = reader.readString("externalId")
-        self.objectId = reader.readString("objectId")
-        self.objectTypes = reader.readOptionalRaw("objectTypes")
-        self.coreTypes = reader.readOptionalRaw("coreTypes")
+        self.externalId = try reader.wireOptionalString("externalId")
+        self.objectId = try reader.wireOptionalString("objectId")
+        self.objectTypes = try reader.wireOptionalArray("objectTypes")
+        self.coreTypes = try reader.wireOptionalArray("coreTypes")
     }
 
     /// Encodes this event into `writer` as an object, writing only the
@@ -370,15 +374,18 @@ public struct QueryWireData: WireDecodable, WireEncodable, Equatable {
 
     /// Decodes a query event from `reader`.
     ///
-    /// All fields are optional; absent fields default to nil.
+    /// All fields are optional; absent fields default to nil. `objectTypes` and
+    /// `coreTypes` must be arrays, `objectFilter` must be an object, and
+    /// `objectJoinConditions` must be an object or an array.
     ///
     /// - Parameter reader: A ``WireReader`` over the payload bytes.
+    /// - Throws: ``WireDecodeError`` if a present field has another kind.
     public init(from reader: WireReader) throws(WireDecodeError) {
         try reader.validate()
-        self.objectTypes = reader.readOptionalRaw("objectTypes")
-        self.coreTypes = reader.readOptionalRaw("coreTypes")
-        self.objectFilter = reader.readOptionalRaw("objectFilter")
-        self.objectJoinConditions = reader.readOptionalRaw("objectJoinConditions")
+        self.objectTypes = try reader.wireOptionalArray("objectTypes")
+        self.coreTypes = try reader.wireOptionalArray("coreTypes")
+        self.objectFilter = try reader.wireOptionalObject("objectFilter")
+        self.objectJoinConditions = try reader.wireOptionalObjectOrArray("objectJoinConditions")
     }
 
     /// Encodes this event into `writer` as an object, writing only the
@@ -420,15 +427,17 @@ public struct CallWireData: WireDecodable, WireEncodable, Equatable {
 
     /// Decodes a call event from `reader`.
     ///
-    /// `parameters` and `filter` are optional. The topic carries the operation
-    /// name; the legacy `operationType` member is accepted and ignored.
+    /// `parameters` and `filter` are optional. `parameters` must be an object
+    /// or an array, and `filter` must be an object. The topic carries the
+    /// operation name; the legacy `operationType` member is accepted and
+    /// ignored.
     ///
     /// - Parameter reader: A ``WireReader`` over the payload bytes.
-    /// - Throws: ``WireDecodeError`` if the payload is malformed.
+    /// - Throws: ``WireDecodeError`` if a present field has another kind.
     public init(from reader: WireReader) throws(WireDecodeError) {
         try reader.validate()
-        self.parameters = reader.readOptionalRaw("parameters")
-        self.filter = reader.readOptionalRaw("filter")
+        self.parameters = try reader.wireOptionalObjectOrArray("parameters")
+        self.filter = try reader.wireOptionalObject("filter")
     }
 
     /// Encodes this event into `writer` using the canonical `parameters` and

@@ -458,7 +458,26 @@ extension CBORReader {
             guard tagPolicy.allows(tag) else {
                 throw WireDecodeError(.cborUnsupportedTag, byteOffset: start)
             }
-            try skipItemNested(depth: depth + 1)
+            if tag == 37 {
+                // A UUID tag must wrap a 16-byte byte string. Skipping without
+                // the shape check would accept `37(h'00')` or `37(42)`, which
+                // `readUUID` rejects.
+                let itemStart = offset
+                let (itemMajor, itemAdditional, _) = try readInitial()
+                guard itemMajor == 2 else {
+                    throw WireDecodeError(.malformedUUID, byteOffset: itemStart)
+                }
+                let length = try readArgument(major: itemMajor, additional: itemAdditional, start: itemStart)
+                guard length == 16 else {
+                    throw WireDecodeError(.malformedUUID, byteOffset: itemStart)
+                }
+                guard length <= UInt64(remaining) else {
+                    throw WireDecodeError(.unexpectedEndOfInput, byteOffset: itemStart)
+                }
+                offset += Int(length)
+            } else {
+                try skipItemNested(depth: depth + 1)
+            }
         case 7:
             try skipSimpleOrFloat(additional: additional, start: start)
         default:

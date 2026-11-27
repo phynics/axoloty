@@ -871,7 +871,11 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
         }
 
         let sourceID = frame.routingKey.sourceID
-        let objectID = advertisedObjectID(frame.payload) ?? sourceID
+        let objectID: UUID16
+        switch advertisedObjectIdentity(frame.payload) {
+        case .identified(let value): objectID = value
+        case .malformed: return .rejected(.malformedPayload)
+        }
         let role = advertisedObjectRole(frame.payload)
         var heldIndex: Int?
         for index in 0..<capacity where objects[index].active {
@@ -1108,7 +1112,11 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
             sourceID: operation.sourceID,
             correlationID: nil
         ) else { return .rejected(.invalidCorrelation) }
-        let objectID = advertisedObjectID(operation.payload) ?? operation.sourceID
+        let objectID: UUID16
+        switch advertisedObjectIdentity(operation.payload) {
+        case .identified(let value): objectID = value
+        case .malformed: return .rejected(.malformedPayload)
+        }
         let role = advertisedObjectRole(operation.payload)
 
         var heldIndex: Int?
@@ -1536,8 +1544,8 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
         } catch {
             return .rejected(.malformedPayload)
         }
-        guard semanticLength > 0,
-              semanticLength <= ProtocolBufferConfig.maxRouteBytes else {
+        guard semanticLength > 0 else { return .rejected(.malformedPayload) }
+        guard semanticLength <= ProtocolBufferConfig.maxRouteBytes else {
             return .rejected(.capacityExceeded)
         }
         return withUnsafeBytes(of: semanticStorage) { buffer in
@@ -1588,7 +1596,9 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
         var deadvertiseMask = InlineArray<capacity, Bool>(repeating: false)
         switch capability {
         case .advertise:
-            let objectID = advertisedObjectID(payload) ?? sourceID
+            guard case .identified(let objectID) = advertisedObjectIdentity(payload) else {
+                return .rejected(.malformedPayload)
+            }
             let role = advertisedObjectRole(payload)
             var activeCount = 0
             var freeIndex: Int?
@@ -1668,16 +1678,37 @@ public struct ProtocolProcessor<let capacity: Int>: ~Copyable {
         }
     }
 
-    private func advertisedObjectID(_ payload: ByteSlice) -> UUID16? {
+    /// The result of identifying an Advertise's embedded object.
+    private enum AdvertiseObjectIdentity {
+        /// The embedded object map carries a UUID `objectId`.
+        case identified(UUID16)
+        /// The embedded object is not a map, or its `objectId` is missing,
+        /// of the wrong kind, or not a UUID.
+        case malformed
+    }
+
+    /// Identifies the advertised object from its embedded object map.
+    ///
+    /// CoatyJS requires a plain object with a non-empty string `objectId`.
+    /// Axoloty tracks objects by ``UUID16``, so a non-UUID string cannot be
+    /// tracked and is rejected. A non-map `object` and a missing or wrong-kind
+    /// `objectId` are malformed rather than being keyed by the source ID.
+    private func advertisedObjectIdentity(_ payload: ByteSlice) -> AdvertiseObjectIdentity {
         payload.withBytes { pointer, length in
             let reader = codec.reader(bytes: pointer.assumingMemoryBound(to: UInt8.self), length: length)
-            guard let object = reader.readField("object") else { return nil }
+            guard let object = reader.readField("object") else { return .malformed }
             return object.withBytes { objectPointer, objectLength in
                 let objectReader = codec.reader(
                     bytes: objectPointer.assumingMemoryBound(to: UInt8.self),
                     length: objectLength
                 )
-                return objectReader.readUUID("objectId")
+                do throws(WireDecodeError) {
+                    try objectReader.validate()
+                } catch {
+                    return .malformed
+                }
+                guard let objectID = objectReader.readUUID("objectId") else { return .malformed }
+                return .identified(objectID)
             }
         }
     }

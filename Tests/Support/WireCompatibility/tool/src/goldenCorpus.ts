@@ -344,7 +344,7 @@ export const GOLDEN_CASES: readonly GoldenCase[] = [
     family: "call",
     variant: "full",
     uuidPointers: [],
-    value: { parameters: { op: 1 }, filter: ["f"] },
+    value: { parameters: { op: 1 }, filter: { name: "f" } },
   },
   {
     id: "return-empty",

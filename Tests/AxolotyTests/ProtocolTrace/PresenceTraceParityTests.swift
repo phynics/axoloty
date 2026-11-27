@@ -78,6 +78,19 @@ struct PresenceTraceParityTests {
         let renewed = leased
         let deadvertise = try RuntimeWirePayload.deadvertise(uuid: peer, profile: .axoloty1CBOR)
         let malformedLease = try malformedLeasePayload(peer)
+        let nonMapObject = try advertiseEnvelope(objectBytes: [0x07], leaseMS: 1_000, ownerEpoch: 1)
+        let objectWithoutID = try advertiseEnvelope(
+            objectBytes: try objectPayload(fields: [("coreType", "IoSource")]),
+            leaseMS: 1_000,
+            ownerEpoch: 1
+        )
+        let nonUUIDObjectID = try advertiseEnvelope(
+            objectBytes: try objectPayload(fields: [("objectId", "not-a-uuid")]),
+            leaseMS: 1_000,
+            ownerEpoch: 1
+        )
+        let wrongKindAssociate = try associateEnvelope(route: [0x18, 0x2A])
+        let emptyAssociate = try associateEnvelope(route: [0x60])
 
         // 1. Announce, 2. silent renewal, 3. expiry, 4. late refresh,
         // 5. graceful Deadvertise, 6. resurrection, 7. malformed rejection.
@@ -143,6 +156,55 @@ struct PresenceTraceParityTests {
             nowMS: 1_900
         )
 
+        // 8. Non-map object, 9. object without objectId, 10. non-UUID objectId,
+        // 11. wrong-kind Associate route, 12. empty Associate route. Each must
+        // reject identically on both legs without mutating state.
+        let wrongObject = try await step(
+            host: runtime,
+            hostClock: clock,
+            staticRuntime: &staticRuntime,
+            capability: .advertise,
+            sourceID: peer,
+            payload: nonMapObject,
+            nowMS: 2_000
+        )
+        let missingID = try await step(
+            host: runtime,
+            hostClock: clock,
+            staticRuntime: &staticRuntime,
+            capability: .advertise,
+            sourceID: peer,
+            payload: objectWithoutID,
+            nowMS: 2_100
+        )
+        let nonUUIDID = try await step(
+            host: runtime,
+            hostClock: clock,
+            staticRuntime: &staticRuntime,
+            capability: .advertise,
+            sourceID: peer,
+            payload: nonUUIDObjectID,
+            nowMS: 2_200
+        )
+        let wrongKindRoute = try await step(
+            host: runtime,
+            hostClock: clock,
+            staticRuntime: &staticRuntime,
+            capability: .associate,
+            sourceID: peer,
+            payload: wrongKindAssociate,
+            nowMS: 2_300
+        )
+        let emptyRoute = try await step(
+            host: runtime,
+            hostClock: clock,
+            staticRuntime: &staticRuntime,
+            capability: .associate,
+            sourceID: peer,
+            payload: emptyAssociate,
+            nowMS: 2_400
+        )
+
         #expect(announce.accepted && announce.deliveries.count == 1)
         #expect(refresh.accepted && refresh.deliveries.isEmpty)
         #expect(refresh.state == announce.state)
@@ -156,6 +218,13 @@ struct PresenceTraceParityTests {
         #expect(rejected.rejection == .malformedPayload)
         #expect(rejected.state == resurrected.state)
         #expect(rejected.deliveries.isEmpty)
+
+        for step in [wrongObject, missingID, nonUUIDID, wrongKindRoute, emptyRoute] {
+            #expect(!step.accepted)
+            #expect(step.rejection == ProtocolError.Code.malformedPayload)
+            #expect(step.state == resurrected.state)
+            #expect(step.deliveries.isEmpty)
+        }
     }
 
     // MARK: - Step execution
@@ -379,6 +448,58 @@ struct PresenceTraceParityTests {
         return Array(output.prefix(length))
     }
 
+    private func advertiseEnvelope(
+        objectBytes: [UInt8],
+        leaseMS: Int,
+        ownerEpoch: Int
+    ) throws -> [UInt8] {
+        var output = [UInt8](repeating: 0, count: 512)
+        let length = try output.withUnsafeMutableBufferPointer { buffer throws(WireEncodeError) -> Int in
+            var writer = WireCodec(profile: .axoloty1CBOR).writer(
+                buffer: buffer.baseAddress!,
+                capacity: buffer.count
+            )
+            try writer.beginObject()
+            try objectBytes.withUnsafeBufferPointer { objectBuffer throws(WireEncodeError) in
+                try writer.writeRawField(
+                    "object",
+                    ByteSlice(bytes: objectBuffer.baseAddress!, length: objectBuffer.count)
+                )
+            }
+            try writer.writeComma()
+            try writer.writeIntField("leaseMs", leaseMS)
+            try writer.writeComma()
+            try writer.writeIntField("ownerEpoch", ownerEpoch)
+            try writer.endObject()
+            return writer.position
+        }
+        return Array(output.prefix(length))
+    }
+
+    private func associateEnvelope(route: [UInt8]) throws -> [UInt8] {
+        var output = [UInt8](repeating: 0, count: 256)
+        let length = try output.withUnsafeMutableBufferPointer { buffer throws(WireEncodeError) -> Int in
+            var writer = WireCodec(profile: .axoloty1CBOR).writer(
+                buffer: buffer.baseAddress!,
+                capacity: buffer.count
+            )
+            try writer.beginObject()
+            try writer.writeUUIDField("ioSourceId", Self.peer)
+            try writer.writeComma()
+            try writer.writeUUIDField("ioActorId", Self.peer)
+            try writer.writeComma()
+            try route.withUnsafeBufferPointer { routeBuffer throws(WireEncodeError) in
+                try writer.writeRawField(
+                    "associatingRoute",
+                    ByteSlice(bytes: routeBuffer.baseAddress!, length: routeBuffer.count)
+                )
+            }
+            try writer.endObject()
+            return writer.position
+        }
+        return Array(output.prefix(length))
+    }
+
     private func objectPayload(_ objectID: UUID16) throws(ProtocolError) -> [UInt8] {
         var output = [UInt8](repeating: 0, count: 256)
         let length: Int
@@ -401,6 +522,40 @@ struct PresenceTraceParityTests {
             }
         } catch {
             throw ProtocolError(.malformedPayload)
+        }
+        return Array(output.prefix(length))
+    }
+
+    private func objectPayload(fields: [(String, String)]) throws -> [UInt8] {
+        var output = [UInt8](repeating: 0, count: 256)
+        let length = try output.withUnsafeMutableBufferPointer { buffer throws(WireEncodeError) -> Int in
+            var writer = WireCodec(profile: .axoloty1CBOR).writer(
+                buffer: buffer.baseAddress!,
+                capacity: buffer.count
+            )
+            try writer.beginObject()
+            for (index, field) in fields.enumerated() {
+                if index > 0 { try writer.writeComma() }
+                let valueBytes = Array(field.1.utf8)
+                try valueBytes.withUnsafeBufferPointer { valueBuffer throws(WireEncodeError) in
+                    switch field.0 {
+                    case "objectId":
+                        try writer.writeStringField(
+                            "objectId",
+                            ByteSlice(bytes: valueBuffer.baseAddress!, length: valueBuffer.count)
+                        )
+                    case "coreType":
+                        try writer.writeStringField(
+                            "coreType",
+                            ByteSlice(bytes: valueBuffer.baseAddress!, length: valueBuffer.count)
+                        )
+                    default:
+                        throw .invalidValue
+                    }
+                }
+            }
+            try writer.endObject()
+            return writer.position
         }
         return Array(output.prefix(length))
     }
